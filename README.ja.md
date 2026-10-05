@@ -43,7 +43,7 @@ macOS向けのローカルファーストなマルチモーダル・デスクト
 - macOS 26 以降、Apple Silicon 搭載 Mac
 - Xcode 26.6+ / Swift 6.2+
 - （任意）Gemini、Anthropic、OpenAI 互換、または TypeSafe AI の API キー。キーが未設定でも記録・検索およびローカルGUI判定は動作します。
-- （任意）GUI 判定（System One）に Cloudflare Workers AI の Clef を使う場合は `wrangler login` 済みであること。`MCA_SYSTEM_ONE=clef` を指定したときだけ使います（詳細は下記）。
+- （任意）GUI 判定（System One）に Cloudflare Workers AI の Clef を使う場合は `cf auth login` 済みであること。`MCA_SYSTEM_ONE=clef` を指定したときだけ使います（詳細は下記）。
 
 ## ビルド手順
 
@@ -107,17 +107,17 @@ build/MyComputerAgent.app/Contents/MacOS/mca doctor   # 読み取り専用でス
 2. TypeSafe AI のキーがあれば TypeSafe Jev
 3. なければ、ローカルの決定論的な判定
 
-Cloudflare Workers AI の Clef（`@cf/cloudflare/clef`）は、`wrangler login` 済みでも自動では選ばれません。
+Cloudflare Workers AI の Clef（`@cf/cloudflare/clef`）は、`cf auth login` 済みでも自動では選ばれません。
 使うときは `MCA_SYSTEM_ONE=clef`（軽量版は `clef-flash`）を指定してください。
 
-Clef の token は `wrangler auth token` から取り、メモリにだけ保持します（リポジトリやキーチェーンには書きません）。
+Clef の token は `cf auth whoami` や `cf` プロファイルから取り、メモリにだけ保持します（リポジトリやキーチェーンには書きません）。
 `CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` があればそちらを優先します。
 テキストだけでは確信が足りないとき（AX の候補が取れない、確信度が閾値未満）に限り、
 長辺 768px に縮めたスクリーンショットを添えてもう一度判定します。これには画面収録の権限が必要です。
 
 **送信されるデータ**：Clef を使う間は、依頼文・前面のアプリ名・画面の AX 候補（ラベルと座標）が Cloudflare に送られます。
 再判定のときはディスプレイ全体のスクリーンショット（長辺 768px）も送られます。
-wrangler の認証に失敗すると、5 分間はローカル判定で動き、その後もう一度試します。
+cf の認証に失敗すると、5 分間はローカル判定で動き、その後もう一度試します。
 
 | 環境変数 | 意味 |
 |---|---|
