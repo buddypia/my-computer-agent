@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability Reporting
+    url: https://github.com/buddypia/my-computer-agent/blob/main/SECURITY.md
+    about: Please report security vulnerabilities privately via email or GitHub Private Vulnerability Reporting rather than public issues.

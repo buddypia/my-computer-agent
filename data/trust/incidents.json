@@ -1,0 +1,350 @@
+{
+  "$comment": "Recurrence-prevention registry. Every incident needs at least one guard that exists in the tree; `Scripts/trust/trust.mjs incident check` runs in the gate. Guard kinds, weakest first: checklist < test < gate. See docs/trust/auto-approval.md.",
+  "incidents": [
+    {
+      "id": "INC-001",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "detectBarMove (.cli/lib/self-improving-loop.mjs) が Swift のテスト削除・assertion 削減を一切検知できていなかった",
+      "root_cause": "JS 前提の実装を移植したまま、この repo の言語で検知が効くことを検証していなかった。test パス判定が小文字 tests?/ のみ、assertion パターンが expect(/assert のみで #require/.disabled を知らない",
+      "check": "新しい検査（ゲート・検知器）は、この repo の実際のファイル（Tests/**/*.swift）で陽性になる fixture を持っているか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/swift-bar-move.test.mjs",
+          "contains": "INC-001"
+        },
+        {
+          "kind": "gate",
+          "path": "Scripts/gate.sh",
+          "contains": "run_stage 2 trust"
+        }
+      ]
+    },
+    {
+      "id": "INC-002",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "trust 評価器自身が diff 行ベースで、.gitattributes -diff・NUL バイト・diff.noprefix・core.quotepath・ブロックコメント・#if false・.enabled(if:) で検知をすり抜けられた（独立レビューで発見）",
+      "root_cause": "手書きの diff 文字列でしか検証しておらず、実際の git 出力とユーザー設定・属性の影響を受ける経路を通していなかった。INC-001 と同じ『実物で陽性になる fixture がない』クラスの再発",
+      "check": "検査器は、敵対的な git 設定と実在ファイルを使った統合テストで陽性になるか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/git-integration.test.mjs",
+          "contains": "INC-002: .gitattributes"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/swift-bar-move.test.mjs",
+          "contains": "INC-002: block comment"
+        }
+      ]
+    },
+    {
+      "id": "INC-003",
+      "at": "2026-09-26",
+      "class": "forgeable-evidence",
+      "summary": "自動承認の証拠が作者自身に偽造可能だった：ゲートの pass キャッシュ、--base によるポリシー差し替え、record-human による人間回答の上書き、自作のレビュー記録",
+      "root_cause": "証拠の出所（誰が書けるか）を検証せず、形式だけを検査していた。ローカルでは作者と評価器が同じ OS ユーザーで、評価器が読むものは全て作者も書ける",
+      "check": "この証拠は作者が書き換え可能な場所から来ていないか。来ているなら、そのことが docs の『受け入れたリスク』に明記され、その証拠が偽られても致命的な変更（fatal_risk）は人間の承認で止まるか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-003: decision ladder"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/git-integration.test.mjs",
+          "contains": "INC-003: policy comes from the trunk"
+        },
+        {
+          "kind": "gate",
+          "path": "Scripts/gate.sh",
+          "contains": "if [ \"${MCA_GATE_NO_CACHE:-0}\" != \"1\" ]"
+        }
+      ]
+    },
+    {
+      "id": "INC-004",
+      "at": "2026-09-26",
+      "class": "hollow-guard",
+      "summary": "incident の guard が骨抜きのまま緑になりえた：gate guard の文字列がヘッダコメントで満たされ、test guard は skip されても通り、guard の kind は作者の自己申告だった",
+      "root_cause": "guard の検査が『文字列がファイルのどこかにある』だけで、その文字列が実行される位置にあるかを見ていなかった",
+      "check": "guard の anchor は実行される行（テスト宣言・ゲートのコマンド行）にあるか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-004: a test guard must name"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-004: a gate guard must be"
+        }
+      ]
+    },
+    {
+      "id": "INC-005",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "#if os(Linux) / #if !DEBUG / #if os(macOS) の #else・新規ファイルの独自 ConditionTrait・空の arguments でテストを無効化しても bar-move が検知しなかった（再レビューで発見）",
+      "root_cause": "『無効化の書き方』を列挙で塞いでいた。コンパイラが実際に何をビルドするか（対象プラットフォームでの #if 評価）を基準にしていなかった。同クラス 3 回目",
+      "check": "検査は『書き方の列挙』ではなく『この repo のビルドで実際に有効なコード』を基準に数えているか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/swift-bar-move.test.mjs",
+          "contains": "INC-005: platform #if branches"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/swift-bar-move.test.mjs",
+          "contains": "INC-005: a new file defining"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/swift-bar-move.test.mjs",
+          "contains": "INC-005: parameterized tests"
+        }
+      ]
+    },
+    {
+      "id": "INC-006",
+      "at": "2026-09-26",
+      "class": "hollow-guard",
+      "summary": "guard の anchor がコメントアウトされたテスト宣言や ': run_stage' / 'true || run_stage' のような実行されない行でも満たされた（INC-004 の再発）",
+      "root_cause": "anchor を静的な文字列位置で判定し、実際に実行・通過したかを見ていなかった",
+      "check": "guard は『今回の実行で pass した』ことで確認されているか（TAP / ゲート出力）",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-006: commented-out and no-op anchors"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-006: with TAP from the run"
+        },
+        {
+          "kind": "gate",
+          "path": "Scripts/gate.sh",
+          "contains": "node \"$ROOT/Scripts/trust/trust.mjs\" incident check --tap \"$TRUST_TAP\""
+        }
+      ]
+    },
+    {
+      "id": "INC-007",
+      "at": "2026-09-26",
+      "class": "forgeable-evidence",
+      "summary": "ローカルの would_auto 上限が環境変数 2 つ（GITHUB_ACTIONS / MCA_TRUST_RUNNER）で解除できた",
+      "root_cause": "信頼の根拠を、作者が自由に設定できる自己申告（環境変数）に置いていた。INC-003 と同クラス",
+      "check": "判定は環境変数など作者が自由に設定できる自己申告を読んでいないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-007: the decision never reads"
+        }
+      ]
+    },
+    {
+      "id": "INC-008",
+      "at": "2026-09-26",
+      "class": "review-visibility-gap",
+      "summary": "NUL バイトや -diff 属性のファイルは、レビュアーと人間には 'Binary files differ' としか見えないのに、機械は中身を測れたので unmeasurable として扱わなかった",
+      "root_cause": "機械が測ったものと、承認者に見せたものを区別していなかった。承認は見せたものにしか及ばない",
+      "check": "承認者に表示される diff で中身が見えないファイルはないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/git-integration.test.mjs",
+          "contains": "INC-008: a file the reviewer is shown"
+        }
+      ]
+    },
+    {
+      "id": "INC-009",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "3 回目のレビューで、evalCondition が swift(<5.0)・canImport(未知)・arch(x86_64) を真と評価し、.enabled { false } や本体を実行しない TestScoping トレイトでテストを無効化しても bar_move が沈黙した",
+      "root_cause": "同クラス 4 回目。『テストを止める書き方』を列挙で塞ぎ続けていた。列挙では閉じないクラスなので、trunk と branch で swift test が実際に何を実行したかを比較する構造的な検査に切り替えた",
+      "check": "その検査は『書き方』ではなく『実際に実行されたか』を見ているか。列挙で塞いでいるなら、実行結果で確認できる形にできないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-009: tests that passed on the trunk"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-009: a parameterized test that now runs zero cases"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-009: #if conditions are compared"
+        },
+        {
+          "kind": "gate",
+          "path": "Scripts/gate.sh",
+          "contains": "run_stage 2 guards trust_guards"
+        }
+      ]
+    },
+    {
+      "id": "INC-010",
+      "at": "2026-09-26",
+      "class": "hollow-guard",
+      "summary": "guard テストの本体を空にしても pass として通り、Swift の guard テストは実行結果で確認されず、宣言行の .enabled(if: false) も見逃されていた",
+      "root_cause": "同クラス 3 回目。『宣言がある』『pass した』までは見ていたが、『何かを検証している』ことを見ていなかった",
+      "check": "guard テストは本体で assert しており、今回の実行（TAP / xUnit）で pass しているか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-010: a guard test whose body"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-010: a Swift guard must be passed"
+        }
+      ]
+    },
+    {
+      "id": "INC-011",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "executed_tests がケース数をコンソールの表示名で数えており、名前なしのパラメータ化テスト（引用符なしで出力される）と同名の表示名を持つ別スイートのテストで、ケース削減を見逃した。trunk ビルド用ディレクトリに排他もなかった",
+      "root_cause": "同クラス 5 回目。パーサを手書き fixture で検証し、swift test の実出力（名前なし・同名）で確かめていなかった。構造化された出力（イベントストリーム）があるのに人間向けの表示テキストを解析していた",
+      "check": "パーサは実ツールの実出力を fixture にしているか。機械向けの構造化出力があるのに人間向けテキストを解析していないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-011: parseEventStream reads status"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-011: unnamed tests and duplicate display names"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/test-run.test.mjs",
+          "contains": "INC-011: overloads sharing a key"
+        }
+      ]
+    },
+    {
+      "id": "INC-012",
+      "at": "2026-09-26",
+      "class": "fail-open-exit",
+      "summary": "trust.mjs をシンボリックリンク経由のパス（macOS の /tmp → /private/tmp）で起動すると、エントリポイント判定が外れて何も実行せず exit 0 で終わった。approve では exit 0 が『自動マージしてよい』を意味する",
+      "root_cause": "エントリポイント判定を argv のパス文字列と import.meta.url の単純比較で行い、実パスに解決していなかった。さらに『成功』を exit 0 という、何もしなかった場合と区別できない信号で表していた",
+      "check": "成功を示す信号は、何も実行されなかった場合と区別できるか（exit 0 だけに頼っていないか）",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-012: invoked through a symlinked path"
+        }
+      ]
+    },
+    {
+      "id": "INC-013",
+      "at": "2026-09-26",
+      "class": "fail-open-exit",
+      "summary": "working tree が clean で HEAD がマージコミットのとき、gate.sh は変更パスを 0 件と判定し、--force を付けても 'GATE SKIP' で exit 0 していた（E2E で発見。trust 側は GATE PASS を要求していたため human に倒れた）",
+      "root_cause": "INC-012 と同じクラスの再発。『何も実行しなかった』を exit 0 で返す経路が --force の意味（全部実行する）より優先されていた。変更パスを HEAD コミット単体から推定しており、マージコミットでは空になる",
+      "check": "強制実行・判定系のコマンドに、何も実行せず成功を返す経路が残っていないか",
+      "guards": [
+        {
+          "kind": "gate",
+          "path": "Scripts/gate.sh",
+          "contains": "PATHS=\"(forced)\""
+        }
+      ]
+    },
+    {
+      "id": "INC-014",
+      "at": "2026-09-26",
+      "class": "approval-integrity",
+      "summary": "trust approve が、人間の abort / revise の回答を approve で上書きできた。さらに diff の束縛確認が recordAnswer の書き込み後だったため、判定後にツリーが動くと、source タグのない（人間の回答に見える）承認が残った（5 回目の独立レビューで発見）",
+      "root_cause": "機械の承認を人間の回答と同じ置き場に書くのに、既存の人間の回答を尊重する規則と、書き込み前に検証する順序を持っていなかった。検証とタグ付けが書き込みと別の操作だった",
+      "check": "機械が承認を書くとき、人間の拒否を上書きしないか。検証してから 1 回の原子的な書き込みで、出所の分かる形で記録しているか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-014: approve records a tagged approval"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-014: approve never overwrites a human veto"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-014: reconcile accepts only human answers"
+        }
+      ]
+    },
+    {
+      "id": "INC-015",
+      "at": "2026-09-26",
+      "class": "fail-open-exit",
+      "summary": "decide は『存在して失敗した証拠』しか拒否せず、証拠の欠落では auto_merge を返した。breaker.since / max_escapes は未検証で、'2026/09/26' などの値では breaker が作動しなかった。trunk の policy.json が壊れていると branch 側のコピーで判定した",
+      "root_cause": "同クラス 3 回目。『悪い値があれば止める』形で書いており、『良いと確認できたものだけ通す』形になっていなかった。欠落・不正値・読めない値が、すべて通過側に倒れていた",
+      "check": "判定は、必要なものが揃っていると確認できた場合だけ通す形か（欠落・不正値・読めない値が通過側に倒れないか）",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-015: missing evidence, an unreadable breaker"
+        },
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/git-integration.test.mjs",
+          "contains": "INC-015: a trunk policy that does not parse"
+        }
+      ]
+    },
+    {
+      "id": "INC-016",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "persistence 規則が変更行だけを見ていたため、既存の CREATE TABLE の中の列定義を変えても（CREATE TABLE の行は変わらない）自動マージ対象になった",
+      "root_cause": "同クラス 6 回目。『キーワードを含む行が変わったか』で判定し、『スキーマを定義するファイルが変わったか』を見ていなかった",
+      "check": "規則は、危険な意味を持つ単位（ファイル・定義全体）で判定しているか。キーワードを含む行だけを見ていないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/git-integration.test.mjs",
+          "contains": "INC-016: editing a column inside"
+        }
+      ]
+    },
+    {
+      "id": "INC-017",
+      "at": "2026-09-26",
+      "class": "evaluator-blind-spot",
+      "summary": "persistence のキーワードに CREATE VIRTUAL TABLE / CREATE TRIGGER / CREATE UNIQUE INDEX / VIEW がなく（この repo で既に使っている）、FTS テーブルとトリガーの追加が自動マージ対象になった。destructive は追加行だけを見ていたため、既存の削除操作の対象を別の行で変える変更を見逃した（6 回目の独立レビューで発見）",
+      "root_cause": "同クラス 7 回目。キーワードを一般的な SQL の知識から書き、この repo が実際に使っているスキーマ文を確かめていなかった。INC-016 で persistence をファイル単位にしたのに、同じ理由（対象を別の行で変えられる）が当てはまる destructive に広げていなかった",
+      "check": "検知キーワードは、この repo の実コードに実在する書き方を列挙して確かめたか。ある規則で直した理由が、他の規則にも当てはまらないか",
+      "guards": [
+        {
+          "kind": "test",
+          "path": "Scripts/trust/tests/trust.test.mjs",
+          "contains": "INC-017: irreversible effects escalate"
+        }
+      ]
+    }
+  ]
+}

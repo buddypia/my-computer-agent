@@ -1,0 +1,91 @@
+{
+  "$comment": "Auto-merge policy SSOT. Read by Scripts/trust/trust.mjs from the trunk, never from the branch under review. The question every rule answers is: if this merge decision turns out to be wrong, is the damage fatal? This file is itself a `self_reference` rule: the AI may propose a change to it, but only a human can approve that change. See docs/trust/auto-approval.md.",
+  "version": 2,
+  "mode": "auto_merge",
+  "fatal_risk": [
+    {
+      "id": "governance",
+      "axis": "self_reference",
+      "if_wrong": "評価する側が誤ると、以後の自動判定がすべて誤ったまま通る。誤りに気づく手段そのものが壊れる",
+      "paths": [
+        "Scripts/gate.sh",
+        "Scripts/trust/**",
+        "data/trust/**",
+        ".claude/**",
+        ".cli/**",
+        ".codex/**",
+        ".agents/**",
+        ".github/**",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "Makefile",
+        ".gitattributes",
+        "**/.gitattributes"
+      ]
+    },
+    {
+      "id": "persistence",
+      "axis": "irreversible",
+      "if_wrong": "スキーマ変更は利用者の DB に対して実行される。コードを revert しても、移行済みのデータは元に戻らない（スキーマを定義するファイルは、どの行の変更でも対象）",
+      "paths": ["Sources/**"],
+      "content_scope": "file",
+      "content": ["CREATE TABLE", "CREATE VIRTUAL TABLE", "ALTER TABLE", "DROP TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX", "DROP INDEX", "CREATE TRIGGER", "DROP TRIGGER", "CREATE VIEW", "DROP VIEW", "user_version"]
+    },
+    {
+      "id": "destructive",
+      "axis": "irreversible",
+      "if_wrong": "ファイル・Keychain・DB 行の削除は、コードを revert しても消えたものが戻らない（削除操作を持つファイルは、削除対象を変えうるのでどの行の変更でも対象）",
+      "paths": ["Sources/**", "Scripts/**"],
+      "content_scope": "file",
+      "content": ["removeItem(", "trashItem(", "SecItemDelete", "DELETE FROM", "rm -rf", "reset --hard", "push --force"]
+    },
+    {
+      "id": "security",
+      "axis": "blast_radius",
+      "if_wrong": "秘密情報・権限・安全ガードレール・署名の誤りは、気づく前に悪用や漏えいが起きうる",
+      "paths": [
+        "Sources/MCAReasoning/SecretStore.swift",
+        "Sources/MCAReasoning/SafetyGuardrails.swift",
+        "Sources/MCACore/ScreenWatchPolicy.swift",
+        "Sources/mca/Permissions.swift",
+        "Scripts/bundle.sh",
+        "**/*.entitlements",
+        "**/Info.plist",
+        "SECURITY.md"
+      ]
+    },
+    {
+      "id": "dependency",
+      "axis": "blast_radius",
+      "if_wrong": "依存の追加・更新は第三者のコードを取り込む。供給網の問題はテストでは見つからない",
+      "paths": ["Package.swift", "Package.resolved"]
+    },
+    {
+      "id": "pivot",
+      "axis": "direction",
+      "if_wrong": "目的・アーキテクチャ・仕様の誤りは、それを前提にした以後の作業をすべて無駄にする",
+      "paths": ["PROJECT.md", "docs/architecture_*.md", "docs/features/**/SPEC.md", "docs/requirements_*.md"]
+    },
+    {
+      "id": "ui_major",
+      "axis": "exposure",
+      "if_wrong": "大きな UI 変更の誤りは利用者の目に直接触れ、テストでは良し悪しを判定できない",
+      "paths": ["Sources/MCAPresentation/**"],
+      "min_loc": 150
+    }
+  ],
+  "undetectable": {
+    "if_wrong": "規模が大きい、または中身を表示できない変更は、誤りが紛れても機械にも人間にも見つけにくい",
+    "max_files": 9,
+    "max_loc": 299
+  },
+  "breaker": {
+    "$comment": "An escape is an auto-merged change later found defective. One escape freezes its categories; max_escapes escapes stop auto-merge entirely. Only a human-approved change to `since` (this file is governance) re-opens them.",
+    "since": "2026-09-25T00:00:00Z",
+    "max_escapes": 2
+  },
+  "guard_ladder": {
+    "recurrence_limit": 2,
+    "min_kind_on_recurrence": "test"
+  }
+}

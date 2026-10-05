@@ -1,0 +1,2228 @@
+{
+  "schema_version": 8,
+  "feature_id": "typesafe-computer-use",
+  "title": "Screen-driven autonomous computer agent",
+  "feature_type": "MODIFY_FEATURE",
+  "domain": "computer-use",
+  "characteristics": {
+    "involves_new_api": false,
+    "involves_external_api": true,
+    "db_schema_change": false,
+    "multi_screen": true,
+    "ai_ml_integration": true,
+    "security_sensitive": true,
+    "realtime_processing": true,
+    "offline_capability": true,
+    "payment_billing": false,
+    "pii_handling": false,
+    "novel_domain": false,
+    "cross_feature_impact": true
+  },
+  "quick_resume": {
+    "current_state": "Verification in progress — current-main refreshed candidate; No-Go",
+    "previous_state": "Reviewing earlier integrate candidate",
+    "current_task": "現行main `5f23e868` を基点にした`feature/screen-agent-refresh`候補。focused 85tests/8suites PASS。最新gateはG1・trust PASS、G2 testsで1件FAIL（process timeout 0.886s against unchanged 0.700s limit）；focused process/chat suiteは5 tests/2 suites PASS。Cloudflare CLI認証後のonline Clef再測定は48/54 train・27/28 heldoutだったが、38 nondeterministic casesで決定性テストFAIL。offline System One evalはtrain50/54、heldout25/28、baselineと同点、NO CHANGE／STALLED 3 rounds。全7 FR in_progress／accepted0。実会議資料・MCAの実Chrome/X結果、Keychain Always Allowの実適用、VoiceOver/Tab、native route/race/deadline、eval改善、現candidateの独立trust reviewが未完了。commit／PR／mergeなし。",
+    "next_actions": [
+      "Obtain a fresh blind evaluator/holdout for unbiased System One acceptance; keep grader/floor/baseline unchanged",
+      "Run production screen collection only with a correctly selected/pinned owned Chrome window and verify its result against the same viewport",
+      "The user selected Always Allow for the ad-hoc binary; the dialog was already closed and the choice was not applied. Verify the actual Keychain result if a relevant prompt recurs; `mca doctor` did not trigger it and reported the CLI as unsigned",
+      "Complete real Zoom/Meet material and remaining native accessibility/route/race/deadline checks",
+      "After all frozen acceptance passes, conduct diff-bound independent trust review, Pre-Ship, create-pr merge and cleanup"
+    ],
+    "blockers": [
+      "MCA production Chrome/X collection did not succeed: an owned pw-agent X test tab and two manual UI scrolls showed explicit >5K view counts, but MCA ask did not collect and its unscoped capture selected a different existing Chrome window, so no product result is claimed",
+      "Actual Zoom/Meet material remains unavailable at the last user answer",
+      "User selected Always Allow for the ad-hoc binary, but the dialog was closed before a selection and a later read-only `mca doctor` did not reopen it; current CLI build reports unsigned and no choice is confirmed",
+      "VoiceOver/Tab and remaining native route/race/deadline matrix are incomplete",
+      "Eval root-class attempt improved train only and was reverted; a partial accidental manual heldout read compromised blind independence for this session",
+      "Current candidate has no fresh diff-bound trust approval or merge readiness"
+    ],
+    "last_updated_at": "2026-10-04T09:21:04Z",
+    "last_decision": {
+      "summary": "Keep full screen-agent objective; do not declare existing actuator loop complete",
+      "at": "2026-09-30T21:41:53.695Z"
+    },
+    "active_constraints": [
+      "Worktree isolation",
+      "Scripts/gate.sh",
+      "Swift layer order",
+      "No secrets in repository",
+      "Approval bound to one operation and fresh target"
+    ],
+    "question_count": 1
+  },
+  "why": "The user wants observation-driven autonomous action with chat approval for destructive work and actual >=5K X results; Chrome is the user-selected replacement for Firefox.",
+  "original_request": "このプロジェクトはAIが画面をみながら状況や判断を自動的に行うエージェントにするつもり。例えば、MTG(ZoomやGoogle Meet)などで画面共有したらその内容に基づいて自動的に何かをする（破壊的な処理ならユーザーにチャットUIで承認依頼）するComptuer Use的に動かしたい。他の例はFirefoxなどブラウザー上でx.comのTwttier内容を共有しながらチャットでビューが5K以上のデータをスクロールしながら探してって言ったら画面を操作して要求を満たすことのできるプログラムにしたい",
+  "success_criteria": [
+    "All FR-CU-001 through FR-CU-007 verified",
+    "Live meeting screen-driven action under an objective",
+    "Live Chrome/X (user-selected replacement for Firefox) scrolling and evidence-backed >=5,000 view results",
+    "Destructive action blocked until chat approval; reject/cancel/stale-target prevent dispatch",
+    "Gate, independent review and required human shipping approval"
+  ],
+  "progress": {
+    "percentage": 0,
+    "fr_total": 7,
+    "fr_completed": 0,
+    "fr_in_progress": 7,
+    "details": {
+      "FR-CU-001": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCAReasoning/ActionAuthorization.swift",
+          "Sources/MCAReasoning/BrowserSession.swift",
+          "Sources/MCASensing/EventSynthesizer.swift",
+          "Sources/mca/Copilot.swift",
+          "Sources/MCASensing/AccessibilityInspector.swift",
+          "Sources/MCAReasoning/ComputerTools.swift",
+          "Sources/MCAReasoning/TypeSafeDecisionEngine.swift",
+          "Sources/MCAReasoning/HTTPStreaming.swift"
+        ],
+        "tests": [
+          "Tests/MCAReasoningTests/BrowserAuthorizationTests.swift",
+          "Tests/MCASensingTests/EventSynthesizerTests.swift",
+          "Tests/MCAReasoningTests/ScopedObservationTests.swift",
+          "Tests/MCASensingTests/AccessibilityInspectorTests.swift",
+          "Tests/MCAReasoningTests/OfflineDecisionConstraintTests.swift",
+          "Tests/MCAReasoningTests/ScopedCollectionTests.swift",
+          "Tests/MCAReasoningTests/ScopedInspectorHelpersTests.swift",
+          "Tests/mcaTests/CopilotScopedCollectionTests.swift",
+          "Tests/mcaTests/CopilotScopedReadTests.swift",
+          "Tests/mcaTests/CopilotRequestScopeTests.swift",
+          "Tests/MCASensingTests/DragDispatchBoundaryTests.swift",
+          "Tests/MCASensingTests/DragTaskCancellationTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Current scope fixtures PASS; full /act/watch/browser composition and native focus/interruption matrix remain open."
+      },
+      "FR-CU-002": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCACore/ScreenObjective.swift",
+          "Sources/mca/ScreenWatcher.swift",
+          "Sources/mca/Copilot.swift"
+        ],
+        "tests": [
+          "Tests/MCACoreTests/ScreenObjectiveTests.swift",
+          "Tests/mcaTests/ScreenWatcherCancellationTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Historical own AppKit watcher/model notes/dedup/Stop proof retained; actual Zoom/Meet shared-material artifact on current source unverified."
+      },
+      "FR-CU-003": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCAReasoning/ActionAuthorization.swift",
+          "Sources/MCAReasoning/ComputerTools.swift",
+          "Sources/MCAReasoning/BrowserTools.swift",
+          "Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift",
+          "Sources/mca/ActCommand.swift",
+          "Sources/MCAPresentation/HUDState.swift"
+        ],
+        "tests": [
+          "Tests/MCAReasoningTests/ActionAuthorizationTests.swift",
+          "Tests/MCAInteropTests/ContextMCPServerAutonomousActTests.swift",
+          "Tests/MCAReasoningTests/BrowserAuthorizationTests.swift",
+          "Tests/mcaTests/ApprovalExecutionIntegrationTests.swift",
+          "Tests/MCAReasoningTests/TwoTierAutonomousLoopCoordinatorTests.swift",
+          "Tests/MCAPresentationTests/ApprovalDeadlineTests.swift",
+          "Tests/MCAPresentationTests/ActionApprovalTests.swift",
+          "Tests/MCAReasoningTests/CoordinatedInputCancellationTests.swift",
+          "Tests/mcaTests/CopilotRequestScopeTests.swift",
+          "Tests/MCASensingTests/DragDispatchBoundaryTests.swift",
+          "Tests/MCASensingTests/DragTaskCancellationTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Current MCP default refusal before model/input and explicit fixture opt-in cancellation verified; cooperative suspended-await cancellation verified. Standard gate1261/159 PASS. Full native route/stdio/primitive/deadline matrix open; old timing causes unproven."
+      },
+      "FR-CU-004": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCACore/ActionApproval.swift",
+          "Sources/MCAPresentation/HUDState.swift",
+          "Sources/MCAPresentation/MessageBubble.swift",
+          "Sources/MCAPresentation/ChatView.swift",
+          "Sources/MCACore/ApprovalText.swift"
+        ],
+        "tests": [
+          "Tests/MCAPresentationTests/ActionApprovalTests.swift",
+          "Tests/mcaTests/ApprovalExecutionIntegrationTests.swift",
+          "Tests/MCAPresentationTests/ApprovalLiteralRenderingTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Current-main own default ChatView/HUD/ToolRegistry/guarded file: externalAX9 ENJA KO actions and nativekeyboard18 postconditions PASS. VoiceOver speech/Tab traversal/all-size geometry open; latest Sensing-only changes not native-tested."
+      },
+      "FR-CU-005": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCAReasoning/DesktopActionAuthorization.swift",
+          "Sources/MCAReasoning/GuardedFileWriter.swift",
+          "Sources/MCAReasoning/BrowserSession.swift"
+        ],
+        "tests": [
+          "Tests/MCAReasoningTests/ApprovedFileWriteTests.swift",
+          "Tests/MCAReasoningTests/ObservedElementClickTests.swift",
+          "Tests/MCAReasoningTests/BrowserAuthorizationTests.swift",
+          "Tests/mcaTests/ApprovalExecutionIntegrationTests.swift",
+          "Tests/MCAReasoningTests/GuardedFileSizeTests.swift",
+          "Tests/mcaTests/CopilotRequestScopeTests.swift",
+          "Tests/MCASensingTests/DragDispatchBoundaryTests.swift",
+          "Tests/MCASensingTests/DragTaskCancellationTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Legacy/chat file+screenshot approval freeze and inserted/changed parent/file/symlink refusal verified. Postpixel fresh window owner/title/frame and display exclusion-set checks public synthetic RED/GREEN PASS. Native privacy transitions, full races, atomic/ABA guarantees unproven."
+      },
+      "FR-CU-006": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCACore/ObservedFeedPost.swift",
+          "Sources/MCACore/ScreenIntent.swift",
+          "Sources/MCAReasoning/ScreenContentCollector.swift",
+          "Sources/mca/Copilot.swift"
+        ],
+        "tests": [
+          "Tests/MCACoreTests/ObservedFeedPostTests.swift",
+          "Tests/MCACoreTests/ScreenIntentTests.swift",
+          "Tests/MCAReasoningTests/ScreenContentCollectorTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Historical own Chrome DOM fixture retained; current production collector/scroll/model >=5K answer unverified. Last attach failed; condition-change question pending."
+      },
+      "FR-CU-007": {
+        "status": "in_progress",
+        "files": [
+          "Sources/MCAReasoning/Agent.swift",
+          "Sources/MCAReasoning/CancellableToolProcess.swift",
+          "Sources/MCAReasoning/ScreenContentCollector.swift",
+          "Sources/mca/Copilot.swift",
+          "Sources/MCAReasoning/HTTPStreaming.swift"
+        ],
+        "tests": [
+          "Tests/MCAReasoningTests/CancellableToolProcessTests.swift",
+          "Tests/MCAReasoningTests/ScreenContentCollectorTests.swift",
+          "Tests/MCAReasoningTests/ActionAuthorizationTests.swift",
+          "Tests/MCASensingTests/PrivacyFilterTests.swift",
+          "Tests/mcaTests/ApprovalExecutionIntegrationTests.swift",
+          "Tests/MCAReasoningTests/RouterAndAgentTests.swift",
+          "Tests/MCAReasoningTests/NumericToolArgumentsTests.swift",
+          "Tests/MCAReasoningTests/NumericJSONBoundaryTests.swift",
+          "Tests/MCAReasoningTests/NegativeResultLimitTests.swift",
+          "Tests/MCAReasoningTests/UnverifiedAutonomousResultTests.swift",
+          "Tests/mcaTests/CopilotRequestScopeTests.swift",
+          "Tests/MCASensingTests/DragDispatchBoundaryTests.swift",
+          "Tests/MCASensingTests/DragTaskCancellationTests.swift"
+        ],
+        "test_passed": true,
+        "acceptance_complete": false,
+        "last_verified_at": "2026-10-03T08:13:09.504127+00:00",
+        "remaining": "Bounded source/fixtures and own UI exact file/Reject/Stop verified. Actual browser/meeting useful outputs and full native120s deadlines open; eval NO CHANGE does not meet both-score-improvement rule."
+      }
+    }
+  },
+  "artifacts": {
+    "spec": "docs/features/typesafe-computer-use/SPEC.md",
+    "spec_version": "1.1-approved-requirements",
+    "screens": [
+      "docs/wireframes/typesafe-computer-use-wireframe.md"
+    ],
+    "implementation_audit": "docs/features/typesafe-computer-use/IMPLEMENTATION_AUDIT.md",
+    "final_review": "docs/features/typesafe-computer-use/FINAL_REVIEW.md",
+    "index": "docs/features/typesafe-computer-use/index.md",
+    "live_verification": "docs/features/typesafe-computer-use/LIVE_VERIFICATION.md"
+  },
+  "references": {
+    "related_specs": [
+      "docs/features/browser-automation/SPEC.md"
+    ],
+    "related_code": {
+      "components": [
+        "Sources/mca/Copilot.swift",
+        "Sources/mca/ScreenWatcher.swift",
+        "Sources/MCAReasoning/Tools.swift",
+        "Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift",
+        "Sources/MCAPresentation/MessageBubble.swift"
+      ]
+    }
+  },
+  "execution": {
+    "worktree": {
+      "branch": "feature/screen-agent-refresh",
+      "worktree_path": ".worktrees/feature/screen-agent-refresh",
+      "plan_path": ".tmp/worktree-feature__screen-agent-refresh/PLAN.md",
+      "status": "verification_in_progress",
+      "last_updated": "2026-10-04T08:34:00Z",
+      "handoff": "Current main 5f23e868 refreshed candidate. Latest Scripts/gate.sh passes G1/G2/guards with 1272 tests, 2 skips, 0 failures after isolating timeout callbacks on a dedicated queue; earlier full-run timing failures remain recorded. Eval root-class change was REVERTed (train-only gain); accidental partial heldout exposure compromised this session. Manual pw-agent X scan found explicit >5K counts but production MCA output remains unverified. Meeting material, Keychain outcome, VoiceOver/Tab/native matrix, current diff trust, and merge remain incomplete."
+    }
+  },
+  "ui_approval": {
+    "status": "approved",
+    "wireframe_path": "docs/wireframes/typesafe-computer-use-wireframe.md",
+    "work_type": "MODIFY_FEATURE",
+    "revision_count": 0,
+    "revisions": [],
+    "approved_at": "2026-10-01T04:09:45.992Z",
+    "user_verdict": "承認"
+  },
+  "completion_contract": {
+    "verdict": "not_verified",
+    "requirements": [
+      "FR-CU-001",
+      "FR-CU-002",
+      "FR-CU-003",
+      "FR-CU-004",
+      "FR-CU-005",
+      "FR-CU-006",
+      "FR-CU-007"
+    ]
+  },
+  "evidence": {
+    "base_sha": "e9b9d7f",
+    "ownership_query": {
+      "query": "screen autonomous computer use meeting approval Firefox scroll",
+      "candidate_count": 0,
+      "placement": "EXTEND_EXISTING based on current source and existing SPECs",
+      "missing_legacy_artifacts": [
+        "domain-map.json",
+        "index.md",
+        "CONTEXT.json",
+        "CLAUDE.md"
+      ]
+    },
+    "baseline_gate": {
+      "status": "passed",
+      "command": "Scripts/gate.sh --force",
+      "completed_at": "2026-09-30T21:45:36.646Z",
+      "stages": [
+        "G1 build",
+        "G2 trust",
+        "G2 test",
+        "G2 guards"
+      ],
+      "swift_summary": "✔ Test run with 994 tests in 93 suites passed after 5.475 seconds.",
+      "first_attempt": {
+        "status": "failed",
+        "test": "testCancellationTokenAsyncSleepInterruption",
+        "observed_ms": 459.807,
+        "limit_ms": 400
+      },
+      "isolated_recheck": {
+        "command": "swift test --filter testCancellationTokenAsyncSleepInterruption",
+        "tests": 1,
+        "status": "passed"
+      },
+      "limitation": "Pre-implementation historical baseline only; it does not verify this changed tree or current restricted environment."
+    },
+    "review": {
+      "spec_deck": ".tmp/review-deck/screen-agent-approval-loop/spec/index.html",
+      "ui_deck": ".tmp/review-deck/screen-agent-approval-loop/ui/index.html",
+      "requirements_parsed": 7,
+      "acceptance_parsed": 7,
+      "text_checks": "passed",
+      "visual_check": "unverified: pw-agent attach failed; could not focus test tab",
+      "cleanup": "close-test called with same session; reported no tracked test tab and browser not attached",
+      "reported_test_tab": "9BC7D153",
+      "glossary_check": "generator skipped plain-language lexicon check because data/registry/glossary.json is absent"
+    },
+    "collection_probe": {
+      "at": "2026-09-30T21:52:43.188Z",
+      "source": "Sources/MCACore/ScreenIntent.swift",
+      "diagnostic": ".tmp/screen-agent-review/probes/main.swift",
+      "output": "false\tFirefoxのx.comでビューが5K以上のデータをスクロールしながら探して\ntrue\tFirefox の X でビューが5K以上のTweetをまとめて教えて。スクロールしながら収集して\nfalse\tFind posts with at least 5K views while scrolling in Firefox\nsecond viewport after line dedup: [\"@author_b\", \"Second post\"]\nsecond post retains observed view count: false\n",
+      "limits": "Intent function is production source; line dedup is a synthetic algorithm reproduction. No live screen input, model request or feature completion proved."
+    },
+    "dispatch_audit": {
+      "at": "2026-09-30T21:52:43.188Z",
+      "path": "docs/features/typesafe-computer-use/IMPLEMENTATION_AUDIT.md",
+      "findings": [
+        "MCP built-in/extra tools bypass ToolRegistry",
+        "CLI single-step bypasses coordinator",
+        "TypeSafeActTool directly dispatches generated decisions",
+        "Browser self-heal catches action errors and performs a new action",
+        "Collector drops repeated view-count lines across posts"
+      ]
+    },
+    "blocked_audit": {
+      "at": "2026-10-03T02:26:31.622559+00:00",
+      "condition": "Additional external AX native acceptance made meaningful progress; actual meeting absent and Chrome attachment environment-change pending",
+      "consecutive_goal_turns": 0,
+      "previous_turn_classification": "progress",
+      "current_verification": "Shared-token cancellation four-boundary fix and isolated viewport regression GREEN345/16/.168s. Latest standard gate FAIL1086/118/3.281s with three process/token timing issues; changed regression cases passed. Unchanged timing isolation5/2/.381s PASS is not global PASS; scheduling root cause remains unproven. All7FR accepted0/No-Go.",
+      "independent_work": "Existing source fixes, reviewed strict fixture, capture diagnosis and scoped keyboard verification are complete. Repeating these would not verify meeting artifact or actual Chrome/X posts. No credentials/global settings changed or browser retry attempted.",
+      "remaining_requirements": "All FR-CU-001 through FR-CU-007 including actual standing-objective meeting artifact, Chrome/X>=5K scrolling/output and remaining full-route/race/accessibility/deadline verification",
+      "not_complete": true,
+      "prior_turn_classification": "progress: fresh Tab diagnosis and18 current-source keyboard checks completed",
+      "goal_status": "last API status blocked; user-directed work resumed, goal API has no agent resume action",
+      "user_requested_work_resumed": true,
+      "current_turn_classification": "progress: shared-token cancellation and display-dependent coordinate fixture RED/GREEN; current standard gate FAIL",
+      "last_goal_api_status": "blocked"
+    },
+    "readiness": {
+      "at": "2026-10-01T04:09:45.992Z",
+      "verdict": "conditional_go",
+      "contracts": "Seven requirements, BDD acceptance, exception flows, source paths, layer order and UI states present; approval and cancellation are one-operation scoped.",
+      "warnings": [
+        "Legacy native Swift SPEC differs from generic web template; use actual Swift value models and actor boundaries",
+        "Live model/permissions and rendered UI remain to be verified"
+      ],
+      "test_strategy": "TDD through tool invocation, coordinator dispatch and HUDState approval lifecycle, with recorded actuators and disposable files; no real user mutations"
+    },
+    "implementation_checkpoint": {
+      "at": "2026-10-01T05:51:44.760911+00:00",
+      "base_sha": "e9b9d7f",
+      "branch": "feature/screen-agent-approval-loop",
+      "targeted_tests": {
+        "status": "passed",
+        "count": 91,
+        "suites": 19,
+        "duration_seconds": 1.159,
+        "log": ".tmp/screen-agent-review/feature-tests.log",
+        "environment": "Worktree module cache; SwiftPM --disable-sandbox --manifest-cache local; SWIFT_BACKTRACE=enable=no (diagnostics only; assertions unchanged)"
+      },
+      "gate": {
+        "status": "incomplete",
+        "command": "make q.check -> unmodified Scripts/gate.sh (no cache, worktree cache/SwiftPM shim, SWIFT_BACKTRACE=enable=no)",
+        "build": "passed (15s)",
+        "trust_tests": "passed (13s)",
+        "full_swift_test": "did not finish; own execution interrupted with exit 130",
+        "trust_guards": "not reached",
+        "g3": "not requested",
+        "log": ".tmp/screen-agent-review/gate-final.log"
+      },
+      "keychain_probe": {
+        "command": "swift test --skip-build --filter SecretStoreTests (same environment)",
+        "status": "failed",
+        "tests": 9,
+        "issues": 9,
+        "error": "Keychain -50",
+        "log": ".tmp/screen-agent-review/keychain-tests.log"
+      },
+      "independent_review": {
+        "reviewers": [
+          "final_independent_b",
+          "final_independent_c"
+        ],
+        "source_verdict": "PASS after fixes; not a diff-bound trust shipping approval",
+        "completion_verdict": "FAIL / acceptance unverified"
+      },
+      "native_preflight": {
+        "accessibility": false,
+        "screen_capture": false,
+        "running_relevant_apps": [],
+        "scope": "CLI process only; installed app permissions/model access unverified",
+        "log": ".tmp/screen-agent-review/native-preflight.json"
+      },
+      "shipping": "No commit, PR, push, merge, trust approval or cleanup. Worktree retained."
+    },
+    "continued_verification": {
+      "at": "2026-10-01T06:46:10.569993+00:00",
+      "changes": [
+        "ToolRegistry checks task cancellation and terminal authorization before dispatch",
+        "Real chat approval -> guarded file integration; nonsimulation coordinator zero-dispatch coverage",
+        "Watch storage, context formatter, current-screen live/fallback and Copilot screen metadata use existing PrivacyFilter"
+      ],
+      "targeted_tests": {
+        "status": "passed",
+        "count": 102,
+        "suites": 23,
+        "duration_seconds": 0.383,
+        "log": ".tmp/screen-agent-review/feature-tests-final-continued.log",
+        "privacy_cases": "Actual CurrentScreenTool, legacy SQLite and live reader, two model rounds including toolOutput"
+      },
+      "red_green": {
+        "registry_red": "2 failed tests / 4 issues; dispatched after cancellation or denial",
+        "privacy_history_red": "1 failed test / 2 issues",
+        "privacy_tool_red": "2 parameter cases / 2 issues",
+        "green": "all 102 related tests pass"
+      },
+      "gate": {
+        "command": "make q.check -> unmodified Scripts/gate.sh",
+        "timed_out": true,
+        "process_exit": -2,
+        "timeout_seconds": 60,
+        "log": ".tmp/screen-agent-review/gate-final-continued.log",
+        "status": "incomplete",
+        "build": "passed (31s)",
+        "trust_tests": "passed (9s)",
+        "full_swift_test": "No completion; owned process group interrupted at 60s",
+        "guards": "not reached",
+        "g3": "not requested"
+      },
+      "native_comparison": {
+        "method": "Same swiftpm-testing-helper filters/framework path; separate prebuilt main and current worktree test bundles",
+        "main": "49 tests / 7 suites / 16 issues",
+        "worktree": "49 tests / 7 suites / 16 issues",
+        "issues": {
+          "Keychain -50": 9,
+          "FoundationModels GenerationError -1": 1,
+          "CVPixelBuffer -6662": 1,
+          "NLEmbedding unavailable": 1,
+          "AppMenu missing bindings": 4
+        },
+        "logs": [
+          ".tmp/screen-agent-review/native-comparison-main.log",
+          ".tmp/screen-agent-review/native-comparison-worktree.log"
+        ],
+        "statusbar": "Both reach existing menuBarClickThroughState but have no completion summary; exit 0 is not counted as PASS",
+        "provenance_limit": "Main bundle prebuilt at 2026-10-01T03:33:55+09:00; no fresh main build. Relevant main source/test paths are unchanged. This comparison does not prove the entire base suite passes or identify the internal full-suite wait."
+      },
+      "independent_review": {
+        "reviewer": "final_independent_b",
+        "source_verdict": "PASS after known text leak fixes",
+        "shipping_verdict": "No-Go: full gate/native acceptance unmet",
+        "diff_bound_trust_approval": false
+      },
+      "shipping": "No commit, PR, push or merge; worktree retained"
+    },
+    "scoped_verification": {
+      "at": "2026-10-01T07:18:35.340809+00:00",
+      "changes": [
+        "AccessibilityInspector resolves the pinned window by PID/WindowID and unique title/frame on both CG and AX sides; no foreground/first-window fallback",
+        "Default inspector OCR fallback captures the selected window and verifies PID/bundle/frame; initial native observation runs inside authorization scope",
+        "After exact Desktop approval, raise and activate the selected AX window instead of the last foreign application; cancellation/error refuses dispatch",
+        "Coordinate operation allowlist permits focus restoration while preserving window/candidates; keyboard/unknown operations retain focused ID/role/bounds checks"
+      ],
+      "targeted_tests": {
+        "status": "passed",
+        "count": 121,
+        "suites": 25,
+        "duration_seconds": 0.381,
+        "log": ".tmp/screen-agent-review/feature-tests-focus-final.log"
+      },
+      "red_green": {
+        "observation_red": "Invalid selected scope previously returned a foreground snapshot: one test / two parameter cases failed",
+        "focus_red": "Existing observation comparison rejected focus restoration: one test / ten coordinate parameter cases failed",
+        "green": "121 related tests pass; window/candidate changes and keyboard ID/role/bounds changes remain rejected"
+      },
+      "gate": {
+        "command": "make q.check -> unmodified Scripts/gate.sh",
+        "timed_out": true,
+        "process_exit": -2,
+        "timeout_seconds": 60,
+        "log": ".tmp/screen-agent-review/gate-focus-final.log",
+        "status": "incomplete",
+        "build": "passed (15s)",
+        "trust_tests": "passed (4s)",
+        "full_swift_test": "No completion; owned process group interrupted at 60s; wrapper exit 124",
+        "guards": "not reached",
+        "g3": "not requested"
+      },
+      "independent_review": {
+        "reviewer": "final_independent_c",
+        "source_verdict": "PASS after scoped observation and focus revalidation fix",
+        "limitation": "Read-only source review; native success/full gate unverified; no diff-bound trust approval"
+      },
+      "shipping": "No commit, PR, push or merge; worktree retained"
+    },
+    "native_verification": {
+      "at": "2026-10-02T07:42:31.337184+00:00",
+      "head_sha": "38368cba45930cce80094e6715f1eb70403f6664",
+      "status": "partial_native_verified",
+      "base_sync": "feature branch ff-only main; only 4 upstream harness files; no overlap with feature changes",
+      "changes": [
+        "Default capture 1px/logical point from native OCR half-resolution comparison; explicit thumbnails unchanged",
+        "Toolbar two rows keep Explain/Snip/Watch captions readable at560pt; 3 locale rendered screenshots",
+        "Fresh pinned capture identity and exclusion before photographing/attachment; focused missing-window never falls back to other display",
+        "TaskLocal privacy configuration through native/browser tools; fresh title and post-read navigation revalidation before export/cache",
+        "Background scroll validates finite display-contained coordinates and living PID before posting"
+      ],
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "result": "PASS G1/G2 build/trust/tests/guards",
+        "log": "gate-chat-observation-final.log",
+        "evidence_dir": "gate-chat-observation-final-evidence",
+        "tests": 1078,
+        "suites": 115,
+        "g3": "not requested"
+      },
+      "regression_tests": {
+        "passed": 40,
+        "suites": 9,
+        "duration_seconds": 0.051,
+        "log": ".tmp/screen-agent-review/privacy-browser-scroll-final.log",
+        "red_logs": [
+          ".tmp/screen-agent-review/screenshot-privacy-red.log",
+          ".tmp/screen-agent-review/tool-privacy-red.log",
+          ".tmp/screen-agent-review/browser-privacy-race-red.log",
+          ".tmp/screen-agent-review/background-scroll-red.log"
+        ]
+      },
+      "native_approval": {
+        "passed": true,
+        "locales": [
+          "en",
+          "ja",
+          "ko"
+        ],
+        "scope": "Actual ChatView native capture/OCR/own-window NSEvents -> HUDState -> registry -> file; no scripted direct approval resolution",
+        "guards": [
+          "original bytes until approval",
+          "only exact approved bytes written",
+          "reject/Stop preserve notes",
+          "old and late UUID refused"
+        ],
+        "capture_privacy": [
+          "fresh excluded title refused",
+          "forged PID refused",
+          "missing focused target refuses unrelated display fallback",
+          "native display filter reported49 excluded other-app windows"
+        ],
+        "display_limit": "Excluded-window count only; no semantic pixel comparison",
+        "ax_buttons_exposed": false,
+        "keyboard_voiceover_verified": false,
+        "artifacts": ".tmp/screen-agent-review/native-ui/result.json",
+        "screenshots": [
+          ".tmp/screen-agent-review/native-ui/en-pending.png",
+          ".tmp/screen-agent-review/native-ui/ja-pending.png",
+          ".tmp/screen-agent-review/native-ui/ko-pending.png",
+          ".tmp/screen-agent-review/native-ui/en-stopped.png"
+        ],
+        "profile": "560x672 pixels; capture77.7–150.5ms, capture+OCR257.1–656.6ms, 9 button observations; no target Firefox perf proof"
+      },
+      "full_copilot_startup": {
+        "accessibility": true,
+        "screen_capture_preflight": true,
+        "providers_present": [
+          "gemini",
+          "openai-compatible"
+        ],
+        "scope": "Actual Copilot composition; all windows excluded, isolated DB/preferences, audio/proactive OFF; provider availability only, no successful model answer implied",
+        "app": ".tmp/screen-agent-review/live-validation/ScreenAgentValidation.app",
+        "artifacts": [
+          ".tmp/screen-agent-review/live-validation/preflight.json",
+          ".tmp/screen-agent-review/live-validation/startup.txt"
+        ]
+      },
+      "main_comparison": {
+        "head": "38368cb",
+        "fresh_build": true,
+        "tests": 994,
+        "suites": 93,
+        "issues": 3,
+        "duration_seconds": 8.475,
+        "log": ".tmp/screen-agent-review/base-fresh-tests.log",
+        "failures": [
+          "5000 diff61.747ms vs50ms",
+          "oldOfflineE2ET2.7 candidate1000 .246944s vs.1s",
+          "CancellationToken1127.34ms vs400ms"
+        ],
+        "limits": "Shared timing assertions reproduced on fresh main. They were not relaxed/skipped; latest changed tree full gate passed."
+      },
+      "prior_hang_diagnostic": {
+        "sample": ".tmp/screen-agent-review/unrestricted-full-helper.sample.txt",
+        "observation": "Live owned helper had SkyLight/TCC XPC wait and dispatch_once waiter; no exclusive NSStatusBar root cause claimed",
+        "cleanup": ".tmp/screen-agent-review/diagnostic-owned-cleanup.json",
+        "terminal_user_action_needed": false
+      },
+      "browser": {
+        "session_id": "scr26r02-root-x-feed",
+        "attach_error": "CDP filter proxy failed to start",
+        "test_tab_closed": "611BE1F6",
+        "retry": false,
+        "exception_question": "Latest user 承認。次へ進めて applied to the pending dedicated Firefox-tab exception",
+        "existing_tabs_driven": false,
+        "firefox_running": true,
+        "firefox_result": ".tmp/screen-agent-review/live-validation/firefox-result.json",
+        "firefox_passed": false,
+        "failure": "Own newly-created AX/CG window identity disappeared during navigation; no viewport/scroll acceptance obtained",
+        "cleanup": ".tmp/screen-agent-review/live-validation/firefox-cleanup.json",
+        "cleanup_limit": "The owned AX window was absent and no unique new CG match existed. No unknown or pre-existing window was closed.",
+        "next_input": "Requested titles of dedicated Firefox/X and Zoom/Meet shared-content windows; pending missing target information, not renewed permission.",
+        "chrome_runtime": {
+          "user_direction": "Chromeならなんでもいい",
+          "session_id": "scrc1002-root-x",
+          "test_tab": "F3E80093",
+          "test_tab_closed": true,
+          "failure": "ModuleNotFoundError: No module named websockets in Python3.14.8",
+          "proxy_log": ".tmp/screen-agent-review/chrome-runtime/proxy-failure.log",
+          "repair": "Task-local ignored venv with websockets17.1; global pw-agent and project dependencies unchanged",
+          "offline_result": ".tmp/screen-agent-review/chrome-runtime/proxy-offline-result.json",
+          "offline_passed": true,
+          "scope": "Real installed pw-agent proxy against a local synthetic WebSocket upstream; no live Chrome attach retry",
+          "retry_authorization": "Pending explicit one-retry exception required by the user-provided AGENTS.md attach failure rule"
+        }
+      },
+      "independent_review": {
+        "reviewer": "final_independent_c",
+        "source": "PASS latest tabs + workspace source review by final_independent_c; no concrete remaining HIGH found",
+        "diff_bound_trust": false,
+        "evidence_scope": "Read-only source and saved logs/native images; reviewer did not run live browser/meeting"
+      },
+      "shipping": "No feature commit/PR/push/merge. Existing feature branch only fast-forwarded to current main; worktree retained.",
+      "tabs_workspace_regression": {
+        "result": "PASS 22 tests /4 suites /0.004s",
+        "red": [
+          ".tmp/screen-agent-review/tabs-boundary-red.log: 6 tests, 8 issues",
+          ".tmp/screen-agent-review/workspace-scope-red.log: 1 test, 2 cases, 4 issues"
+        ],
+        "green": ".tmp/screen-agent-review/workspace-scope-green.log",
+        "coverage": [
+          "pinned switch zero dispatch",
+          "rejected/cancelled switch zero dispatch",
+          "Task cancellation after approval zero dispatch",
+          "changed destination zero dispatch",
+          "approved unchanged switch",
+          "excluded metadata removed",
+          "pinned list active window only",
+          "pinned AX navigation/new tab zero dispatch"
+        ]
+      },
+      "full_copilot_runtime": {
+        "passed": true,
+        "cases": [
+          "approve: exact bytes written only after native click",
+          "reject: file unchanged",
+          "stop: file unchanged and cancelled card"
+        ],
+        "result": ".tmp/screen-agent-review/live-validation/runtime-result.json",
+        "scope": "Actual Copilot.ask -> configured real model -> ToolRegistry -> actual ChatWindow native NSEvent button -> guarded disposable file; synthetic supplied decision, no real meeting proved. No scripted model or direct approval resolution.",
+        "prior_attempts": [
+          "model asked for approval in prose without a tool call",
+          "tool call contents differed from exact requested bytes; no approval clicked"
+        ],
+        "successful_input": "Exact JSON arguments plus instruction to call the tool and use its built-in approval.",
+        "provenance": "Verified before inspectorProvider return type generalized to its existing protocol; default production inspector and approval logic unchanged."
+      },
+      "schema_test_determinism": {
+        "red": ".tmp/screen-agent-review/gate-status-sync-final.log",
+        "failure": "Schema/summary test accidentally used live Search candidates and required action approval",
+        "fix": "Existing inspectorProvider consumes existing UIStateProviding protocol; mock empty snapshot removes all live AX metadata and action dependencies. Exact Action:none and Confidence0.00 assertions plus actual click decision denial regression. Default production inspector unchanged.",
+        "target_result": "PASS 19 ComputerTools tests /1 suite /0.078s",
+        "target_log": ".tmp/screen-agent-review/typesafe-schema-fixture-final.log",
+        "full_gate": "PASS 1061 /108; no skip/permission/threshold change",
+        "independent_review": "PASS final_independent_c, no test criteria lowering or remaining concrete HIGH"
+      },
+      "native_keyboard": {
+        "at": "2026-10-02T04:46:10.972925+00:00",
+        "passed": true,
+        "locales": [
+          "en",
+          "ja",
+          "ko"
+        ],
+        "shortcuts": {
+          "approve": "Cmd+Shift+A",
+          "reject": "Cmd+Shift+R",
+          "stop": "Esc"
+        },
+        "scope": "Actual ChatView -> own-window NSApplication posted events -> HUDState -> ToolRegistry -> guarded disposable files; mixed keyboard then mouse",
+        "checks": [
+          "Return does not approve",
+          "normal approve writes exact bytes",
+          "Reject/Stop leave bytes unchanged",
+          "repeated approve/reject key cannot resolve next operation",
+          "operation UUIDs remain distinct",
+          "old/late callbacks ignored by mouse cases"
+        ],
+        "artifacts": ".tmp/screen-agent-review/native-keyboard/both/result.json",
+        "source_instrumentation_removed": true,
+        "voiceover_verified": false,
+        "tab_navigation_verified": false,
+        "readiness_limit": "Own-window capture before explicit Reject confirms rendered pending controls. Earlier mixed run without this capture did not resolve Reject within unchanged 2s; single cause not established.",
+        "failure_evidence": [
+          ".tmp/screen-agent-review/native-keyboard/keyboard-shortcut-red-result.json",
+          ".tmp/screen-agent-review/native-keyboard/held-key-red-result.json",
+          ".tmp/screen-agent-review/native-keyboard/mixed-reject-delivery-failure.json"
+        ]
+      },
+      "native_scroll_layout": {
+        "at": "2026-10-02T04:46:10.972925+00:00",
+        "status": "native regression PASS",
+        "red": "Fresh mouse-only fixture with existing animated message-count scroll and same output path timed out at60s, including with only new keyboard code removed",
+        "root_cause_evidence": "Owned helper sample in SwiftUI GraphHost.flushTransactions/LazyStack layout after first approval. Changing only message-count scroll from animated to unanimated completed all3locales/9mousecontrols.",
+        "fix": "Both count/text scroll paths follow the same bottom anchor without animation; existing auto-follow triggers preserved",
+        "baseline": ".tmp/screen-agent-review/native-keyboard/mouse-baseline-result.json",
+        "sample": ".tmp/screen-agent-review/native-keyboard/mouse-wait-sample.txt",
+        "green": ".tmp/screen-agent-review/native-keyboard/mouse/result.json",
+        "mixed_green": ".tmp/screen-agent-review/native-keyboard/both/result.json",
+        "limit": "Does not prove all OS/window geometry or input timing combinations"
+      },
+      "native_focus": {
+        "at": "2026-10-02T05:15:07.736104+00:00",
+        "passed": true,
+        "meaningful_cases": 11,
+        "separate_target_process": true,
+        "ownership": "Runner launched target and controller; fresh run_id + target PID + controller PID correlate evidence; own windows only; both subprocesses exited normally",
+        "scope": "Actual ChatView mouse approval -> HUDState -> scoped ActionAuthorization/ToolRegistry ComputerActionTool -> AX snapshot/focus restoration -> EventSynthesizer CG input to separate owned native AppKit app with two windows. Presenter copies Copilot focus procedure; actual Copilot Desktop operation not exercised.",
+        "checks": [
+          "Only selected click count increments once after approval",
+          "Typed native field equals exact approved Unicode string; other fields unchanged",
+          "Focused-field mutation acknowledged after successful focus restore and specifically staleTarget refusal",
+          "Native Reject/Stop leave fields/counts unchanged",
+          "Changed label/title specifically staleTarget with restored focus; missing/ambiguous target specifically selectedWindowUnavailable and denied; each fields/counts unchanged",
+          "Same title/frame duplicate and hidden selected window refuse input",
+          "Different focused same-app window specifically raises targetChanged",
+          "Already cancelled focus request keeps alternate AX focused window and fields unchanged"
+        ],
+        "artifacts": ".tmp/screen-agent-review/native-focus/result.json",
+        "source_hashes": ".tmp/screen-agent-review/native-focus/final-source.json",
+        "initial_failures": [
+          ".tmp/screen-agent-review/native-focus/focus-restore-red-result.json",
+          ".tmp/screen-agent-review/native-focus/focus-raise-activation-diagnostic.log"
+        ],
+        "diagnostic_limit": "Initial runs had AXRaise success/activation false. Later diagnostic run also passed without yield; single dynamic failure cause not proven. Final documented yield->activate flow passes in this native fixture, not all activation contexts.",
+        "fixture_failure": ".tmp/screen-agent-review/native-focus/ocr-ambiguity-result.json",
+        "fixture_correction": "Fixture payload included word Reject, creating two rendered OCR matches; neutral payload now preserves unique-label assertion. Field refusal assertion strengthened to require actual mutation acknowledgement and exact staleTarget error. Label/title now require exact staleTarget with no focus failure; duplicate/hide require typed selectedWindowUnavailable diagnosis and exact denied result. All strengthened branches passed in a fresh final run.",
+        "source_instrumentation_removed": true,
+        "logs_empty": true,
+        "source_change": "Yield activation to validated selected app, check cancellation again, preserve app.activate result guard and downstream foreground/window validation",
+        "reference": "https://developer.apple.com/documentation/appkit/passing-control-from-one-app-to-another-with-cooperative-activation",
+        "remaining": [
+          "Actual Copilot/watch/CLI/MCP desktop dispatch composition",
+          "All app/OS/input timing and activation/cancellation races",
+          "VoiceOver/Tab, real Chrome/X/meeting, full end-to-end budgets"
+        ]
+      },
+      "offline_action_constraints": {
+        "at": "2026-10-02T05:59:44.368972+00:00",
+        "status": "public API regression PASS",
+        "tests": 4,
+        "case_executions": 12,
+        "negative_goal_cases": 9,
+        "scope": "decideNextAction -> explicitly unavailable TypeSafeClient -> nonempty-candidate offline fallback; common explicit EN/JA/KO prohibition patterns return none/conf0/notcompleted and require System2; scoring and typing selector require isActionable",
+        "red": ".tmp/screen-agent-review/offline-constraint-red.log",
+        "review_red": ".tmp/screen-agent-review/offline-constraint-review-red.log",
+        "green": ".tmp/screen-agent-review/offline-constraint-final.log",
+        "limits": [
+          "Not complete NLP prohibition coverage; labels containing these markers conservatively escalate",
+          "At that prior checkpoint empty candidates plus2 escalations could mark completion; superseded by offline_completion_evidence public regression and fix.",
+          "Actual /act full goal/outcome acceptance remains incomplete"
+        ],
+        "independent_review": "final_independent_c source PASS after 3 additional common prohibition forms; no remaining new HIGH/MEDIUM"
+      },
+      "copilot_native_answer": {
+        "at": "2026-10-02T05:59:44.368972+00:00",
+        "passed": true,
+        "meaningful_cases": 3,
+        "run_id": "87635f5c-1ca9-445d-9702-0fb164a84339",
+        "controller_pid": 62277,
+        "target_pid": 62268,
+        "scope": "Actual Copilot normal-chat ask -> configured real-model tool calling -> original production registry/ClickElementTool -> actual ChatWindow native mouse Approve/Reject/Stop -> own separate-process native target; actual presenter closes ChatWindow and restores selected focus",
+        "checks": [
+          "Target run UUID/executable/PID/window ID ownership checked; HUD pinned before startup suppresses ambient capture",
+          "Effective approval coordinate is inside uniquely observed owned button; counts/fields unchanged before approval",
+          "Approve increments selected count0->1 only; alternate count and all fields unchanged",
+          "Model final answer reports physically verified Selected click count1",
+          "Reject/Stop preserve all counts/fields and resolve exact UUID status within unchanged2s mouse bound"
+        ],
+        "artifacts": ".tmp/screen-agent-review/copilot-native-answer/result.json",
+        "source_hashes": ".tmp/screen-agent-review/copilot-native-answer/final-source.json",
+        "production_files_fingerprinted": 9,
+        "diagnostic_wrapper_used_in_final_run": false,
+        "logs_empty": true,
+        "both_owned_processes_exit": 0,
+        "failure_evidence": [
+          ".tmp/screen-agent-review/copilot-native/id-only-validation-failure.json",
+          ".tmp/screen-agent-review/copilot-native/scope-validation-failure.json",
+          ".tmp/screen-agent-review/copilot-native/approve-request-diagnostic.json",
+          ".tmp/screen-agent-review/copilot-native-answer/first-result.json",
+          ".tmp/screen-agent-review/copilot-native-answer/second-approve-nondispatch-result.json",
+          ".tmp/screen-agent-review/copilot-native-answer/additional-operation-result.json"
+        ],
+        "diagnostic_evidence": ".tmp/screen-agent-review/copilot-native-answer/recorded-tool-diagnostic/",
+        "limits": [
+          "Fixture goal supplied expectedCount. Physical-count/final-answer agreement proved, but model itself rereading the post-click counter was not traced and is not established.",
+          "Earlier approved click did not increment count; later failure proposed additional AppleScript while count0; unapproved operation was not executed; single cause unproven",
+          "One diagnostic wrapper delegated to real ClickElementTool and passed, without reproducing failure; final run disables registration and uses original registry",
+          "/act decision fallback failure is separate from conversational real-model success",
+          "No Chrome/X, meeting/watch artifact, complete route/race/VoiceOver/Tab/deadline acceptance proved"
+        ],
+        "independent_review": "final_independent_c latest source/evidence PASS; 4tests/12cases, gate1065/109, fresh UUID/9hashes and original registry checked; model reobservation and retained failure limits explicit; no commit-bound trust approval"
+      },
+      "gate_timing_retry": {
+        "failed": ".tmp/screen-agent-review/gate-copilot-native.log",
+        "issue": "Existing cancellation elapsed assertion measured675.883ms vs unchanged400ms limit in full1064 suite; caughtCancelled assertion passed",
+        "isolated": ".tmp/screen-agent-review/cancellation-timing-isolated.log",
+        "isolated_test_count": 1,
+        "isolated_seconds": 0.056,
+        "unchanged_full_retry": ".tmp/screen-agent-review/gate-copilot-native-final.log",
+        "later_complete_gate": ".tmp/screen-agent-review/gate-copilot-complete-regressions.log",
+        "limits": "Timing single root cause not proven; no assertion, skip or parallelism changes",
+        "reobserve_status_sync_failure": {
+          "log": ".tmp/screen-agent-review/gate-copilot-reobserve-final-status-sync.log",
+          "full_evidence": ".tmp/screen-agent-review/gate-copilot-reobserve-status-failure-evidence",
+          "test": "SafetyGuardrailsAdversarialTests.testCancellationTokenAsyncSleepInterruption",
+          "elapsed_ms": 420.1500415802002,
+          "unchanged_limit_ms": 400,
+          "isolated_log": ".tmp/screen-agent-review/cancellation-timing-reobserve-isolated.log",
+          "isolated_tests": 1,
+          "isolated_seconds": 0.058,
+          "limits": "Cancellation behavior assertion passed; elapsed limit failed. Single timing cause not established; threshold/assertions/skips/parallelism unchanged."
+        }
+      },
+      "copilot_postclick_reobservation": {
+        "at": "2026-10-02T06:25:04.323022+00:00",
+        "passed": true,
+        "meaningful_cases": 3,
+        "run_id": "e2d6999f-5f64-4aa3-a708-e1f27bbf03b2",
+        "controller_pid": 59475,
+        "target_pid": 59385,
+        "scope": "Actual Copilot.ask/configured real model/production authorization and presenter/native ChatWindow mouse; diagnostic wrappers delegate unchanged definitions/arguments/output/errors to real ClickElementTool and InspectUIElementsTool on owned separate-process pinned native target",
+        "checks": [
+          "Receipt generated only by native target button callback, not supplied in goal; no expectedCount supplied in goal",
+          "Selected count0->1 and fresh receipt14611157; alternate count and all fields unchanged",
+          "Actual click result precedes production inspect result containing receipt; final model answer contains count1 and same receipt",
+          "Reject/Stop preserve counts/fields/receipt and exact card UUID statuses within unchanged2s native mouse bound",
+          "Owned run UUID/PID/executable/window identity checked; both owned subprocesses exited0"
+        ],
+        "artifacts": ".tmp/screen-agent-review/copilot-reobserve/result.json",
+        "tool_trace": ".tmp/screen-agent-review/copilot-reobserve/tool-trace.json",
+        "post_run_source_hashes": ".tmp/screen-agent-review/copilot-reobserve/post-run-source.json",
+        "diagnostic_wrappers_used": true,
+        "limits": [
+          "One diagnostic delegation run; wrapper-free registry postclick reobservation not established by this run",
+          "Fingerprints captured post-run, not binary/pre-run provenance; nine prior production hashes match",
+          "inspect trace has no click coordinate; hit_owner other and hit_is_selected_window false mean unavailable hit probe, not observed wrong-window inspection",
+          "Earlier approved-click nondispatch not reproduced and cause remains unknown; no production fix based on conjecture",
+          "No real Chrome/X, meeting/watch artifact, complete /act/CLI/MCP routes, races, VoiceOver/Tab or end-to-end deadline acceptance"
+        ],
+        "independent_review": "final_independent_c limited source/evidence PASS; no remaining HIGH/MEDIUM after runner failure propagation correction; diagnostic composition only, no native rerun after runner fix, no commit-bound trust approval",
+        "runner_review_fix": {
+          "issue": "Runner could exit0 on passed:false or controller timeout",
+          "fix": "Require matched UUID and passed is True/stage complete; rethrow timeout; finally owned target cleanup preserved",
+          "verification": ".tmp/screen-agent-review/copilot-reobserve/runner-boundary-check.json",
+          "cases": 3,
+          "native_rerun_after_fix": false
+        },
+        "review_artifact": ".tmp/screen-agent-review/copilot-reobserve/independent-review.md"
+      },
+      "offline_completion_evidence": {
+        "at": "2026-10-02T07:06:35.063332+00:00",
+        "status": "public regressions and independent review PASS",
+        "root_cause": "Goal tokens and unresolved retry counts were treated as observed success; coordinator accepted completed decisions and heuristic completeGoal without an outcome",
+        "changes": [
+          "Goal Done/完了 etc no longer establishes offline completion; actionable requested button remains a click",
+          "3 decision branches with absent/unmatched candidates plus failed attempts return none/conf0/notcompleted",
+          "3 heuristic planner retry exhaustion/inert-boundary branches abort with unverified outcome; early retries and structured model completion preserved"
+        ],
+        "new_tests": 7,
+        "case_executions": 17,
+        "red_logs": [
+          ".tmp/screen-agent-review/offline-completion-red.log",
+          ".tmp/screen-agent-review/offline-planner-completion-red.log"
+        ],
+        "green": ".tmp/screen-agent-review/offline-completion-all-loop-final.log",
+        "related_tests": 341,
+        "related_suites": 15,
+        "immutable_regression_evidence": [
+          ".tmp/screen-agent-review/offline-completion-regression-fingerprint.json",
+          ".tmp/screen-agent-review/offline-planner-completion-regression-fingerprint.json"
+        ],
+        "lock_cli_limit": "Swift files not recognized by installed lock CLI; unchanged RED fingerprints verified, no enforced-lock claim or policy modification",
+        "legacy_assertions": "No tests skipped/deleted. Unobserved success expectations now require failure/none/nil dispatch; observed-title positive control requires actual simulated scroll1/diff/totalsteps1. Whole initial gate old-expectations22issues retained.",
+        "independent_review": ".tmp/screen-agent-review/offline-completion-independent-review.md",
+        "source_hashes": ".tmp/screen-agent-review/offline-completion-final-source.json",
+        "limits": [
+          "Model completion control is scripted probability, not real provider acceptance",
+          "Existing structured model completion and decision stagnant-scroll/boundary branch retained; this is not proof of every completion decision",
+          "Prior native PASS records are bound to prior source snapshots; no final-source native /act success proved",
+          "All7FR in_progress, real Chrome/X/meeting/full routes/accessibility/deadlines and committed-diff trust remain open"
+        ]
+      },
+      "copilot_act_failure_diagnosis": {
+        "first_run": {
+          "run_id": "1d01a323-ef49-4863-aebd-737bf70cd853",
+          "target_pid": 48062,
+          "scope": "240s startup checkpoint unavailable; no terminal result; owned target exited0, owned controller timeout handled by runner",
+          "archive": ".tmp/screen-agent-review/copilot-act-final/first-startup-timeout"
+        },
+        "second_run": {
+          "run_id": "c656b23f-55d7-4d0f-a55a-7b1ce229609b",
+          "controller_pid": 46514,
+          "target_pid": 46507,
+          "result": ".tmp/screen-agent-review/copilot-act-final/result.json",
+          "startup_trace": ".tmp/screen-agent-review/copilot-act-final/startup-trace.json",
+          "passed": false,
+          "stage": "approve-button",
+          "observation": "Actual /act requested Desktop click on observed elem2 with point inside selected button. After native approval production synthesizer refused Input target changed; both counts0 and fields/receipt unchanged. Both owned processes exit0; hardened runner returns failure.",
+          "source_scope": "Intermediate source after decision fix but before expanded planner fix; no injected model or tool wrappers",
+          "limits": "Precise foreground/focused-window/occlusion failure check unproven; first timeout cause unproven; neither run is acceptance PASS."
+        }
+      },
+      "chat_observation_fix": {
+        "at": "2026-10-02T07:42:31.337184+00:00",
+        "status": "Scoped source/tests/current-source native Approve/Reject/Stop verified; full product No-Go",
+        "source": [
+          "Sources/MCAPresentation/ChatWindow.swift",
+          "Sources/MCAReasoning/TypeSafeDecisionEngine.swift"
+        ],
+        "root_cause": "AppKit reports Chat hidden while its animated Quartz surface still occludes the approved click. After animation suppression the click executes. Offline observation goals were grounded to unrelated numeric control matches; replan wrappers and navigation label exceptions also required intent protection.",
+        "changes": [
+          "Disable Chat window animation; keep existing150ms yield and all input guards.",
+          "Leave limited EN/JA/KO observation intent to model verification with none/confidence0/notCompleted.",
+          "Normalize planner wrappers using existing helper; allow explicitly conjugated JA/KO scroll actions, not mere observed scroll labels."
+        ],
+        "red": [
+          "chat-close-evidence/unit-red-corrected.log:1issue",
+          "chat-close-evidence/observation-intent-red.log:24issues",
+          "chat-close-evidence/replanned-observation-red.log:16issues",
+          "chat-close-evidence/navigation-label-red.log:7issues"
+        ],
+        "green": "chat-close-evidence/related-final-all-green.log:347tests/19suites",
+        "test_limit": "Initial synchronous Quartz-removal regression was inaccurate; corrected to actual150ms presenter seam and RED rerun on original source before final fix. Installed lock does not support Swift; corrected hashes unchanged after RED.",
+        "native_intermediate": [
+          {
+            "run_id": "0014aa32-b347-4eda-87f1-478089fc07d1",
+            "evidence": "copilot-act-target-probe/result.json",
+            "result": "targetChanged/count0; focused AX identity correct, Chat occluded target after foreground restored."
+          },
+          {
+            "run_id": "7d7f517e-3cdf-40bb-869a-f32f09f66ba5",
+            "evidence": "copilot-act-no-animation/result.json",
+            "result": "one approved physical click/count1/receipt2d0465bb; next Verify wrongly proposed fieldclick, harness FAIL and no second approval."
+          },
+          {
+            "run_id": "2d0e0687-f592-4949-8cec-7c1d3237759b",
+            "evidence": "copilot-act-observation/result.json",
+            "result": "Approve click/count1/receipt2a975f70, observation escalates to configured model and GoalCompleted without another input; intermediate source and one case only."
+          }
+        ],
+        "limits": [
+          "Read-only probe changes timing; no unmonitored race guarantee.",
+          "150ms await is a minimum yield, not strict deadline guarantee.",
+          "No complete natural-language coverage claim.",
+          "Real Chrome/X, meeting artifacts, full routes/races/VoiceOver/Tab/deadlines and committed-diff trust remain open."
+        ],
+        "final_native": {
+          "source_hashes": "copilot-act-final-guarded/pre-run-source.json and copilot-act-stop-current/pre-run-source.json all match latest tracked source",
+          "approve_reject": {
+            "run_id": "b6ded815-a22b-40db-8bb3-5475b310f4a5",
+            "evidence": "copilot-act-final-guarded/result.json",
+            "case_results": "Approve: one real click/count0->1/receipt32c7d44a, System2 observation completion without extra action. Reject: count/fields unchanged, rejected/no dispatch.",
+            "aggregate_result": "FAIL: subsequent Stop OCR whole-word matcher ambiguously matched text. Original failure retained, not relabelled PASS."
+          },
+          "stop": {
+            "run_id": "61539300-524e-468f-92ee-eb1feabd4ea9",
+            "evidence": "copilot-act-stop-current/result.json",
+            "result": "PASS fresh terminal matchedUUID/complete/passedtrue/runnerexit0; exact standalone OCR toolbarStop native mouse -> cancelled/TaskStopped/count0/fieldsunchanged.",
+            "fixture_change": "Only owned diagnostic matcher narrowed to standalone Stop text. No direct resolution, permission changes or product changes."
+          },
+          "cleanup": "Both runs controller and own target exited0, no external process/tab termination."
+        },
+        "independent_review": "chat-close-evidence/independent-review.md: scoped PASS; wrapper/navigation-label MEDIUM findings resolved and regressions unchanged",
+        "gate": {
+          "command": "Scripts/gate.sh",
+          "result": "PASS G1/G2 build/trust/tests/guards",
+          "log": "gate-chat-observation-final.log",
+          "evidence_dir": "gate-chat-observation-final-evidence",
+          "tests": 1078,
+          "suites": 115,
+          "g3": "not requested"
+        }
+      },
+      "standing_objective_diagnosis": {
+        "at": "2026-10-02T08:14:20.584229+00:00",
+        "status": "model-to-artifact verification blocked; owned capture-only diagnostic completed",
+        "production_changed": false,
+        "attempt": {
+          "run_id": "334cdd25-3896-4b57-9cfd-d9a2b6de8a3c",
+          "controller_pid": 20779,
+          "target_pid": 20760,
+          "evidence_dir": ".tmp/screen-agent-review/copilot-standing-observation",
+          "result": "FAIL:420s bounded owned-controller timeout, no terminal result, own target exited0, both PIDs absent after runner completed",
+          "sample": "startup-sample.txt:884/884 sampled main-thread stacks in Copilot.startReasoning -> ModelRouter.blockedReason -> CredentialStore -> SecretStore -> SecItemCopyMatching -> Security decrypt/mach_msg",
+          "limits": "One1s sample establishes current wait boundary, not its entire420s duration or root cause; no evidence that a macOS dialog is displayed, no inference about prior timeouts. No credentials/settings/permission changes."
+        },
+        "fixture_review": {
+          "initial": "MEDIUM:revisionB stale-A confusion possible; original fixture-review.md retained",
+          "prepared_dir": ".tmp/screen-agent-review/copilot-standing-observation-reviewed",
+          "fix": "B ACK/revision/fresh reference, new approval UUID, required matching fresh reference and alternate-canary denial; native2s card resolution",
+          "status": "source review PASS, not executed; no native/model acceptance claim"
+        },
+        "capture": {
+          "initial_failure": {
+            "run_id": "69e7b6dd-fa86-4a78-9642-00e48a8f389a",
+            "evidence_dir": ".tmp/screen-agent-review/standing-material-observation",
+            "result": "FAIL OCR required-content assertion; cause unproven, retained."
+          },
+          "final_diagnostic": {
+            "run_id": "003ac5f3-dcfa-4744-9181-e49707a60367",
+            "evidence_dir": ".tmp/screen-agent-review/standing-material-observation-probe",
+            "result": "Completed4 real owned-window SCK/OCR/fingerprint/claim observations, runner0/own processes exited0, source unchanged. No model or notes output.",
+            "observations": [
+              "Selected active/background/refocused OCR exact same project/decision/owner/action/referenceE0BD5BFF; no alternate canary.",
+              "Frame fingerprint changes with foreground/window chrome, so claim admits active and background frames separately; refocused original hash refused.",
+              "Changed actual revisionB/referenceEED0607A recognized and admitted as new frame."
+            ],
+            "timings_ms": [
+              397.35,
+              231.52,
+              226.04,
+              230.6
+            ],
+            "limits": "4 captures on own AppKit renderer; not Meet/browser acceptance, model duplicate-action behavior or whole-device performance. Initial required OCR failure still unproven.",
+            "timing_scope": "Whole read-only diagnostic, including capture/OCR/hash and diagnostic PNG/file writes; not isolated capture/OCR or device-wide performance."
+          }
+        },
+        "pending_inputs": [
+          "Previously asked one-retry Chrome exception, still unanswered.",
+          "Asked whether macOS shows ApprovalHost/CopilotValidation Keychain access dialog; no reply yet."
+        ],
+        "full_acceptance": "All7FR in_progress/0accepted/No-Go; live meeting/browser, standing-objective useful artifact, complete routes/races/accessibility/deadlines and committed-diff trust remain open."
+      },
+      "current_keyboard_tab_diagnosis": {
+        "at": "2026-10-02T08:36:27.522950+00:00",
+        "production_changed": false,
+        "initial": {
+          "run_id": "6765ba32-7bd1-4379-a39d-df14f636b9d1",
+          "pid": 58182,
+          "evidence_dir": ".tmp/screen-agent-review/native-tab-current",
+          "result": "FAIL CmdShiftR did not resolve; runner1/native0. Inactive titlebar captured before reject, key-time activation unrecorded; root cause unproved."
+        },
+        "guarded": {
+          "run_id": "678f76a3-6d2b-4046-be14-fc80cc7bcc59",
+          "pid": 9201,
+          "window_id": 7011,
+          "evidence_dir": ".tmp/screen-agent-review/native-tab-guarded",
+          "result": "Terminal complete/passedtrue/runner0, diagnostic plus18 keyboard cases",
+          "guard": "All38 events require own app active and key window; all recorded frontmost PID9201. Original assertions and2s deadlines retained. No activation retry/settings changes/direct approval resolve."
+        },
+        "tab": {
+          "forward": 12,
+          "backward": 4,
+          "full_keyboard_access": false,
+          "observed": "AXTextArea firstResponder; PNG composer/objective focus. Pending/file unchanged; button traversal/VoiceOver unverified."
+        },
+        "keyboard": "EN/JA/KO each: Return not approve, exact approved bytes, held approve/reject do not resolve next task, explicit reject unchanged/status, Escape Stop unchanged/cancelled/unique IDs.",
+        "cleanup": "Both own PID58182/9201 absent; no user process/tab changed",
+        "source": "All12 pre-run hashes match current source, prior9 checkpoint hashes unchanged.",
+        "review": "native-tab-guarded/independent-review.md: scoped PASS, no new H/M; hashes, owned dispatch, exact file bytes, statuses, cleanup and retained limits verified. No global acceptance or trust approval.",
+        "limits": "Owned NSEvents only; live browser/meeting/model, button traversal/VoiceOver unverified. Initial failure not reclassified. No trust approval; all7FR in_progress/accepted0/No-Go.",
+        "gate": {
+          "command": "Scripts/gate.sh",
+          "result": "PASS G1/G2 build/trust/tests/guards",
+          "tests": 1078,
+          "suites": 115,
+          "swift_seconds": 2.137,
+          "log": "gate-native-tab-final.log",
+          "evidence_dir": "gate-native-tab-final-evidence",
+          "g3": "not requested"
+        }
+      },
+      "stable_signature_and_live_chrome": {
+        "at": "2026-10-02T09:48:05.184819+00:00",
+        "production_changed": false,
+        "evidence_dirs": [
+          "keychain-identity-diagnosis",
+          "copilot-standing-stable-signature",
+          "chrome-live-scroll"
+        ],
+        "signing": {
+          "previous": "Validation controller linker/ad-hoc signed, cdhash-only designated requirement; root production app already certificate signed",
+          "fix": "Ignored runner signs only own controller app with existing AppleDevelopment certificate, strictly verifies stable certificate-based DR; reuses same binary if recorded inputs/identity/both hashes match. No releaseG3/Keychain ACL/unlock/credential/environment changes.",
+          "manifest_inputs": 212,
+          "limits": "Recorded sources/objects/Info/binary hashes, not a hermetic all-compiler-input cache. AlwaysAllow per app/item and dialog count not verified; user answer pending."
+        },
+        "native": {
+          "run_id": "c162c1f5-6a0c-4d89-bb84-9d1f3a654211",
+          "controller_pid": 7883,
+          "target_pid": 7361,
+          "startup_seconds": 14.23,
+          "stage": "unchanged-dedup",
+          "passed": false,
+          "runner_exit": 1,
+          "native_exit": 0,
+          "target_exit": 0,
+          "reference": "8E9A41F5",
+          "proved": "Real selected-material watcher/model/native approval saved notes with exact reference, no mutation before approval, approved exact bytes. Own PIDs absent; signed controller and212 inputs match.",
+          "failure": "Unchanged material started a duplicate task; preserve FAIL, B/Stop unexecuted. Keychain dialog absence/root cause not established by startup timing."
+        },
+        "chrome": {
+          "run_id": "1f37c369-7186-4fbd-a7b8-3451cbab2289",
+          "session": "scrc1002-root-x",
+          "test_tab": "6DF87C36",
+          "scrolls": [
+            0,
+            1063,
+            2126
+          ],
+          "view_labels": [
+            54432,
+            5965,
+            29740
+          ],
+          "close_exit": 0,
+          "scope": "Post-specific explicit DOM view labels/URLs with article bounds inside viewport, not occlusion/pixel visibility or production collector/model proof. Retain earlier SyntaxError scroll failure separately."
+        },
+        "review": "Independent stable signature fixture source PASS; actual signature/212inputs/binaryhashes/notes/reference/cleanup verified. Actual unchanged-material duplicate task confirmed MEDIUM acceptance defect; precise pixel cause and second mutation unproved. Runtime exit lines rely on copied parent tool observation, not raw runtime.log. Chrome stickyheader scope corrected.",
+        "acceptance": "All7 FR in_progress/accepted0/No-Go; meeting, dedup, production browser/model routes, remaining matrices unverified",
+        "gate": {
+          "initial": "FAIL:1078/115 with3 unchanged timing assertions (2process timeout1.702s<700ms; async cancellation819ms<400ms)",
+          "initial_log": "gate-stable-signature-chrome.log",
+          "initial_evidence": "gate-stable-signature-chrome-failed-evidence",
+          "targeted": "PASS5tests/2suites/0.384s, same source and thresholds",
+          "targeted_log": "stable-signature-timing-targeted.log",
+          "cause": "Unproven; high other-process CPU observed, later Flutter workload absent from top6. No process terminated, threshold/skip/parallelism change, or baseline attribution for newChat test.",
+          "final": "FAIL1078tests/115suites/1issue:CancellationToken async interruption502.317ms vs unchanged400ms",
+          "second": "FAIL1078/115 with4issues: UIStateDiff10000 210.48ms/50,5000avg59.53ms/50, cancellation685.92ms/400, ChatWindow surface stillvisible at unchanged check",
+          "second_log": "gate-stable-signature-chrome-final.log",
+          "second_evidence": "gate-stable-signature-chrome-final-evidence",
+          "ui_targeted": "PASS14tests/3suites/3.375s; same thresholds/source, includes both diff stress, cancellation and Chat dismissal",
+          "ui_targeted_log": "stable-signature-timing-ui-targeted.log",
+          "review_file": "copilot-standing-stable-signature/fixture-review.md",
+          "final_log": "gate-stable-signature-chrome-terminal.log",
+          "final_evidence": "gate-stable-signature-chrome-terminal-evidence",
+          "final_review": "Fixture/source/identity evidence scopedPASS; full standing acceptanceFAIL/MEDIUMduplicate; latest full quality gateFAIL. No shipping."
+        },
+        "user_dialog_confirmation": "Async question about AlwaysAllow remains unanswered; do not claim one-time prompt or infer permission selection."
+      },
+      "objective_decoration_fix": {
+        "at": "2026-10-02T12:20:28.909631+00:00",
+        "production_changed": true,
+        "source_hashes": {
+          "Sources/MCASensing/FrameFingerprint.swift": "f22190d7f930eaa053c82aee3d11a921bab85d5952e1c754837747020633b4d4",
+          "Sources/MCASensing/AccessibilityInspector.swift": "cf73e9f8288bbcf900fcc82b94d0bc7b5cd2e13652cbe8794ed44efa5b2047a7",
+          "Sources/mca/ScreenWatcher.swift": "a9e5bab4e2b5480c9c84ed3e1e7871e88998117ea303e80510faf5a68cade218",
+          "Package.swift": "d07757b774f2239c1d5f8e7a4e76928ea056a7915bbc0d3c4ac68a2b06e64bdc"
+        },
+        "regression_hashes": {
+          "Tests/MCASensingTests/WindowDecorationFingerprintTests.swift": "c33fad9a28236d593fe708c430c80418af52566476bc8725c494c89afe73fe2f",
+          "Tests/MCASensingTests/Fixtures/WindowFocus/selected-active.png": "36abefe756e749f8e42c3d84e9d711b851ce79066a1d835a718f534f9eb1b807",
+          "Tests/MCASensingTests/Fixtures/WindowFocus/selected-background.png": "4c1b5dee10a788dc0eb46b1aba8312620040292ac4d20e90b21571faf59c40fa"
+        },
+        "slow_fixture_hashes": {
+          ".tmp/screen-agent-review/objective-decoration-regression/SlowProbe.swift": "a82c2aa6294f9299c806b6604c10f7febc23257ec2045f678dd21a4707b6a817",
+          ".tmp/screen-agent-review/objective-decoration-regression/SlowTarget.swift": "cf185f4d064208e957b12a3146bc86ddf9663959bb5657cafb599f6df8c243f0",
+          ".tmp/screen-agent-review/objective-decoration-regression/run-slow.py": "702f545115c02a70c2b2e6932b64b7d5dfda89fa2e59e4b235726897a80b9267"
+        },
+        "fix": "Normalize only exact AX standard buttons/title before fingerprint downscale for the active pinned objective; preserve actual title wording, raw image/OCR/model input and graph changes. Exact current CG/AX capture binding; fail to raw on absent/stale/invalid metadata. Per-object 50ms AX timeout with 500ms cooperative budget, utility detached lookup, parent cancellation and late-result guards; no global timeout/permissions changes.",
+        "public_regression": {
+          "valid_red": "focus-only equality fails once; visual content/invalid bounds controls pass",
+          "green": "13 tests /5 suites",
+          "slow_red_seconds": 2.072626167,
+          "slow_green_seconds": 0.153052792,
+          "slow_scope": "Public AX metadata lookup against owned delayed-title window, synthetic image; not SCK/model acceptance. Probe result/exit authoritative, runner does not raise on probe failure. First 5s readiness failure retained, preflight changed to30s before valid RED."
+        },
+        "native_intermediate": {
+          "run_id": "850782de-0539-467b-a1d4-dab1bf09db24",
+          "passed": true,
+          "scope": "Real owned AppKit material -> actual ScreenWatcher/SCK/OCR/configured model/native file approval; 48s unchanged dedup + fresh revision approval + native Stop +48s no restart. Before timeout hardening; not real meeting."
+        },
+        "native_final": {
+          "run_id": "fe8a5e52-d469-4363-bb95-b0f5c968c033",
+          "passed": true,
+          "stage": "complete",
+          "strict_runner_exit": 0,
+          "controller_exit": 0,
+          "target_exit": 0,
+          "reference": "C559EBDD",
+          "cases": [
+            "observed-material-approve",
+            "unchanged-material-dedup48s",
+            "changed-material-stop/no-restart48s"
+          ],
+          "source_and_recorded_inputs_match": true,
+          "provenance": "objective-decoration-regression/native-final-provenance.json",
+          "scope": "Actual own AppKit selected material -> production watcher/SCK/OCR/configured model/native chat approval/guarded notes; not Zoom/Meet or full routes/races."
+        },
+        "gate": {
+          "standard_unmodified": true,
+          "status": "PASS",
+          "tests": 1081,
+          "suites": 116,
+          "issues": 0,
+          "failed_assertion": "ActionApprovalTests.swift66 expected cancelled, observed expired in rejectCancelDelete 100ms timeout",
+          "evidence_dir": "gate-objective-decoration-terminal-evidence",
+          "targeted": "6 tests /2 suites PASS, .056s",
+          "root_cause": "Full-suite versus isolated behavior observed; precise scheduling cause not established. No source/threshold/skip/parallelism weakening.",
+          "prior_first_run": {
+            "standard_unmodified": true,
+            "status": "FAIL",
+            "tests": 1081,
+            "suites": 116,
+            "issues": 1,
+            "failed_assertion": "ActionApprovalTests.swift66 expected cancelled, observed expired in rejectCancelDelete 100ms timeout",
+            "evidence_dir": "gate-objective-decoration-final-evidence",
+            "targeted": "6 tests /2 suites PASS, .056s",
+            "root_cause": "Full-suite versus isolated behavior observed; precise scheduling cause not established. No source/threshold/skip/parallelism weakening."
+          },
+          "failed_assertions": [
+            "ActionApprovalTests.swift66 expired versus cancelled",
+            "SafetyGuardrailsAdversarialTests.swift862 cancellation elapsed441.3080215ms versus <400ms"
+          ],
+          "latest_log": "gate-objective-decoration-terminal.log",
+          "prior_checkpoint_run": {
+            "standard_unmodified": true,
+            "status": "FAIL",
+            "tests": 1081,
+            "suites": 116,
+            "issues": 2,
+            "failed_assertion": "ActionApprovalTests.swift66 expected cancelled, observed expired in rejectCancelDelete 100ms timeout",
+            "evidence_dir": "gate-objective-decoration-checkpoint-evidence",
+            "targeted": "6 tests /2 suites PASS, .056s",
+            "root_cause": "Full-suite versus isolated behavior observed; precise scheduling cause not established. No source/threshold/skip/parallelism weakening.",
+            "failed_assertions": [
+              "ActionApprovalTests.swift66 expired versus cancelled",
+              "SafetyGuardrailsAdversarialTests.swift862 cancellation elapsed441.3080215ms versus <400ms"
+            ],
+            "latest_log": "gate-objective-decoration-checkpoint.log"
+          },
+          "limits": "Two preceding unchanged standard runs failed approval-expiry/cancellation timing; source/threshold/skip/parallelism unchanged. Passing final run does not establish timing root cause or universal deadlines."
+        },
+        "review": "Independent scoped source/final-native/evidence PASS; AX child-timeout MEDIUM and old-run artifact LOW resolved. Final G1/G2 PASS, prior timing failures retained; no global acceptance or committed-diff trust.",
+        "signing": "Stable same certificate/DR across binary rebuild; dialog outcome unconfirmed",
+        "overall": "All7FR in_progress/accepted0/No-Go; no commit/PR/push/merge/G3",
+        "meeting_status": {
+          "user_answer": "まだない",
+          "actual_shared_material_available": false,
+          "acceptance": "not verified"
+        },
+        "chrome_product_attempt": {
+          "session": "scrc1002-root-x",
+          "status": "attach_failed",
+          "error": "Error: attach failed. A hung tab may be blocking CDP; report it to the user.",
+          "retry": "not attempted per AGENTS.md",
+          "product_collector_and_model": "not launched/not verified",
+          "cleanup_log": "copilot-chrome-collection/close-test.txt",
+          "earlier_success": "chrome-live-scroll actual own2scroll/3>=5K DOM correspondence remains historical scoped evidence, not current product path"
+        }
+      },
+      "external_ax_acceptance": {
+        "at": "2026-10-02T15:05:10.510096+00:00",
+        "production_changed": false,
+        "fixture_dir": ".tmp/screen-agent-review/native-accessibility",
+        "run_id": "0ed225ba-400b-49b8-84fa-4ab39930b394",
+        "host_pid": 3703,
+        "probe_pid": 3706,
+        "status": "PASS scoped external AX verification",
+        "locales": [
+          "en",
+          "ja",
+          "ko"
+        ],
+        "operation_count": 9,
+        "responses": 27,
+        "all_responses_passed": true,
+        "source_object_fixture_hashes": 297,
+        "all_hashes_unchanged": true,
+        "both_helpers_exit": 0,
+        "both_helpers_absent": true,
+        "verified": [
+          "External own-window AXButton localized labels/roles/enabled state",
+          "AXPress Approve saves exact approved bytes",
+          "AXPress Reject and Stop leave approved bytes unchanged",
+          "Resolved cards expose no Approve/Reject AX controls",
+          "Retained old AX nodes are invalidUIElement (-25202); new card stays pending and Stop prevents later writes"
+        ],
+        "unverified": [
+          "VoiceOver spoken output",
+          "Tab button traversal",
+          "AXPosition/AXSize and pixel geometry",
+          "All routes/races/deadlines",
+          "Actual meeting and production Chrome/X collector/model answer"
+        ],
+        "historical_internal_failures": [
+          {
+            "run_id": "64f08da7-b007-4ca8-b3c1-77a0d2050161",
+            "status": "FAIL internal tree yielded no buttons"
+          },
+          {
+            "run_id": "19a6d8d4-f5e0-4d4c-aac3-b1c46de91640",
+            "status": "FAIL internal tree only NSHostingView AXGroup; no buttons"
+          }
+        ],
+        "gate": {
+          "command": "Scripts/gate.sh",
+          "latest": "PASS G1/G2 build/trust/tests/guards",
+          "latest_log": "gate-checkpoint.log",
+          "evidence_dir": "gate-checkpoint-evidence",
+          "tests": 1081,
+          "suites": 116,
+          "initial": "FAIL1 ChatWindowDismissalTests.swift31 Quartz surface still visible after150ms",
+          "initial_log": "gate.log",
+          "initial_evidence": "gate-first-failure-evidence",
+          "targeted": "Same test1/.612s PASS",
+          "targeted_log": "chat-dismissal-targeted.log",
+          "root_cause": "Unproven; passing retry does not prove universal150ms deadline",
+          "standards_unchanged": true,
+          "g3": "not requested",
+          "swift_seconds": 1.993
+        },
+        "review": {
+          "path": ".tmp/screen-agent-review/native-accessibility/independent-review.md",
+          "status": "PASS scoped independent review; geometry claim corrected to explicit exclusion",
+          "geometry_claim": "Explicitly excluded; no geometry acceptance claim"
+        },
+        "full_verdict": "No-Go; all7FR in_progress accepted0"
+      },
+      "external_ax_geometry_tab": {
+        "at": "2026-10-02T15:44:47.318768+00:00",
+        "production_changed": false,
+        "run_id": "6cf79479-bbd3-41de-88d2-28a5541ad54d",
+        "host_pid": 8997,
+        "probe_pid": 8998,
+        "own_window_id": 11255,
+        "status": "PASS scoped geometry/actions; Tab traversal unverified",
+        "locales": [
+          "en",
+          "ja",
+          "ko"
+        ],
+        "responses": 114,
+        "fresh_ax_press_success": 9,
+        "operation_uuids": 9,
+        "input_hashes": 297,
+        "all_hashes_unchanged": true,
+        "both_helpers_exit": 0,
+        "both_helpers_absent": true,
+        "geometry_scope": "Finite positive AXPosition/AXSize; own AX window contains three controls; Approve/Reject do not overlap. Three own-window PNGs visually inspected at600x732. No physical hit-test, all window sizes, or pixel-coordinate equivalence claim.",
+        "tab_diagnostic": {
+          "events": 84,
+          "external_focus_observations": 87,
+          "full_keyboard_access": false,
+          "observed_roles": [
+            "AXTextField"
+          ],
+          "pending_no_write": true,
+          "button_traversal": "unverified",
+          "root_cause": "Unproven; false setting alone does not establish cause",
+          "dispatch": "Own NSWindow.sendEvent; no global input or preferences changed"
+        },
+        "stale_ax_errors": [
+          -25202
+        ],
+        "gate": {
+          "command": "Scripts/gate.sh",
+          "exit": 0,
+          "stages": "G1/G2 build/trust/tests/guards PASS",
+          "tests": 1081,
+          "suites": 116,
+          "swift_seconds": 2.412,
+          "log": "gate.log",
+          "evidence": "gate-evidence",
+          "standards_unchanged": true,
+          "prior_quartz150ms_failure": "Retained in native-accessibility; root cause unproven"
+        },
+        "review": {
+          "status": "PASS scoped independent review; no new findings",
+          "path": ".tmp/screen-agent-review/native-accessibility-geometry-tab/independent-review.md"
+        },
+        "full_verdict": "No-Go; all7FR in_progress accepted0",
+        "remaining": [
+          "VoiceOver",
+          "Tab approval-button traversal",
+          "Actual meeting artifact",
+          "Production Chrome/X collector/model answer",
+          "Full entry-point/race/deadline matrix",
+          "Keychain AlwaysAllow confirmation",
+          "Shipping trust and PR/merge/cleanup"
+        ]
+      }
+    },
+    "mcp_dispatch_verification": {
+      "at": "2026-10-02T16:16:50.751049+00:00",
+      "status": "partial_verified_full_gate_failed",
+      "changed_test_file": "Tests/MCAInteropTests/ContextMCPServerAutonomousActTests.swift",
+      "test_sha256": "de9a09b8ed0a0b246ec703fcb1e3e4d5ffe98cce069d26127618606cc8a9b119",
+      "production_files_checked": 109,
+      "production_changed_files": [],
+      "cases": [
+        "Public MCP non-simulation authorization branch without presenter: approval_required; evaluation1, input0, completion0",
+        "Actual server.stop and caller Task.cancel during pending initial observation: late observation returns cancelled JSON, no success/steps/completion/evaluation/input",
+        "Public invalid-goal dispatch exits before observation: typed start-wait failure; release-before-capture does not suspend late observation"
+      ],
+      "waits": "ContinuousClock5s start/output deadlines; early finish refused; success/error recorded; cancel+release on failure; release-before-capture latch",
+      "targeted": {
+        "command": "swift test --filter 'ContextMCPServerAutonomousActTests|UIStateDiffAdversarialTests|CancellableToolProcessTests|testCancellationTokenAsyncSleepInterruption'",
+        "exit_code": 0,
+        "tests": 27,
+        "suites": 5,
+        "seconds": 0.385,
+        "log": ".tmp/screen-agent-review/mcp-live-dispatch/targeted-after-review.log"
+      },
+      "review": {
+        "status": "Scoped independent source/MCP review PASS; original MEDIUM wait-hang resolved",
+        "log": ".tmp/screen-agent-review/mcp-live-dispatch/independent-review.md"
+      },
+      "gate_attempts": [
+        {
+          "attempt": 1,
+          "exit_code": 1,
+          "tests": 1082,
+          "suites": 116,
+          "seconds": 7.127,
+          "issues": 5,
+          "failures": [
+            "✘ Test \"Stress test: 10,000 candidates diffing latency\" recorded an issue at UIStateDiffAdversarialTests.swift:249:9: Expectation failed: (elapsedMs → 177.4289608001709) < 50.0",
+            "✘ Test \"Stress test: 5,000 candidates diffing latency (<5ms)\" recorded an issue at UIStateDiffAdversarialTests.swift:217:9: Expectation failed: (avgDurationMs → 65.89841842651367) < 50.0",
+            "✘ Test \"Timeout stops descendants holding output pipes\" recorded an issue at CancellableToolProcessTests.swift:13:9: Expectation failed: (ContinuousClock.now - begin → 1.310628125 seconds) < (.milliseconds(700) → 0.7 seconds)",
+            "✘ Test \"Timeout escalates when the direct child ignores TERM\" recorded an issue at CancellableToolProcessTests.swift:22:9: Expectation failed: (ContinuousClock.now - begin → 1.311002625 seconds) < (.milliseconds(700) → 0.7 seconds)",
+            "✘ Test \"CancellationToken: async sleep aborts quickly upon cancellation\" recorded an issue at SafetyGuardrailsAdversarialTests.swift:862:9: Expectation failed: (elapsedMs → 840.0530815124512) < (400 → 400.0)"
+          ],
+          "bundle": ".tmp/screen-agent-review/mcp-live-dispatch/gate-first-failure-evidence"
+        },
+        {
+          "attempt": 2,
+          "exit_code": 1,
+          "tests": 1083,
+          "suites": 116,
+          "seconds": 5.647,
+          "issues": 4,
+          "failures": [
+            "✘ Test \"Timeout escalates when the direct child ignores TERM\" recorded an issue at CancellableToolProcessTests.swift:22:9: Expectation failed: (ContinuousClock.now - begin → 1.2021535 seconds) < (.milliseconds(700) → 0.7 seconds)",
+            "✘ Test \"Timeout stops descendants holding output pipes\" recorded an issue at CancellableToolProcessTests.swift:13:9: Expectation failed: (ContinuousClock.now - begin → 1.20241225 seconds) < (.milliseconds(700) → 0.7 seconds)",
+            "✘ Test \"T2.7: Large candidate lists (1000 items) are evaluated efficiently without memory spike\" recorded an issue at TwoTierAutonomousLoopOfflineE2ETests.swift:1130:9: Expectation failed: (duration → 0.29569196701049805) < 0.1",
+            "✘ Test \"CancellationToken: async sleep aborts quickly upon cancellation\" recorded an issue at SafetyGuardrailsAdversarialTests.swift:862:9: Expectation failed: (elapsedMs → 1227.378010749817) < (400 → 400.0)"
+          ],
+          "bundle": ".tmp/screen-agent-review/mcp-live-dispatch/gate-second-failure-evidence"
+        },
+        {
+          "attempt": 3,
+          "exit_code": 1,
+          "tests": 1083,
+          "suites": 116,
+          "seconds": 7.056,
+          "issues": 4,
+          "failures": [
+            "✘ Test \"Stress test: 5,000 candidates diffing latency (<5ms)\" recorded an issue at UIStateDiffAdversarialTests.swift:217:9: Expectation failed: (avgDurationMs → 64.81702327728271) < 50.0",
+            "✘ Test \"Timeout escalates when the direct child ignores TERM\" recorded an issue at CancellableToolProcessTests.swift:22:9: Expectation failed: (ContinuousClock.now - begin → 0.703161083 seconds) < (.milliseconds(700) → 0.7 seconds)",
+            "✘ Test \"CancellationToken: async sleep aborts quickly upon cancellation\" recorded an issue at SafetyGuardrailsAdversarialTests.swift:862:9: Expectation failed: (elapsedMs → 1008.2160234451294) < (400 → 400.0)",
+            "✘ Test \"Reject, task cancellation and card deletion release the waiter without approval\" recorded an issue at ActionApprovalTests.swift:66:13: Expectation failed: (status → .expired) == ((method == \"reject\" ? .rejected : .cancelled) → .cancelled)"
+          ],
+          "bundle": ".tmp/screen-agent-review/mcp-live-dispatch/gate-third-failure-evidence"
+        }
+      ],
+      "latest_gate": {
+        "status": "failed",
+        "log": ".tmp/screen-agent-review/mcp-live-dispatch/gate-third.log",
+        "build": "passed",
+        "trust": "passed",
+        "test": "failed",
+        "guards": "not run",
+        "retries_exhausted": true
+      },
+      "load_observation": {
+        "log": ".tmp/screen-agent-review/mcp-live-dispatch/load-observation.txt",
+        "note": "High host load observed; sole root cause and pre-existing defect unproven. No user process stopped."
+      },
+      "limitations": [
+        "Safe recording actuator and deterministic planner/evaluator/snapshot doubles; no native OS input/configured model",
+        "Public dispatch, not stdio/JSON-RPC transport",
+        "Cancellation at initial-observation boundary only; full routes/races/deadlines unverified",
+        "Fixture5s deadline does not prove product latency",
+        "No browser/Keychain/OS preference operation; pending external conditions unchanged"
+      ],
+      "full_goal": "No-Go; all7FR in_progress/accepted0; no commit/PR/push/merge/G3"
+    },
+    "approval_deadline_verification": {
+      "at": "2026-10-03T01:17:09.220967+00:00",
+      "source": "Sources/MCAPresentation/HUDState.swift",
+      "source_sha256": "bd0dbaf72c46d8b2f12b32383119d341ad9165fc7057b6da9beecb39b1bb782e",
+      "regression": "Tests/MCAPresentationTests/ApprovalDeadlineTests.swift",
+      "regression_sha256": "3e87340e521d3b289d8e6b01daa955278f68f958113c4e4608b64f3fe159c5ca",
+      "source_files": 109,
+      "changed_sources_since_geometry_checkpoint": [
+        "Sources/MCAPresentation/HUDState.swift"
+      ],
+      "red": {
+        "exit": 1,
+        "tests": 1,
+        "issues": 3,
+        "log": ".tmp/screen-agent-review/approval-deadline/red.log"
+      },
+      "green": {
+        "exit": 0,
+        "tests": 10,
+        "suites": 3,
+        "seconds": 0.064,
+        "log": ".tmp/screen-agent-review/approval-deadline/green.log"
+      },
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "status": "PASS",
+        "stages": "G1/G2 build/trust/tests/guards",
+        "tests": 1084,
+        "suites": 117,
+        "seconds": 2.01,
+        "log": ".tmp/screen-agent-review/approval-deadline/gate.log",
+        "evidence": ".tmp/screen-agent-review/approval-deadline/gate-evidence"
+      },
+      "review": {
+        "path": ".tmp/screen-agent-review/approval-deadline/independent-review.md",
+        "status": "PASS scoped source/evidence",
+        "remaining_low": "Short timer and Task.yield setup depend on scheduling; valid captured RED/GREEN passed pending assertion, not universally deterministic setup"
+      },
+      "root_cause": ".tmp/screen-agent-review/approval-deadline/root-cause.md",
+      "deadline_start": "MainActor accepts and registers approval waiter; excludes caller queue delay",
+      "fix": "Absolute monotonic deadline at registration; timer sleeps until instant; late approved resolves expired synchronously; remove deadline/waiter/timer once",
+      "lock": "Swift pattern unsupported by lock CLI; frozen RED hash verified; no enforced-lock claim",
+      "prior_gate_failures": "mcp-live-dispatch retained three FAIL runs; timing/expiry root causes remain unproven",
+      "current_native_acceptance": false,
+      "standards_unchanged": true,
+      "full_verdict": "No-Go; all7FR in_progress, accepted0",
+      "postflight": {
+        "POF-001": "Scoped fix completed; full pipeline remains open",
+        "POF-002": "CONTEXT synchronized",
+        "POF-003": "G1/G2 PASS",
+        "POF-004": "Scoped review PASS with LOW; full acceptance unfinished",
+        "POF-005": "Evidence cached",
+        "POF-006": "Full DoD not met",
+        "POF-007": "PLAN updated; worktree retained for remaining task"
+      }
+    },
+    "approval_setup_stability": {
+      "at": "2026-10-03T01:51:00.413092+00:00",
+      "source": "Sources/MCAPresentation/HUDState.swift",
+      "source_sha256": "c1de4731f1b115f03c486a552a1b67b0e6a616866ce5ab21bd932222378fdc5d",
+      "test_hashes": {
+        "Tests/MCAPresentationTests/ApprovalDeadlineTests.swift": "a01c0a165af1cc87e04c57e4b41722ecfc01888d79c815bc6fe0fcfe1956b3ad",
+        "Tests/MCAPresentationTests/ActionApprovalTests.swift": "167bf188f5db794d74d6929cd3645af34f1649f16a567ea119694c5de3bd96b2"
+      },
+      "old_tests_preserved": {
+        "OriginalApprovalDeadlineTests.swift": "3e87340e521d3b289d8e6b01daa955278f68f958113c4e4608b64f3fe159c5ca",
+        "OriginalActionApprovalTests.swift": "6a6768b64683997ebe77e43fbe9ef9ea965565565ff1e2f5101d37ff9b81027a"
+      },
+      "diagnostics": {
+        "old_setup": ".tmp/screen-agent-review/approval-setup-stability/probe-terminal.json",
+        "expiry_before_cancel": ".tmp/screen-agent-review/approval-setup-stability/cancel-race/terminal.json",
+        "resolver_guard_removed_red": ".tmp/screen-agent-review/approval-setup-stability/guard-removed-red.log",
+        "red_issues": 6,
+        "red_cases": 2,
+        "source_restore_and_test_freeze": ".tmp/screen-agent-review/approval-setup-stability/guard-regression-terminal.json"
+      },
+      "fix": "Private immutable expiry sleeper with internal init seam; default public init still absolute ContinuousClock sleep. Independent streams hold test timer delivery while deadlines/status assertions stay real and exact.",
+      "green": {
+        "exit": 0,
+        "tests": 11,
+        "suites": 3,
+        "seconds": 0.221,
+        "log": ".tmp/screen-agent-review/approval-setup-stability/green-with-cancel.log"
+      },
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "tests": 1085,
+        "suites": 117,
+        "seconds": 2.384,
+        "stages": "G1/G2 build/trust/tests/guards PASS",
+        "log": ".tmp/screen-agent-review/approval-setup-stability/gate-second.log",
+        "evidence": ".tmp/screen-agent-review/approval-setup-stability/gate-second-evidence"
+      },
+      "retained_gate_failure": {
+        "exit": 1,
+        "tests": 1084,
+        "suites": 117,
+        "issues": 1,
+        "log": ".tmp/screen-agent-review/approval-setup-stability/gate.log",
+        "evidence": ".tmp/screen-agent-review/approval-setup-stability/gate-first-failure-evidence",
+        "issue": "expired != cancelled at ActionApprovalTests.swift66"
+      },
+      "review": {
+        "path": ".tmp/screen-agent-review/approval-setup-stability/independent-review.md",
+        "status": "PASS scoped source/evidence",
+        "previous_two_low": "resolved"
+      },
+      "native": {
+        "run_id": "ef78fa88-cc6c-47bd-a8bc-94395f93629c",
+        "evidence": ".tmp/screen-agent-review/native-accessibility/ef78fa88-cc6c-47bd-a8bc-94395f93629c",
+        "host_pid": 70430,
+        "probe_pid": 70432,
+        "window_id": 12750,
+        "process_exit": 0,
+        "probe_exit": 0,
+        "owned_pids_absent": true,
+        "locales": [
+          "en",
+          "ja",
+          "ko"
+        ],
+        "unique_approval_uuids": 9,
+        "responses": 27,
+        "all_responses_passed": true,
+        "input_hashes": 298,
+        "input_hashes_match_current": true,
+        "default_public_HUDState": true,
+        "scope": "Own external AX ChatView -> HUDState -> ToolRegistry -> guarded disposable bytes; no model/browser/meeting/Keychain/VoiceOver/Tab"
+      },
+      "limits": [
+        "Exact offending prior cancellation-test iteration/scheduler not isolated; competing-outcome fixture class reproduced",
+        "Other historical diff/process/token latency failures remain unexplained",
+        "No full routes/races/deadlines or actual browser/meeting/Keychain/VoiceOver/Tab acceptance"
+      ],
+      "standards_unchanged": true,
+      "full_verdict": "No-Go all7FR in_progress accepted0",
+      "postflight": {
+        "POF-001": "scoped progress; full pipeline open",
+        "POF-002": "CONTEXT synced",
+        "POF-003": "G1/G2 PASS",
+        "POF-004": "scoped review PASS; full acceptance open",
+        "POF-005": "evidence saved",
+        "POF-006": "DoD not met",
+        "POF-007": "PLAN updated; worktree retained"
+      }
+    },
+    "coordinated_input_cancellation": {
+      "at": "2026-10-03T02:04:48.177390+00:00",
+      "source": "Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift",
+      "source_sha256": "bbf4da3e6a4ce52e665765877a63e1c45c00042cd6f7bdff52e7bf2286191209",
+      "regression": "Tests/MCAReasoningTests/CoordinatedInputCancellationTests.swift",
+      "regression_sha256": "c8c01c5c7ad6aba023a0aeea19ea8fe7818eb19227f83f4dd564d912631db855",
+      "changed_production_since_prior_checkpoint": [
+        "Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift"
+      ],
+      "red": {
+        "exit": 1,
+        "tests": 1,
+        "cases": 4,
+        "issues": 4,
+        "seconds": 0.004,
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/red.log"
+      },
+      "green": {
+        "exit": 0,
+        "tests": 45,
+        "suites": 4,
+        "seconds": 0.053,
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/green.log"
+      },
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "tests": 1086,
+        "suites": 118,
+        "seconds": 1.747,
+        "stages": "G1/G2 build/trust/tests/guards PASS",
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/gate.log",
+        "evidence": ".tmp/screen-agent-review/coordinated-cancellation/gate-evidence"
+      },
+      "review": {
+        "status": "PASS scoped source/evidence",
+        "path": ".tmp/screen-agent-review/coordinated-cancellation/independent-review.md"
+      },
+      "root_cause": ".tmp/screen-agent-review/coordinated-cancellation/root-cause.md",
+      "case_events_after_stop": {
+        "dispatchEntry": [],
+        "clickBeforeTyping": [
+          "click"
+        ],
+        "clickBeforeKeys": [
+          "click"
+        ],
+        "firstKey": [
+          "key:a"
+        ]
+      },
+      "fix": "Pass the same cancellation token into private input executor; check token/Task after approval and coordinates, before typing after focus click and every key in either branch.",
+      "scope": "Public coordinator with real decision engine/planner protocol and simulation recorder; four controlled token-only interruption boundaries, no OS input.",
+      "limits": [
+        "Cooperative boundary checks; no atomic check/OS delivery transaction",
+        "Already sent input prefix is not undone; native primitive internal interruptions unverified",
+        "No live desktop approval cancellation, ActCommand single-step, actual browser/meeting/Keychain/VoiceOver/Tab acceptance",
+        "Historical token sleep/diff/process latency failure causes remain unproven",
+        "Previous native ef78 proof remains prior coordinator source snapshot"
+      ],
+      "lock": "Swift pattern unsupported; frozen RED bytes verified, no mechanical lock claim",
+      "standards_unchanged": true,
+      "full_verdict": "No-Go all7FR in_progress accepted0",
+      "postflight": {
+        "POF-001": "Scoped bug fixed; full pipeline open",
+        "POF-002": "CONTEXT synchronized",
+        "POF-003": "G1/G2 PASS",
+        "POF-004": "Scoped review PASS; full acceptance open",
+        "POF-005": "Evidence saved",
+        "POF-006": "Full DoD not met",
+        "POF-007": "PLAN updated; worktree retained"
+      }
+    },
+    "coordinate_viewport_fixture": {
+      "at": "2026-10-03T02:26:31.622559+00:00",
+      "source": "Sources/MCAReasoning/TypeSafeDecisionEngine.swift",
+      "source_sha256": "de5003085f8a23702222984faf7e593925ffd569dda400499e85827f797afc1f",
+      "test": "Tests/MCAReasoningTests/TwoTierAutonomousLoopMilestone2FeedbackCoordinateChallengerTests.swift",
+      "test_sha256": "569f526fd0fe775df55ac8bf11b976e38362619303643e87c1ef1144d0d7ca7a",
+      "red": {
+        "exit": 1,
+        "tests": 1,
+        "cases": 2,
+        "issues": 2,
+        "seconds": 0.115,
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/coordinate-viewport-red-final.log"
+      },
+      "green": {
+        "exit": 0,
+        "tests": 345,
+        "suites": 16,
+        "seconds": 0.168,
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/green-coordinate-final.log"
+      },
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 1,
+        "tests": 1086,
+        "suites": 118,
+        "seconds": 3.281,
+        "issues": 3,
+        "stages": "G1 build/G2 trust PASS; G2 tests FAIL; guards not run",
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/gate-coordinate-final.log",
+        "evidence": ".tmp/screen-agent-review/coordinated-cancellation/gate-coordinate-final-failure-evidence"
+      },
+      "gate_failures": [
+        {
+          "test": "descendantTimeout",
+          "seconds": 0.754525,
+          "limit_ms": 700
+        },
+        {
+          "test": "resistantTimeout",
+          "seconds": 0.754470416,
+          "limit_ms": 700
+        },
+        {
+          "test": "testCancellationTokenAsyncSleepInterruption",
+          "ms": 743.8449859619141,
+          "limit_ms": 400
+        }
+      ],
+      "timing_isolation": {
+        "exit": 0,
+        "tests": 5,
+        "suites": 2,
+        "seconds": 0.381,
+        "log": ".tmp/screen-agent-review/coordinated-cancellation/timing-isolation.log",
+        "hashes": ".tmp/screen-agent-review/coordinated-cancellation/timing-isolation-hashes.json",
+        "root_cause": "Not isolated; targeted PASS does not replace full FAIL"
+      },
+      "review": {
+        "status": "PASS scoped source/evidence; latest full gate FAIL; no new findings",
+        "path": ".tmp/screen-agent-review/coordinated-cancellation/independent-review.md"
+      },
+      "source_snapshot": ".tmp/screen-agent-review/coordinated-cancellation/source-hashes-coordinate-final.json",
+      "source_count": 109,
+      "changed_production_since_prior_checkpoint": [
+        "Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift",
+        "Sources/MCAReasoning/TypeSafeDecisionEngine.swift"
+      ],
+      "root_cause": ".tmp/screen-agent-review/coordinated-cancellation/coordinate-root-cause.md",
+      "display_probe": ".tmp/screen-agent-review/coordinated-cancellation/display-probe/result.json",
+      "fix": "Internal nil-default validated TaskLocal viewport; retain candidate priority/live production fallback and all original test assertions; two explicit viewports, expected center and nil restoration.",
+      "limits": [
+        "Owned probe identifies both physical display centers but does not reproduce main-screen transition or isolate OS/app/parallel-fixture cause",
+        "Controlled fixture and simulation proof only, no live native input or display-transition acceptance",
+        "Global timing failures remain unresolved; no thresholds/skips/parallelism/gate/trust weakening"
+      ],
+      "standards_unchanged": true,
+      "full_verdict": "No-Go all7FR in_progress accepted0"
+    },
+    "current_main_integration": {
+      "base_sha": "58f66ddcb169b4b98556199bad36cc293243d4ec",
+      "path": ".worktrees/feature/screen-agent-integrate",
+      "gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "tests": 1261,
+        "passed": 1259,
+        "skipped": 2,
+        "failed": 0,
+        "suites": 159,
+        "seconds": 2.543389,
+        "stages": "G1/G2/guards",
+        "log": ".tmp/screen-agent-review/final-review-fixes/round3-gate.log",
+        "raw": ".tmp/screen-agent-review/final-review-fixes/round3-gate-evidence"
+      },
+      "source_hashes": ".tmp/screen-agent-review/upstream-integration/current-source-hashes.json",
+      "red_green": {
+        "postcapture_privacy": "RED28 issues -> GREEN43tests/8suites/.032s, synthetic frames/public paths, not native SCK",
+        "approval_contract": "RED4issues -> GREEN56tests/5suites/.112s; default-deny/error-result and fixture opt-in preserved",
+        "round1": "PID crash signal5; Markdown/size3issues and read/result8issues RED ->5tests/.329s and related50/.297s GREEN",
+        "round2": "Numeric signal5 + candidate/scope8issues RED ->9tests/.010s GREEN; negative-result-limit corrected runtime signal5 RED ->related34tests/10suites/.636s GREEN; original numeric/scope tests unchanged",
+        "file_size_contract": "Existing-destination snapshot/compare reads limited8MiB; refuses before approval, save to a new file for larger existing destinations",
+        "inspector_limits": "Public tool1...25; native inspector0...100; nonpositive search result limits refused before search",
+        "round3": "Production target resolver/drag sequencer extracted before fix: valid RED6tests/2suites/24issues -> same frozen tests plus real Task cancellation GREEN26tests/12suites/.057s; no HID/model/live capture, public ask/native end-to-end not tested",
+        "round3_log": ".tmp/screen-agent-review/final-review-fixes/round3-red.log",
+        "round3_green_log": ".tmp/screen-agent-review/final-review-fixes/round3-extended-green.log"
+      },
+      "native_ax_run": "0775a9ea-d811-45ba-bd35-16d83f0d9c5b",
+      "native_keyboard_run": "085b949d-efaa-4869-a8eb-92bcbb3a1c22",
+      "native_scope": "own default ChatView/HUD/ToolRegistry/guarded file at recorded UI/write hashes, no model/meeting/browser/VoiceOver/Tab/latest SCK proof",
+      "eval": "Final run train50/54 heldout25/28 NO CHANGE, noise0, STALLED; two prior train-only candidates reverted, no baseline/floor/grader changes or heldout read",
+      "review": "Round3 B/C FAIL/No-Go C0/H3 each on frozen117-source snapshot; two distinct source defects fixed by author after reports; current fixes not independently re-reviewed; known all7/eval blockers persist; no fourth attempt",
+      "acceptance_complete": false,
+      "merged": false,
+      "prior_gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "tests": 1237,
+        "suites": 144,
+        "swift_seconds": 2.962,
+        "stages": "G1/G2/guards",
+        "log": ".tmp/screen-agent-review/upstream-integration/gate-after-alignment.log",
+        "raw": ".tmp/screen-agent-review/upstream-integration/gate-after-alignment-evidence/"
+      },
+      "round2_gate": {
+        "command": "Scripts/gate.sh",
+        "exit": 0,
+        "tests": 1254,
+        "passed": 1252,
+        "skipped": 2,
+        "suites": 156,
+        "seconds": 2.235107708,
+        "stages": "G1/G2/guards",
+        "log": ".tmp/screen-agent-review/final-review-fixes/round2-gate.log",
+        "raw": ".tmp/screen-agent-review/final-review-fixes/round2-gate-evidence"
+      },
+      "review_reports": [
+        ".tmp/screen-agent-review/upstream-integration/round3-b.md",
+        ".tmp/screen-agent-review/upstream-integration/round3-c.md"
+      ],
+      "reviewed_source_hashes": ".tmp/screen-agent-review/upstream-integration/round3-reviewed-source-hashes.json"
+    },
+    "current_main_refresh": {
+      "base_sha": "5f23e868806c119ba9e4a5cf94d6f36d1625dcbb",
+      "branch": "feature/screen-agent-refresh",
+      "source": "Current-main refresh candidate; dirty/uncommitted",
+      "integration": "Preserved current-main keystroke authorization, added shared scoped approval path without duplicate per-key prompt; standalone Accessibility fallback retains literal keystroke approval and target revalidation.",
+      "focused_tests": {
+        "status": "passed",
+        "count": 85,
+        "suites": 8,
+        "command": "swift test --filter 'KeystrokeApprovalTests|BrowserAuthorizationTests|ComputerToolsTests|CoordinatedInputCancellationTests|TwoTierAutonomousLoopCoordinatorTests|ContextMCPServerAutonomousActTests|OfflineCompletionEvidenceTests'"
+      },
+      "gate": {
+        "status": "passed",
+        "command": "Scripts/gate.sh",
+        "stages": [
+          "G1 build",
+          "G2 trust",
+          "G2 Swift tests",
+          "G2 guards"
+        ],
+        "tests": 1270,
+        "skipped": 2,
+        "failures": 0,
+        "errors": 0,
+        "suites": 160,
+        "xunit": ".tmp/gate/logs/swift-xunit-swift-testing.xml",
+        "logs": ".tmp/gate/logs/"
+      },
+      "eval": {
+        "status": "revert_train_only_gain",
+        "train": "54/54 (baseline 50/54)",
+        "heldout": "25/28 (baseline 25/28)",
+        "noise": 0,
+        "verdict": "REVERT: train-only gain; heldout unchanged",
+        "source_changes_reverted": true,
+        "heldout_text_used_for_tuning": false,
+        "integrity_note": "Accidental partial manual read of heldout JSONL during diagnostic grep; contents not reproduced or used; session-level blind independence is compromised. See .tmp/screen-agent-review/main-refresh/eval-root-class-attempt.md."
+      },
+      "acceptance": {
+        "fr_total": 7,
+        "accepted": 0,
+        "status": "in_progress"
+      },
+      "shipping": {
+        "independent_diff_bound_review": false,
+        "pre_ship": false,
+        "commit": false,
+        "pr": false,
+        "merge": false
+      },
+      "limitations": [
+        "Actual Zoom/Meet artifact unavailable at last user answer",
+        "Owned pw-agent X test-tab attach and manual scrolls succeeded, but MCA production Chrome/X collection remains unverified",
+        "User selected Always Allow for the ad-hoc binary, but the dialog had closed and the choice was not applied; later mca doctor did not reopen it",
+        "VoiceOver/Tab and full native route/race/deadline matrix incomplete",
+        "Evaluation both-score improvement unmet"
+      ],
+      "manual_chrome": {
+        "pw_agent_attach": "passed on owned test tab; 2 UI scrolls; close-test succeeded for tab 85187477",
+        "method": "pw-agent own test tab on x.com/home; two mousewheel scrolls; DOM-visible article text and explicitly displayed view metrics inspected",
+        "observed_examples": [
+          "@DilumSanjaya — 797K views",
+          "@Multi_Serio_Ai — 27K views",
+          "@gigazine — 33K views",
+          "@thsottiaux — 988K views",
+          "@GeminiUpda0kkb — 124K views"
+        ],
+        "limitations": "Manual browser observation only; not production MCA collector/model output. Console included ERR_BLOCKED_BY_CLIENT tracking/promoted-content requests and a service-worker error; timeline content loaded and GraphQL requests returned 200.",
+        "native_capture": "MCA capture harness resolved an unrelated existing Chrome window instead of the pw-agent test tab. No input was sent and that capture content is excluded. Production live acceptance remains incomplete.",
+        "production_acceptance": "not established; MCA ask did not collect and native capture selected a different existing Chrome window"
+      },
+      "keychain_attempt": {
+        "status": "unresolved_user_choice_not_applied",
+        "observation": "mca ask displayed a macOS login-keychain password dialog with Always Allow / Allow / Deny. The tested debug executable had an ad-hoc signature and no TeamIdentifier.",
+        "result": "The user chose Always Allow for this ad-hoc binary after the original dialog had closed. No password was entered by the agent and no choice was applied or verified. A later read-only mca doctor did not reopen the dialog; it reported permissions attributed to the terminal and an unsigned CLI."
+      },
+      "integrity_incident": {
+        "kind": "accidental heldout data exposure",
+        "path": "Evals/system-one/heldout.jsonl",
+        "details": "A diagnostic grep printed a partial file excerpt to the agent context before the prohibited access was noticed. No content is reproduced or used; no file was modified.",
+        "impact": "Blind heldout independence for this session is compromised.",
+        "follow_up": "Do not inspect manually again; seek a fresh independent evaluator or a newly sealed holdout before claiming unbiased both-score acceptance."
+      },
+      "gate_latest": {
+        "status": "failed_g2_tests",
+        "command": "Scripts/gate.sh",
+        "stages": [
+          "G1 build",
+          "G2 trust",
+          "G2 Swift tests (failed; guards not reached)"
+        ],
+        "tests": 1272,
+        "suites": 160,
+        "skipped": 2,
+        "failures": 1,
+        "errors": 0,
+        "timeout_change": "Dedicated concurrent userInteractive queue for deadline and delayed SIGKILL callbacks; test suite serialized. No test deadlines/assertions changed.",
+        "latest_failure": "Timeout stops descendants holding output pipes: 0.886s against the existing 0.700s limit. Chat Quartz dismissal passed after orderOut plus close.",
+        "prior_failures": "Five full gate runs after the earlier green run encountered timing failures; focused process/chat tests pass. Scheduling contention is plausible, not proven.",
+        "focused_timeout_suite": {
+          "tests": 5,
+          "suites": 2,
+          "duration_seconds": 1.071,
+          "status": "passed"
+        }
+      },
+      "online_eval_retry_after_cloudflare_cli_auth": {
+        "command": "MCA_EVAL_ONLINE=1 MCA_SYSTEM_ONE=clef MCA_EVAL_REPORT=.tmp/eval/cloudflare-cli-auth-retry.json swift test --filter SystemOneEval",
+        "cf_cli_authenticated": true,
+        "backend_connection": "Cloudflare Clef request succeeded via the candidate's wrangler-auth credential path",
+        "status": "failed_nondeterminism_assertion",
+        "train": "48/54",
+        "heldout": "27/28",
+        "nondeterministic_cases": 38,
+        "duration_seconds": 238,
+        "heldout_case_content_inspected": false,
+        "used_for_tuning": false,
+        "report": ".tmp/eval/cloudflare-cli-auth-retry.json"
+      },
+      "heldout_integrity": "compromised for this session due accidental partial manual exposure during diagnostic grep; no content reproduced or used; do not claim blind acceptance",
+      "ship_preflight": {
+        "status": "blocked",
+        "unchecked_plan_items": 13,
+        "force_plan_used": false,
+        "command": "node .claude/scripts/create-pr/ops.mjs verify-plan"
+      },
+      "source_hashes": {
+        "path": ".tmp/screen-agent-review/main-refresh/source-hashes.json",
+        "count": 117
+      }
+    }
+  },
+  "decisions": [
+    {
+      "at": "2026-09-30T21:41:53.695Z",
+      "summary": "Unify task execution authorization across all entry points",
+      "rationale": "ToolRegistry, native loop and watcher currently dispatch separately"
+    },
+    {
+      "at": "2026-10-02T04:13:53.864178+00:00",
+      "source": "user",
+      "summary": "Chromeならなんでもいい: choose a dedicated Chrome tab for live browser acceptance; original >=5K/evidence and meeting requirements retained"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-09-30T21:41:53.695Z",
+      "from_state": "Idle",
+      "to_state": "SpecUpdating",
+      "triggered_by": "feature-spec-updater",
+      "note": "Append full end-state requirements to legacy SPEC"
+    },
+    {
+      "at": "2026-09-30T21:41:53.695Z",
+      "from_state": "SpecUpdating",
+      "to_state": "UiApproval",
+      "triggered_by": "ui-approval-gate",
+      "note": "Concrete before/after UI draft; explicit verdict pending"
+    },
+    {
+      "at": "2026-10-01T04:09:45.992Z",
+      "from_state": "UiApproval",
+      "to_state": "Implementing",
+      "triggered_by": "user approval",
+      "note": "Explicit chat verdict: 承認"
+    },
+    {
+      "at": "2026-10-01T05:51:44.760911+00:00",
+      "from_state": "Implementing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "Implementation and offline fixtures recorded; all seven FRs remain in progress because full gate/live acceptance are unmet."
+    },
+    {
+      "at": "2026-10-01T06:46:10.569993+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "user continuation",
+      "note": "Added dispatch/approval integration, fixed registry Stop and history/tool/metadata privacy leaks. Related 102 pass; native comparison recorded; all seven FRs remain in progress."
+    },
+    {
+      "at": "2026-10-01T07:18:35.340809+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "user continuation",
+      "note": "Closed selected-window observation fallback and approved focus-restoration mismatch; source review PASS and 121 related tests PASS. Latest full gate still incomplete; all seven FRs remain in progress."
+    },
+    {
+      "at": "2026-10-02T03:34:29.772015+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "user continuation",
+      "note": "Resolved current native permission/gate blockers and privacy/coordinate bugs; full1053 gate and3locale native approval/capture guards PASS. All7FRs remain in progress because real Firefox/meeting/final outcome acceptance are missing."
+    },
+    {
+      "at": "2026-10-02T04:00:17.841364+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "Full gate1060/108 PASS; two further browser scope/privacy bugs reproduced and fixed; independent source review PASS; actual real-model ChatWindow Approve/Reject/Stop runtime PASS. Dedicated Firefox AX/CG identity lost on navigation; required window titles requested. All7 FR remain in progress."
+    },
+    {
+      "at": "2026-10-02T04:09:08.821866+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "final-review",
+      "note": "Live metadata/action dependence in schema test fixed with existing inspector protocol fixture; actual TypeSafe click denial regression added. Latest full gate1061/108 PASS and independent source review PASS. Full goal remains incomplete; dedicated browser/meeting target titles pending."
+    },
+    {
+      "at": "2026-10-02T04:13:53.864178+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "systematic-debugging",
+      "note": "Dedicated Chrome test tab failed to attach due to absent websockets; tab closed with stable session ID. Isolated tool venv repair and actual proxy local filtering/shutdown PASS. Explicit one-retry exception requested under AGENTS.md; no live retry performed."
+    },
+    {
+      "at": "2026-10-02T04:46:10.972925+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "native approval acceptance",
+      "note": "Native EN/JA/KO keyboard/mouse mixed PASS; held approval key affecting next operation RED->GREEN and animated scroll layout timeout RED->GREEN. First pre-capture Reject nondelivery retained as unresolved timing limitation. VoiceOver/Tab, live Chrome/X/meeting and shipping still incomplete."
+    },
+    {
+      "at": "2026-10-02T05:12:27.241573+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "native scoped desktop acceptance",
+      "note": "Separate owned-process native desktop11cases PASS, including selected click/Unicode typing, changed target/field, Reject/Stop, wrong-window and cancelled-focus refusal. Explicit cooperative activation yield added with cancellation guard. Initial activation denials not attributed to a proven single cause. All FR in_progress; real Chrome/X/meeting and full routes/accessibility/deadlines still pending."
+    },
+    {
+      "at": "2026-10-02T05:59:44.368972+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "actual Copilot native route and offline constraints",
+      "note": "Actual configured model -> original Copilot ChatWindow native3cases PASS with physical-count-consistent final answer on final source. Offline prohibition/non-actionable decision regressions RED->GREEN4tests/12cases, full1065/109 gate PASS. Earlier nondispatch/additional unapproved AppleScript retained, single cause unproven. All FR in_progress; Chrome exception unanswered; no shipping."
+    },
+    {
+      "at": "2026-10-02T06:25:04.323022+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "actual Copilot postclick reobservation",
+      "note": "Diagnostic wrappers delegate real native click/inspection; unpredictable receipt created at target callback appears in postclick tool result then model final answer. Approve/Reject/Stop3cases PASS. Prior nondispatch cause unresolved; all FR in_progress, no shipping."
+    },
+    {
+      "at": "2026-10-02T06:39:34.241701+00:00",
+      "from_state": "Reviewing",
+      "to_state": "BugFixing",
+      "triggered_by": "bug-fix / systematic-debugging",
+      "note": "Public decision/coordinator RED before fixing unobserved completion; actual Copilot /act owned native fixture running under original production source."
+    },
+    {
+      "at": "2026-10-02T07:06:35.063332+00:00",
+      "from_state": "BugFixing",
+      "to_state": "Reviewing",
+      "triggered_by": "bug-fix / feature-status-sync",
+      "note": "Decision and heuristic planner false completion fixed. Immutable public RED regressions7tests17cases, related341/15 and standard whole1072/111 gate PASS; independent source/evidence PASS. Native /act firststartup timeout and secondfresh targetChanged/count0 preserved as failures. No-Go/allFRin_progress/no shipping."
+    },
+    {
+      "at": "2026-10-02T07:37:28.232968+00:00",
+      "from_state": "Reviewing",
+      "to_state": "BugFixing",
+      "triggered_by": "bug-fix",
+      "note": "Owned actual /act targetChanged diagnosed as closing Chat Quartz obstruction; Verify subgoal unrelated field click reproduced and corrected, wrapper and navigation-label independent findings also covered."
+    },
+    {
+      "at": "2026-10-02T07:42:31.337184+00:00",
+      "from_state": "BugFixing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "Scoped Chat/observation bugs resolved with public RED/GREEN/current-source actual Copilot cases; full screen-agent acceptance still open, all7FR in_progress."
+    },
+    {
+      "at": "2026-10-02T08:14:20.584229+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "native-verification",
+      "note": "Fresh owned standing-objective attempt failed bounded startup; exact owned sampling narrowed wait to Keychain read. Prepared stronger evidence fixture and completed real owned SCK/OCR/foreground-change diagnosis, without production changes or reduced acceptance."
+    },
+    {
+      "at": "2026-10-02T15:05:10.510096+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "Additional external AX EN/JA/KO localized controls and AXPress Approve/Reject/Stop PASS, exact guarded bytes/old invalid AX nodes verified. Standard gate1081/116 PASS after retained Quartz150ms failure. Production unchanged; full goal No-Go."
+    },
+    {
+      "at": "2026-10-02T15:44:47.318768+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "External AX EN/JA/KO finite in-window control frames and nonoverlapping Approve/Reject PASS, three600x732 own-window PNGs inspected. 84 scoped Tab events leave approval pending/file unchanged; AX focus only TextField, button traversal unverified. Standard gate1081/116 PASS2.412s. Production unchanged; full goal No-Go."
+    },
+    {
+      "at": "2026-10-02T16:16:50.751049+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync",
+      "note": "MCP public dispatch no-presenter and in-flight server.stop/caller cancellation plus bounded early-exit waits verified; related27tests/5suites PASS, independent scoped review PASS. Production109 hashes unchanged. Standard gate1083/116 FAIL4issues after3 attempts; retries stopped, root cause unresolved; all7FR in_progress/accepted0/No-Go."
+    },
+    {
+      "at": "2026-10-03T01:17:09.220967+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "bug-fix / feature-status-sync",
+      "note": "Public late approval after deadline reproduced RED and refused GREEN; absolute monotonic registration deadline and synchronous approval check added. Related10/3 PASS, scoped independent review PASS with setup-scheduling LOW, current G1/G2 gate1084/117/2.010s PASS. Prior timing/expiry failure causes unproven; current-source native acceptance not run; all7FR in_progress/accepted0/No-Go."
+    },
+    {
+      "at": "2026-10-03T01:51:00.413092+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "bug-fix / feature-status-sync",
+      "note": "Controlled expiry delivery resolves two setup/evidence LOW findings; exact10ms/100ms deadlines and denial assertions preserved, new real5ms expiry-before-cancel control. Guard-removal RED6issues/2cases, targeted11/3 PASS, standard1085/117/2.384s PASS after retained1issue fixture failure. Fresh current default-HUD ENJA KO externalAX9actions/27responses/298hashes PASS, owned helpers exit0/absent. Independent scoped review PASS; all7FR accepted0/No-Go."
+    },
+    {
+      "at": "2026-10-03T02:04:48.177390+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "bug-fix / feature-status-sync",
+      "note": "Public coordinator token-only cancellation at four compound-input boundaries reproduced RED4issues/4cases; same token now checked after approval/coordinates and before follow-up typing/every key. Frozen test GREEN45/4/.053s and standard gate1086/118/1.747s PASS, independent scoped review PASS. Simulation only; native/liveness/full-route/deadline limits remain. All7FR accepted0/No-Go."
+    },
+    {
+      "at": "2026-10-03T02:26:31.622559+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "systematic-debugging / feature-status-sync",
+      "note": "Shared-token cancellation four-boundary fix and isolated viewport regression GREEN345/16/.168s. Latest standard gate FAIL1086/118/3.281s with three process/token timing issues; changed regression cases passed. Unchanged timing isolation5/2/.381s PASS is not global PASS; scheduling root cause remains unproven. All7FR accepted0/No-Go."
+    },
+    {
+      "at": "2026-10-03T08:13:09.504127+00:00",
+      "from_state": "Reviewing",
+      "to_state": "Reviewing",
+      "triggered_by": "feature-status-sync / final-review",
+      "note": "現在の判定は **No-Go**。全7 FRはin_progress、受け入れ完了0件。main `58f66dd` の隔離worktree `feature/screen-agent-integrate` で標準 `Scripts/gate.sh` のG1/G2/guardsがPASS（1237 tests／144 suites／2.962s）。承認契約、file/screenshot destination、postcapture privacy、取消の回帰を修正。先行FAILは履歴として保存。offline evalはtrain50/54、heldout25/28でNO CHANGE。actual Chrome/X、実Zoom/Meet、Keychain、VoiceOver/Tab、全native route/race/deadlineは未検証。最終独立reviewとshipping trustは未完了、commit／PR／merge未実行。"
+    },
+    {
+      "at": "2026-10-03T08:54:45.812910+00:00",
+      "summary": "Round1/2 source defects fixed with immutable RED tests and standardgate1254/156 PASS. FinalevalNOCHANGE/STALLED. All7acceptance false; no shipping."
+    },
+    {
+      "at": "2026-10-03T15:32:04.202094+00:00",
+      "summary": "Third dual review No-Go frozen117 sources. Author fixed HUD implicit display route and drag sleep cancellation/target checks with RED24issues/GREEN26tests; post-fix not independently re-reviewed. Full intent/eval remain blocked, no merge."
+    },
+    {
+      "at": "2026-10-03T15:34:13.643685+00:00",
+      "summary": "Post-round3 standard gate PASS 1261discovered/1259PASS/2existing skips,159suites/2.543389s. Trust66PASS. Source fixes not independently re-reviewed; all7accepted0/evalNOCHANGE/No-Go, no commit/PR/merge."
+    }
+  ]
+}

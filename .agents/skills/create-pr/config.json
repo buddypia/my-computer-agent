@@ -1,0 +1,7 @@
+{
+  "base_branch": "main",
+  "_adapt": {
+    "purpose": "External project adaptation guide (ops.mjs only reads data keys from this file — _adapt is guide-only, not referenced by code).",
+    "how": "Set base_branch to the target repository's default branch name (main/master, etc.). github_account is an optional field required only when multiple GitHub accounts are logged in via gh CLI on a single machine (used for multi-account disambiguation via `gh auth token -u <account>`). Omit for single-account environments — when omitted, gh CLI defaults to the active login account. If needed, add \"github_account\": \"<account_name>\" directly to this file."
+  }
+}

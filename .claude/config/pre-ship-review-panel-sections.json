@@ -1,0 +1,340 @@
+{
+  "version": "1.2.0",
+  "updated_at": "2026-09-23",
+  "description": "GENERIC Pre-Ship Human Review Panel section template — customizable seed transplanted to external projects by transplant-bundle (git-worktree-isolation). Opt-in: honoured only when `override` is true (this seed ships false, so an untouched seed never freezes the built-in panel or goes stale). When opted in it is read on the live path by .cli/lib/worktree-ship-report.mjs#loadReviewPanelConfig (pre-ship-review-guard, worktree-shipping-guard, the pre-ship step runner and the ship-worktree completion report); absent or malformed keys fall back to the built-in DEFAULT_REVIEW_SECTIONS / DEFAULT_REPORT_LABELS / APPROVAL_CHOICES. harness itself ships no copy of this file, so its own output is the built-in English. The `sections` array follows the same schema as .cli/lib/section-template-renderer.mjs#renderTemplateFromSections (5 block types: static/checklist_group/field_list/fenced_block/table). Identical content to DEFAULT_REVIEW_SECTIONS (locked by drift regression test in tests/unit/worktree-ship-report.test.mjs) — target projects may freely adjust sections, copy, or table columns after transplant while preserving the renderer contract.",
+  "override": false,
+  "sections": [
+    {
+      "heading": "## 0. Decision Summary (Must be actionable from these 6 lines alone)",
+      "blocks": [
+        {
+          "type": "field_list",
+          "fields": [
+            {
+              "label": "What",
+              "key": "summaryWhat"
+            },
+            {
+              "label": "Verification Evidence",
+              "key": "summaryVerify"
+            },
+            {
+              "label": "Risk / Rollback",
+              "key": "summaryRisk"
+            },
+            {
+              "label": "Quality Gate",
+              "key": "qualityGate"
+            },
+            {
+              "label": "Open Items",
+              "key": "summaryOpenItems"
+            },
+            {
+              "label": "Ask",
+              "key": "summaryAsk"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 1. Approval Request",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "The following worktree work is complete.",
+            "Please review the details and approve whether to proceed with merge / cleanup.",
+            "Please select:",
+            "- {{approveChoice}}",
+            "- {{reviseChoice}}",
+            "- {{abortChoice}}"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 2. Scope Fidelity (Request ↔ Interpretation ↔ Result)",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Raw request (verbatim, not paraphrased):",
+            "- AI interpretation (goal / scope / assumptions — task-interpretation.mjs record):",
+            "- Delivered (what actually landed):",
+            "- Gap verdict: match | drift (built something else) | creep (built more than asked) | narrowing (asked but missing)",
+            "- Deliberately NOT done, and why (negative space a diff cannot show):"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 3. Review Attention Budget (Where a human should spend eyes first)",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Read first (max 3, file:line + why it decides approval):",
+            "- Lowest-confidence spot (AI self-assessed) + what would settle it:",
+            "- If this breaks in production, it breaks here first:",
+            "- Changed but covered by neither a test nor a human read:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 4. Status Summary",
+      "blocks": [
+        {
+          "type": "field_list",
+          "fields": [
+            {
+              "label": "Worktree path",
+              "key": "worktreePath"
+            },
+            {
+              "label": "Branch",
+              "key": "branch"
+            },
+            {
+              "label": "Base branch",
+              "key": "baseBranch"
+            },
+            {
+              "label": "PLAN.md",
+              "key": "planPath"
+            },
+            {
+              "label": "PLAN.md checklist",
+              "key": "planChecklist"
+            },
+            {
+              "label": "Worktree status",
+              "key": "worktreeStatus"
+            },
+            {
+              "label": "Quality Gate",
+              "key": "qualityGate"
+            },
+            {
+              "label": "Test / verify",
+              "key": "testVerify"
+            },
+            {
+              "label": "Draft PR",
+              "key": "draftPr"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 5. Verification Evidence",
+      "blocks": [
+        {
+          "type": "table",
+          "rows_key": "verificationRows",
+          "header_lines": [
+            " Command                            Result       What it proves",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━  ━━━━━━━━━━━━━"
+          ],
+          "row_template": " {command}    {result}    {proves}",
+          "empty_rows": [
+            {
+              "command": "(collection required)",
+              "result": "PASS/FAIL",
+              "proves": "(what this run rules out)"
+            }
+          ]
+        },
+        {
+          "type": "static",
+          "lines": [
+            "- New behavior covered by (test file:case):",
+            "- Changed but not covered by any test, and why that is acceptable:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 6. Worktree Commit Info",
+      "blocks": [
+        {
+          "type": "fenced_block",
+          "content_key": "gitLog",
+          "fallback": "<git log --oneline origin/main..HEAD>",
+          "trim": true
+        },
+        {
+          "type": "field_list",
+          "fields": [
+            {
+              "label": "Commit count",
+              "key": "commitCount"
+            },
+            {
+              "label": "Commit range",
+              "key": "commitRange"
+            },
+            {
+              "label": "Latest commit",
+              "key": "latestCommit"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 7. PR Draft",
+      "blocks": [
+        {
+          "type": "field_list",
+          "fields": [
+            {
+              "label": "PR URL",
+              "key": "prUrl"
+            },
+            {
+              "label": "PR status",
+              "key": "prStatus"
+            },
+            {
+              "label": "Merge status",
+              "key": "mergeStatus"
+            },
+            {
+              "label": "CI status",
+              "key": "ciStatus"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 8. Modified / Added Files",
+      "blocks": [
+        {
+          "type": "fenced_block",
+          "content_key": "changedFilesTree",
+          "fallback": "(collection required)",
+          "trim": false
+        }
+      ]
+    },
+    {
+      "heading": "## 9. Change Details",
+      "blocks": [
+        {
+          "type": "table",
+          "rows_key": "changedRows",
+          "header_lines": [
+            " Path               Type    Role    Reason for Change",
+            "━━━━━━  ━━━━━━━━━━━━━━━━━  ━━━━━━  ━━━━━━━━━━"
+          ],
+          "row_template": " {path}    {kind}    Fill during review    Fill during review",
+          "empty_rows": [
+            {
+              "path": "(collection required)",
+              "kind": "NEW/EDIT/DELETE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 10. Contract / Blast Radius (answer no, or yes → note)",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- SSOT registry touched (data/registry/**) → which derived views were regenerated:",
+            "- Schema touched (data/schemas/**) → do existing artifacts still validate:",
+            "- Hook registration touched (hook-registry.mjs) → was regen-hooks-settings.mjs run:",
+            "- Exported / public interface changed → were all call sites updated:",
+            "- Scaffold template touched (project-scaffolder/templates/**) → R-CM-028 boundary verdict:",
+            "- Migration or backfill required → procedure:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 11. Rationale for Modification",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Background:",
+            "- Problem solved:",
+            "- Approach adopted:",
+            "- Alignment with user requirements:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 12. Trade-offs",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Selected approach:",
+            "- Alternative considered:",
+            "- Rationale for selection:",
+            "- Sacrifices made:",
+            "- Conditions for future revisit:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 13. Risks / Rollback",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Blast radius:",
+            "- Known risks:",
+            "- Unverified items:",
+            "- Rollback procedure:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 14. Remaining Work & Follow-ups (every item carries a priority)",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- P0 — must be resolved BEFORE this ship. Do not request approval while any P0 stands: none | <item>",
+            "- P1 — follow-up PR required: none | <item> [resolution: <kind>:<target>]",
+            "- P2 — backlog / optional: none | <item>",
+            "- Registered as debt (R-CM-033): <DEBT-ids> | not required (no P1/P2 items)",
+            "- Handover for the next session:"
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "## 15. Issues and Improvements Observed (every item carries a severity)",
+      "blocks": [
+        {
+          "type": "static",
+          "lines": [
+            "- Severity scale: CRITICAL | HIGH | MEDIUM | LOW (same enum as followup-debt.schema.json#severity)",
+            "- Issues encountered: none | <SEVERITY> <what happened> → <resolved how, or still open>",
+            "- Improvement proposals: none | <SEVERITY> <proposal> → <where it belongs: rule | hook | script | doc>",
+            "- Recurrence prevention: <mechanism added, file:line> | none (state why prompt-level suffices)"
+          ]
+        }
+      ]
+    }
+  ],
+  "_adapt": {
+    "purpose": "External project adaptation guide (harness code does not read this key — guidance only).",
+    "how": "Number of sections (harness convention is 16) is not mandatory — feel free to add or remove headings/blocks. Values in field_list are always treated with valueOrDash (empty value -> '-'). table's row_template substitutes `{key}` placeholders with corresponding fields from each object in rows_key array.",
+    "wiring": "Set `override` to true after editing — without it the file is ignored (a one-line hint is shown if its sections differ from the built-in). No other wiring needed: the ship guards, the step runner and the completion report read this file from the main repository root. The transplant preserves an edited copy on re-transplant (extra_files are customizable).",
+    "localize": "Optional top-level keys besides `sections`: `locale` (tag, e.g. \"ko\"), `labels` (any subset of .cli/lib/worktree-ship-report.mjs#DEFAULT_REPORT_LABELS — completion report headings/fields, panel placeholders, PLAN checklist status; `{name}` placeholders are filled at render time), `approval_choices` ({approve, revise, abort} — shown in the panel and runner, and accepted verbatim by the parser alongside the built-in multilingual stems), `line_budget` (positive integer; an over-budget panel gets a one-line notice). Section static lines may interpolate {{approvalChoices}}, {{approveChoice}}, {{reviseChoice}}, {{abortChoice}}, {{severityScale}}; field_list may use key `changedSummary` (one-line file count by kind). The deck is localized separately via `.claude/reach-map.json` (`locale`, `tiers.<id>`)."
+  }
+}

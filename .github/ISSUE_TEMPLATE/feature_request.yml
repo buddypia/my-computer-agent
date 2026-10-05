@@ -1,0 +1,33 @@
+name: Feature Request
+description: Suggest an idea or architectural improvement for MyComputerAgent.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for proposing an enhancement to MyComputerAgent! You may write in English, 日本語, or 한국어.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem or limitation? Please describe clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: A clear and concise description of what you want to happen and which layer (Sensing, Memory, Reasoning, etc.) it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or features you've considered.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockups, or screenshots about the feature request here.

@@ -1,0 +1,10 @@
+{
+  "train": 50,
+  "heldout": 25,
+  "trainFailures": [
+    "d-search-for",
+    "r-q-ko-report",
+    "r-q-python-file",
+    "r-q-screenshot-howto"
+  ]
+}

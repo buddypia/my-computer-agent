@@ -1,0 +1,39 @@
+{
+  "version": "1.1.0",
+  "updated_at": "2026-07-01",
+  "description": "GENERIC worktree-policy — Universal baseline transplanted by transplant-bundle (git-worktree-isolation) to .claude/config/worktree-policy.json of target projects. Unlike harness's internal policy (.claude/config/worktree-policy.json which includes harness-specific tier1 paths like .harness/**, output/**), this generic policy marks only cross-project git-ignored runtime directories and settings.json (for hook registration codegen) as Tier 1 (direct edit permitted). 100% Worktree Paradigm remains identical: all other git-tracked assets are Tier 3 (worktree enforced) and blocked by worktree-policy-guard when edited directly on protected branches (including README.md and .claude/config/**). External projects customize tier1 patterns to match their git-ignored output directories and protected_branches to match their default branch name.",
+  "default_branch": "master",
+  "protected_branches": ["main", "master"],
+  "tiers": {
+    "tier1_main_allowed": {
+      "description": "Direct Edit/Write permitted on main branch — limited to git-ignored runtime/build artifacts and settings.json (for hook registration codegen). Project owners can customize output paths.",
+      "patterns": [
+        ".build/**",
+        ".tmp/**",
+        ".cache/**",
+        "tmp/**",
+        "node_modules/**",
+        "dist/**",
+        "build/**",
+        "out/**",
+        "coverage/**",
+        "target/**",
+        ".next/**",
+        ".nuxt/**",
+        ".svelte-kit/**",
+        ".turbo/**",
+        ".claude/settings.json",
+        ".claude/settings.local.json"
+      ]
+    }
+  },
+  "escape_hatch": {
+    "branch_patterns": ["hotfix/*", "hotfix-*"],
+    "description": "Emergency bypass for urgent hotfixes or when hook/worktree infrastructure itself is broken"
+  },
+  "_adapt": {
+    "purpose": "External project adaptation guide (the guard does not read this key — guidance only).",
+    "how": "Add your project's git-ignored output directories (refer to .gitignore) to tier1_main_allowed.patterns. Git-tracked source/configuration files (including this policy file itself) remain Tier 3 (worktree enforced) with settings.json as a codegen exception.",
+    "disable": "If worktree isolation is unneeded, simply omit worktree-policy-guard from settings.json/hook-registry."
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "project_name": "my-computer-agent",
+  "platform": "desktop",
+  "framework": "Swift Package Manager / AppKit",
+  "language": "Swift",
+  "created_by": "agent harness",
+  "created_at": "2026-09-14T14:26:00.000Z",
+  "generation_mode": "production_seed",
+  "paths": {
+    "source_root": "Sources",
+    "features": "Sources",
+    "shared": "Sources/MCACore",
+    "tests": "Tests",
+    "tests_unit": "Tests",
+    "docs_features": "docs/features"
+  },
+  "conventions": {
+    "feature_structure": "Sources/MCA*,Tests/MCA*Tests",
+    "test_suffix": "Tests.swift"
+  },
+  "commands": {
+    "install": null,
+    "dev": "./Scripts/run.sh",
+    "build": "swift build",
+    "test": "swift test",
+    "typecheck": null,
+    "lint": null,
+    "quality_gate": "make q.check",
+    "quality_check": "make q.check"
+  },
+  "quality": {
+    "test_framework": "XCTest"
+  }
+}

@@ -1,0 +1,49 @@
+name: Bug Report
+description: Report an issue or unexpected behavior in MyComputerAgent.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! You may write in English, 日本語, or 한국어.
+        Please ensure this report does not contain any sensitive credentials, private tokens, or confidential screen contents.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: macOS version, Swift version, and hardware architecture.
+      placeholder: "e.g., macOS 15.1, Apple M3 Max, Swift 6.2"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Open MCA Settings
+        2. Set Screen Watch to 15s
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please paste output from `mca doctor` or relevant console logs (ensure all PII/secrets are masked).
+      render: shell

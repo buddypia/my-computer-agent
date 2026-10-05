@@ -1,0 +1,19 @@
+{"at":"2026-10-02T11:01:44.237Z","train":39,"heldout":16,"total":[54,28],"verdict":"KEEP","note":"baseline"}
+{"at":"2026-10-02T11:02:30.022Z","train":43,"heldout":17,"total":[54,28],"verdict":"KEEP","note":"r1: completion keywords ignored when goal has an action verb"}
+{"at":"2026-10-02T11:03:33.996Z","train":45,"heldout":21,"total":[54,28],"verdict":"KEEP","note":"r2: browser/app names are not action signals in triage"}
+{"at":"2026-10-02T11:04:54.689Z","train":45,"heldout":21,"total":[54,28],"verdict":"KEEP","note":"r2b: browser names count only alongside an operation (fixes Firefox regression in r2)"}
+{"at":"2026-10-02T11:06:12.436Z","train":48,"heldout":22,"total":[54,28],"verdict":"KEEP","note":"r3: sentence-initial English imperatives count as actions in triage"}
+{"at":"2026-10-02T11:06:57.735Z","train":49,"heldout":23,"total":[54,28],"verdict":"KEEP","note":"r4: scroll direction matches whole words; stagnation PageUp/PageDown reuses it"}
+{"at":"2026-10-02T11:07:35.228Z","train":50,"heldout":25,"total":[54,28],"verdict":"KEEP","note":"r5: Korean operation/action vocabulary in triage"}
+{"at":"2026-10-02T11:08:29.660Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"r6: 'search for X' is a typing request"}
+{"at":"2026-10-02T11:09:10.516Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"r7: Korean screen keyword 보고 -> 보고 있 (보고서 = report)"}
+{"at":"2026-10-02T11:16:33.987Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fixes: whole-word completion verbs, CJK-safe scroll direction, per-case train regression check"}
+{"at":"2026-10-03T06:14:29.713Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":""}
+{"at":"2026-10-03T07:21:59.289Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"Screen-agent security integration: user-approved completion evidence policy; preserve baseline and heldout isolation"}
+{"at":"2026-10-03T08:29:06.329Z","train":53,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"Classified remaining train failures as actual capability gaps: instructional/advice intent versus imperative GUI keyword collision. One root-class fix with generic request forms; no grader/floor/heldout changes."}
+{"at":"2026-10-03T08:32:25.446Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"One independent root-class fix: explicit query text entry intent with observed actionable input field, using existing text extraction. Train capability gap classification, no grader/floor/heldout changes; prior advice-routing overfit candidate reverted."}
+{"at":"2026-10-03T08:53:13.851Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"Final restored routing with shared numeric and selected collection scope fixes; no heldout inspection or policy changes"}
+{"at":"2026-10-04T07:20:33.626Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"screen-agent refresh base 5f23e86 approval merge compatibility"}
+{"at":"2026-10-04T08:22:02.849Z","train":54,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"root-class repair: disambiguate informational screen terms and phrase search input"}
+{"at":"2026-10-04T11:40:47.300Z","train":53,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"intent root: separate code-composition and how-to questions from screen-operation keywords; Korean screen term boundary"}
+{"at":"2026-10-04T11:44:14.692Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"decision root: map a search request to typeText only when the current observation contains an AXSearchField"}

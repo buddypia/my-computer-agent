@@ -1,0 +1,69 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+Package.pins
+
+# Build output
+build/
+*.app/
+*.dSYM/
+
+# Temporary, cache, and scratch files
+.tmp/
+.cache/
+*.log
+scratch/
+*.swp
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Local secrets and environment
+.env*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.cer
+credentials.json
+*.pfx
+*.mobileprovision
+*.keychain
+*.keychain-db
+.netrc
+id_rsa*
+id_ed25519*
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# AI agent local runtime state and worktree configurations
+.worktrees/
+.harness/
+.brief2dev
+.claude/state/
+.agents/config*.json
+.agents/state/
+.agents/teamwork/
+.codex/config*.toml
+.codex/state/
+PLAN.md
+
+# --- agent harness bundle (auto-managed block) ---
+.claude/.transplant-backup/
+# --- end agent harness bundle ---
+
+# Local tool artifacts
+.playwright-cli/
+.wrangler/

@@ -1,0 +1,64 @@
+{
+  "my-computer-agent-guards": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "replace_file_content|write_to_file|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-policy-guard.mjs antigravity PreToolUse worktree-policy-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-session-owner-guard.mjs antigravity PreToolUse worktree-session-owner-guard",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/destructive-git-guard.mjs antigravity PreToolUse destructive-git-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/commit-guard.mjs antigravity PreToolUse commit-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-session-owner-guard.mjs antigravity PreToolUse worktree-session-owner-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/pre-ship-review-guard.mjs antigravity PreToolUse pre-ship-review-guard",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-policy-guard.mjs antigravity PreToolUse worktree-policy-guard",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-owner-tracker.mjs antigravity PostToolUse worktree-owner-tracker",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

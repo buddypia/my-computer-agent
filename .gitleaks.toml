@@ -1,0 +1,16 @@
+title = "MyComputerAgent gitleaks config"
+
+[extend]
+useDefault = true
+
+# PrivacyFilter tests intentionally contain fake credentials to verify redaction.
+[allowlist]
+description = "Fake credentials used as PrivacyFilter redaction fixtures and SPM checkouts"
+paths = [
+    '''Tests/MCASensingTests/PrivacyFilterTests\.swift''',
+    '''^\.build/.*'''
+]
+# 5e1311d added redaction fixtures to BrowserSecurityTests.swift as plain
+# literals; they were rebuilt at run time in a later commit, but PR scans walk
+# every commit in the range, so that one historical commit is allowlisted.
+commits = ["5e1311d5e9dcaa629f504003e15777dd04432e18"]

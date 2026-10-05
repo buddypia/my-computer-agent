@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/gate-stop.sh\"",
+            "timeout": 600,
+            "statusMessage": "Quality gate: build / test"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/gate-stop.sh\"",
+            "timeout": 600,
+            "statusMessage": "Quality gate: build / test"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/commit-guard.mjs\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/destructive-git-guard.mjs\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-session-owner-guard.mjs\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/pre-ship-review-guard.mjs\"",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-policy-guard.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-session-owner-guard.mjs\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-owner-tracker.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "language": "japanese",
+  "modelSettings": {
+    "claude-opus-5": {
+      "effortLevel": "medium"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "medium"
+    }
+  },
+  "outputStyle": "Concise"
+}
