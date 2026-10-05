@@ -28,7 +28,7 @@ struct SystemOneEvalTests {
     @Test("cases decode, run deterministically, and stay above the baseline floor")
     func evaluate() async throws {
         let online = ProcessInfo.processInfo.environment["MCA_EVAL_ONLINE"] == "1"
-        // Online uses the same backend the app resolves (MCA_SYSTEM_ONE / TypeSafe key / wrangler).
+        // Online uses the same backend the app resolves (MCA_SYSTEM_ONE / TypeSafe key / cf).
         let backend = SystemOneBackend.resolve()
         let engine = online
             ? TypeSafeDecisionEngine(client: backend)

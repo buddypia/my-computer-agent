@@ -8,7 +8,7 @@ import MCASensing
 /// `MCA_SYSTEM_ONE` picks one (`typesafe`, `clef`, `clef-flash`, `offline`). Otherwise a
 /// TypeSafe key wins, then the offline heuristics. Clef is opt-in only: it sends the
 /// request and on-screen labels (and sometimes a screenshot) to Cloudflare, which a
-/// wrangler login alone does not mean the user agreed to. Library defaults stay on
+/// cf auth login alone does not mean the user agreed to. Library defaults stay on
 /// `TypeSafeClient()` so tests never reach the network by accident.
 public enum SystemOneBackend {
     public static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> any TypeSafeEvaluating {

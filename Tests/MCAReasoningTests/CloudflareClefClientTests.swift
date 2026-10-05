@@ -61,13 +61,12 @@ struct CloudflareClefClientTests {
         await #expect(throws: CloudflareClefClient.ClientError.self) { try await client.evaluate(request: request()) }
     }
 
-    @Test("a 401 refreshes the wrangler token once and retries")
+    @Test("a 401 refreshes the cf token once and retries")
     func refreshesOn401() async throws {
         let runs = Calls<[String]>()
         let credentials = CloudflareCredentials(environment: [:]) { args in
             runs.append(args)
-            if args.first == "whoami" { return #"{"accounts":[{"id":"acc","name":"me"}]}"# }
-            return "⛅️ banner\n{\"type\":\"oauth\",\"token\":\"t\(runs.all.count)\"}"
+            return "🍊☁️ banner\n{\"accounts\":[{\"id\":\"acc\",\"name\":\"me\"}],\"token\":\"t\(runs.all.count)\"}"
         }
         let sent = Calls<URLRequest>()
         let client = CloudflareClefClient(credentials: credentials) {
@@ -75,23 +74,23 @@ struct CloudflareClefClientTests {
             return sent.all.count == 1 ? http(401, "expired") : http(200, okBody)
         }
         _ = try await client.evaluate(request: request())
-        #expect(sent.all.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer t1", "Bearer t3"])
-        #expect(runs.all.filter { $0.first == "whoami" }.count == 1)
+        #expect(sent.all.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer t1", "Bearer t2"])
+        #expect(runs.all.count == 2)
     }
 
-    @Test("wrangler tokens are cached, and several accounts need CLOUDFLARE_ACCOUNT_ID")
+    @Test("cf tokens are cached, and several accounts need CLOUDFLARE_ACCOUNT_ID")
     func cachingAndAmbiguity() async throws {
         let runs = Calls<[String]>()
         let one = CloudflareCredentials(environment: [:]) { args in
             runs.append(args)
-            return args.first == "whoami" ? #"{"accounts":[{"id":"a"}]}"# : #"{"token":"t"}"#
+            return #"{"accounts":[{"id":"a"}],"token":"t"}"#
         }
         _ = try await one.current()
         _ = try await one.current()
-        #expect(runs.all.count == 2)
+        #expect(runs.all.count == 1)
 
         let two = CloudflareCredentials(environment: [:]) { args in
-            args.first == "whoami" ? #"{"accounts":[{"id":"a"},{"id":"b"}]}"# : #"{"token":"t"}"#
+            #"{"accounts":[{"id":"a"},{"id":"b"}],"token":"t"}"#
         }
         await #expect(throws: CloudflareCredentials.CredentialError.self) { try await two.current() }
 
@@ -99,7 +98,7 @@ struct CloudflareClefClientTests {
         #expect(try await pinned.current() == .init(accountId: "b", token: "t"))
     }
 
-    @Test("a prefetch and a first call share one wrangler run")
+    @Test("a prefetch and a first call share one cf run")
     func concurrentCallsShareOneRun() async throws {
         let runs = Calls<[String]>()
         let credentials = CloudflareCredentials(environment: ["CLOUDFLARE_ACCOUNT_ID": "a"]) { args in
@@ -113,12 +112,12 @@ struct CloudflareClefClientTests {
         #expect(runs.all.count == 1)
     }
 
-    @Test("a failed wrangler lookup backs off instead of running wrangler on every decision")
+    @Test("a failed cf lookup backs off instead of running cf on every decision")
     func failureBacksOff() async {
         let runs = Calls<[String]>()
         let credentials = CloudflareCredentials(environment: [:]) { args in
             runs.append(args)
-            throw CloudflareCredentials.CredentialError.wranglerUnavailable("revoked")
+            throw CloudflareCredentials.CredentialError.cfUnavailable("revoked")
         }
         _ = try? await credentials.current()
         _ = try? await credentials.current()
