@@ -653,6 +653,9 @@ function cmdEvidence(args) {
   const { wt, ref } = requireWorktree(args);
   const before = snapshot(wt);
   if (before.dirty) throw new Error('未コミットの変更がある（evidence は HEAD についてしか語れない）');
+  // .tmp/ is ignored, not forbidden: a `git add -f`-ed .tmp/trust/runs/*.json would be read as the trunk baseline.
+  const planted = git(wt, ['ls-files', '--', '.tmp']).trim();
+  if (planted) throw new Error(`.tmp/ に追跡ファイルがある（trunk 実行の結果を偽れる）: ${planted.split('\n')[0]}`);
   const diffId = reviewDiffId(wt, ref);
   const mergeBase = git(wt, ['merge-base', ref, 'HEAD']).trim();
   // executed_tests first: its trunk run must finish before any branch test runs (the gate runs them).
