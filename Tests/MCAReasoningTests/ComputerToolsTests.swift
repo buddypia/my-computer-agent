@@ -163,7 +163,16 @@ struct ComputerToolsTests {
 
         let emptyResult = try await tool.invoke(arguments: Data("{}".utf8))
         #expect(emptyResult.contains("Error: 'query' parameter is required"))
+    }
 
+    /// GitHub's macOS runners ship with Spotlight indexing off, so `mdfind` finds nothing there
+    /// and the search runs into its timeout. The CI environment sets `CI=true`.
+    @Test(
+        "FindFilesTool finds Package.swift through Spotlight",
+        .enabled(if: ProcessInfo.processInfo.environment["CI"] == nil, "Spotlight is not indexed on CI runners")
+    )
+    func testFindFilesToolSpotlightSearch() async throws {
+        let tool = FindFilesTool()
         // Search for Package.swift in repo root
         let repoRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path
         let result = try await tool.invoke(arguments: Data(#"{"query": "Package.swift", "search_path": "\#(repoRoot)"}"#.utf8))

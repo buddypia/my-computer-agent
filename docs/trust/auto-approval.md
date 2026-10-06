@@ -55,12 +55,28 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 | id | 内容 | 自己申告を受け付けない理由 |
 |---|---|---|
 | `clean` | 未コミットの変更なし | diff_id に含まれないものはレビューされていない |
-| `gate` | `Scripts/gate.sh --force` を assess 自身が**キャッシュなし**（`MCA_GATE_NO_CACHE=1`）で実行して緑 | pass キャッシュはただのファイルで、誰でも書ける |
+| `gate` | `Scripts/gate.sh --force` を assess 自身が**キャッシュなし**（`MCA_GATE_NO_CACHE=1`）で実行して緑。`--ci` では CI run が同じことをする | pass キャッシュはただのファイルで、誰でも書ける |
 | `bar_move` | テスト削除・有効な assertion / `@Test` の純減・`.disabled` / `.enabled(if:)` / `withKnownIssue` の追加・独自フラグの `#if` 追加・閾値引き下げがない。**ファイル全体の変更前後**を、コメント・文字列（raw string 含む）を除き、`#if` を macOS の debug ビルドとして評価したうえで数える。新規ファイルも空ファイルとの比較で測る（独自 `ConditionTrait` の定義を捕まえる）。空の `arguments` も検知する | 「テストは緑だが、テストを弱めて緑にした」を弾く |
 | `review` | 作者ではないレビュアーの記録が **現在の diff_id に束縛**され、未解決の CRITICAL/HIGH が 0 | 古い版へのレビューは今の diff について何も言っていない |
 | `executed_tests` | trunk と branch の両方で `swift test` を**実際に実行**し、trunk で pass したテストが branch でも全件 pass し、パラメータ化テストのケース数が減っていない | テストの止め方は書き方を列挙しても閉じない（INC-009）。実行結果は書き方に依存しない |
 | `regression_test` | `fix/*` `hotfix/*` なら Tests/ の有効な assertion が純増している | 直したことを示す証拠が必要 |
 | `stable` | 証拠を集めている間に HEAD・tree・diff_id が変わっていない | 証拠は、それを集めた tree についてしか語れない |
+
+### `--ci`：実行系の証拠を CI から取る
+
+`gate` と `executed_tests` は `swift test` を 3 回走らせる、評価の中で最も重い部分。`assess` / `approve` に
+`--ci` を付けると、これをローカルで実行せず、push 済みの HEAD に対する `ci.yml` の run（push イベント）が
+`trust.mjs evidence` で集めた `trust-evidence` artifact を使う。
+
+- artifact の `head`・`diff_id`・`merge_base` がローカルの値と 1 つでも違えば、両方の証拠を失敗とする
+- HEAD が `origin/<branch>` に push されていなければ失敗。run が見つからない・artifact がない場合も失敗
+- run は `ci.yml` の push イベントで、HEAD sha・branch が一致し、完了しているものに限る
+- CI が何を実行するかは `.github/**` と `Scripts/**` が決め、どちらも `governance` なので、ブランチが
+  CI の中身を変えた PR は証拠に関係なく人間に回る
+- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の実行はそれより**前に**済ませ、
+  trunk の結果は CI ではキャッシュしない（ブランチのテストが比較の基準を書き換えられないように）
+- `bar_move`・`review`・`clean`・`stable` は従来どおりローカルで判定する（静的で安い）
+- main は branch protection で `Build & Test (macOS)` を必須チェックにしている
 
 実行結果は Swift Testing のイベントストリーム（`--event-stream-output-path`、JSON Lines）から読む。
 テスト ID（行・桁を除く）ごとに状態とケース数を比較するため、名前のないテストや同名の表示名でも
@@ -174,12 +190,12 @@ node $T escape --incident INC-00N --diff-id <id>
 ## 脅威モデルと既知の限界
 
 ローカルでは、作者（AI）と評価器が同じ OS ユーザーで動く。評価器が読むもの（台帳・review.json・
-Pre-Ship 回答・ゲート・trunk 実行のキャッシュ）は、原理的にすべて作者も書ける。CI は使わない
-（2026-09-26 の決定。費用の制約）。したがってこの仕組みは**強制ではなく手順**であり、
-次のリスクを受け入れている：
+Pre-Ship 回答・ゲート・trunk 実行のキャッシュ）は、原理的にすべて作者も書ける。
+2026-10-06、リポジトリが public になり macOS runner とブランチ保護が無料で使えるため、実行系の証拠を
+CI に移した（`--ci`）。それ以外は**強制ではなく手順**であり、次のリスクを受け入れている：
 
-- AI が手順を無視して `gh` で直接マージすることは技術的に防げない（AI はあなたの gh トークンを使う）。
-  無料プランの private リポのため、ブランチ保護も使えない
+- AI が手順を無視して `gh` で直接マージすることは、ブランチ保護（CI 必須）で CI 赤のままでは塞がれるが、
+  CI 緑・レビューなしのマージは防げない（AI はあなたの gh トークンを使う）
 - review.json の作者が本当に別コンテキストかは検証できない（INC-003）
 - 台帳の escape を AI が消せば breaker は戻る
 - `breaker` の値はポリシー検証で ISO-8601 の過去の日時と正の整数に限る。読めない escape の時刻は数える側に倒す（INC-015）

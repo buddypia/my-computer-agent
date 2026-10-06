@@ -4,10 +4,12 @@
 
 ## 品質ゲート
 
-コードに触れた作業は、応答を終える前に必ずゲートを通す。
+コードに触れた作業は、応答を終える前に必ずゲートを通す（Stop フックが G1 まで自動で走らせる）。
+G2 のテストは CI に任せる。手元で全段を確かめたいときだけ `Scripts/gate.sh` を実行する。
 
 ```bash
-Scripts/gate.sh
+Scripts/gate.sh --stage 1   # Stop フックと同じ
+Scripts/gate.sh             # G0..G2
 ```
 
 段階は費用の安い順に並んでおり、失敗した時点で以降は打ち切られる。
@@ -41,6 +43,8 @@ G3 が既定に入っていないのは、`build/` を作り直して `codesign`
 
 `.claude/hooks/gate-stop.sh` が Claude Code と Codex CLI の Stop フックに
 登録されている。ゲートが落ちている間は応答を終えられず、失敗出力が差し戻される。
+毎ターン払う費用なので、フックは **G1（ビルド）まで**しか走らせない（`MCA_GATE_HOOK_STAGE` で変更可）。
+テストは push した HEAD に対して GitHub Actions（`.github/workflows/ci.yml`）が走らせる。
 差し戻しは 1 セッションあたり 3 回まで（`MCA_GATE_MAX_RETRIES`）。使い切った場合は
 失敗を明示したうえでターンを終える — 赤いまま進める判断は人間のものだから。
 
@@ -52,10 +56,12 @@ G3 が既定に入っていないのは、`build/` を作り直して `codesign`
 評価系自身・不可逆な変更（DB スキーマ変更 `CREATE/ALTER/DROP TABLE` 等・破壊的データ削除 `DELETE FROM` / `rm -rf` 等）・秘密/権限/依存・仕様・大きな UI・大規模変更（大規模リファクタリングを含む 10 ファイル以上 または 300 行以上）は必ず人間が承認する。
 それ以外（revert 可能かつ局所的）は、証拠（gate 緑・テスト基準引き下げなし・独立レビュー等）がすべて緑なら AI が人間に聞かずにマージする。
 
-1. ゲートを通し、作者とは別コンテキストのレビュアー（サブエージェント）に `trust.mjs diff-id` の値へ
+1. commit して `git push -u origin <branch>` する（CI が HEAD に対して gate と executed_tests を走らせる）。
+   作者とは別コンテキストのレビュアー（サブエージェント）に `trust.mjs diff-id` の値へ
    束縛した review.json を書かせる。チェック項目は `trust.mjs incident checklist`。
 2. Pre-Ship の approval 以外のステップを済ませてから、**main 側の**評価器で判定する:
-   `node <main>/Scripts/trust/trust.mjs approve --worktree <wt> --review <json>`
+   `node <main>/Scripts/trust/trust.mjs approve --worktree <wt> --review <json> --ci`
+   （`--ci` は CI run の完了を待ち、その証拠を使う。ローカルで swift test は走らない）
    - exit 0 かつ `TRUST AUTO_MERGE` と「Pre-Ship approval を trust として記録した」が出力された場合だけ、
      人間に聞かずに `/create-pr ship-worktree` へ進む。PR 本文に判定結果を載せ、マージ後に報告する。
      exit 0 だけでは判断しない（INC-012）。

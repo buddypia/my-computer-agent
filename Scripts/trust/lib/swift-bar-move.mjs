@@ -26,6 +26,8 @@
  * count; that is the reviewer's to catch, not this module's.
  */
 
+import { execFileSync } from 'node:child_process';
+
 export const SWIFT_BAR_MOVE = Object.freeze({
   TEST_FILE_DELETED: 'test_file_deleted',
   ASSERTION_REMOVED: 'assertion_removed',
@@ -49,6 +51,20 @@ const EMPTY_ARGS = /\barguments\s*:\s*(?:\[\s*\]|\[\s*:\s*\]|\[[\w.<>, ]+\]\s*\(
 const BENIGN_IF = /^#(?:if|elseif)\s*!?\s*(?:os|canImport|swift|compiler|arch|targetEnvironment|DEBUG\b)/;
 
 /**
+ * Version of the toolchain on this machine — the one `swift test` runs with, here or on the CI runner.
+ * A pinned number drifts the first time either side upgrades; the fallback is for machines without one.
+ */
+function installedSwift() {
+  try {
+    const out = execFileSync('swift', ['--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000 });
+    const m = /Swift version (\d+)\.(\d+)/.exec(out);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The build this repository's tests run in. Anything unlisted is false, like an undefined flag.
  * Imports are an allowlist (unknown module → false → the guarded tests count as removed): guessing
  * "true" is what let `canImport(NoSuchModule)` hide a test (INC-009). The same goes for versions and
@@ -59,7 +75,7 @@ const TARGET = {
   arch: new Set([process.arch === 'x64' ? 'x86_64' : process.arch]),
   flags: new Set(['DEBUG']),
   targetEnvironment: new Set([]),
-  swift: [6, 3],
+  swift: installedSwift() ?? [6, 3],
   canImport: new Set([
     'Foundation', 'Darwin', 'Dispatch', 'AppKit', 'SwiftUI', 'Combine', 'Observation', 'Testing', 'XCTest',
     'CoreGraphics', 'CoreFoundation', 'CoreText', 'CoreImage', 'CoreMedia', 'CoreVideo', 'CoreAudio',

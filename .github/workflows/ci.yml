@@ -1,10 +1,12 @@
 name: CI
 
+# Pushes, not pull_request: the runtime evidence `trust.mjs approve --ci` reads must be about the
+# branch HEAD itself, and a pull_request run checks out a merge commit instead. Fork PRs cannot push
+# here; they run ci-fork.yml, a separate workflow so its checks never share a name with this one
+# (a skipped duplicate reads as a pass to checksVerdict and to branch protection).
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    branches: [ '**' ]
 
 permissions:
   contents: read
@@ -17,10 +19,13 @@ jobs:
   build-and-test:
     name: Build & Test (macOS)
     runs-on: macos-26
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # merge-base with origin/main
 
       - name: Check Environment
         run: |
@@ -35,11 +40,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Swift Build
+      - name: Swift Build (release)
         run: swift build -c release
 
-      - name: Swift Test
-        run: swift test --parallel
-
-      - name: Verify Quality Gate
+      - name: Quality Gate (main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          MCA_GATE_NO_CACHE: '1'
         run: ./Scripts/gate.sh --force
+
+      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk run is
+      # never restored from a cache: the branch's own tests run in this job and could have written one.
+      - name: Trust evidence (branch)
+        if: github.ref != 'refs/heads/main'
+        run: node Scripts/trust/trust.mjs evidence --worktree . --out evidence.json
+
+      - name: Upload trust evidence
+        if: always() && github.ref != 'refs/heads/main' && hashFiles('evidence.json') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trust-evidence
+          path: evidence.json
+          retention-days: 14
+          overwrite: true
