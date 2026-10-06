@@ -3,8 +3,9 @@
  * trust.mjs — Auto-merge unless a wrong decision would be fatal. Design: docs/trust/auto-approval.md
  *
  *   diff-id    --worktree <p>                               id the reviewer must bind to
- *   assess     --worktree <p> [--review <json>] [--no-gate] [--no-runtime] [--dry-run] [--json]
- *   approve    --worktree <p> --review <json> [--json]      assess; on auto_merge, record the Pre-Ship approval
+ *   assess     --worktree <p> [--review <json>] [--ci] [--no-gate] [--no-runtime] [--dry-run] [--json]
+ *   approve    --worktree <p> --review <json> [--ci] [--json]  assess; on auto_merge, record the Pre-Ship approval
+ *   evidence   --worktree <p> --out <json>                  runtime evidence for HEAD (run by CI; --ci reads it)
  *   reconcile  --worktree <p>                               pull the human's Pre-Ship answer into the ledger
  *   escape     --incident INC-NNN (--diff-id <id> | --categories a,b) [--note "..."]
  *   stats      [--json]
@@ -248,6 +249,68 @@ function executedTestsEvidence(wt, mergeBase) {
   };
 }
 
+// ---------------------------------------------------------------------------- CI evidence
+
+/**
+ * The runtime evidence (`gate`, `executed_tests`) is the expensive part of an assessment: three
+ * `swift test` runs. With `--ci` it comes from the `ci.yml` run on the pushed HEAD instead of this
+ * machine. A branch cannot change what that run does without touching `.github/**`, which escalates
+ * as `governance` whatever the evidence says.
+ */
+const CI_WORKFLOW = 'ci.yml';
+export const CI_ARTIFACT = 'trust-evidence';
+const CI_EVIDENCE = ['gate', 'executed_tests'];
+const CI_FIND_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * The CI report's runtime evidence, or why it does not speak for this tree. Exported for tests.
+ * A report about another head, diff or merge base says nothing about the tree being assessed.
+ */
+export function ciEvidenceFromReport(report, expected, runId) {
+  const fail = (detail) => CI_EVIDENCE.map((id) => ({ id, ok: false, detail: `CI run ${runId}: ${detail}` }));
+  if (!report || typeof report !== 'object') return fail('evidence を読めない');
+  for (const key of ['head', 'diff_id', 'merge_base']) {
+    if (report[key] !== expected[key]) {
+      return fail(`${key} が違う (CI ${String(report[key]).slice(0, 12)} / local ${String(expected[key]).slice(0, 12)})`);
+    }
+  }
+  const byId = new Map((Array.isArray(report.evidence) ? report.evidence : []).map((e) => [e?.id, e]));
+  return CI_EVIDENCE.map((id) => {
+    const e = byId.get(id);
+    if (!e) return { id, ok: false, detail: `CI run ${runId}: ${id} がない` };
+    return { id, ok: e.ok === true, detail: `CI run ${runId}: ${e.detail}` };
+  });
+}
+
+function gh(wt, args) {
+  return execFileSync('gh', args, { cwd: wt, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
+}
+
+/** Waits for the CI run on `head` (after a push it takes a moment to be registered) and reads its report. */
+function ciEvidence(wt, branch, expected) {
+  const fail = (detail) => CI_EVIDENCE.map((id) => ({ id, ok: false, detail }));
+  const remote = git(wt, ['ls-remote', 'origin', `refs/heads/${branch}`]).split('\t')[0].trim();
+  if (remote !== expected.head) return fail(`HEAD が origin/${branch} に push されていない（先に git push -u origin ${branch}）`);
+
+  let runId = null;
+  for (const deadline = Date.now() + CI_FIND_TIMEOUT_MS; !runId && Date.now() < deadline; ) {
+    const runs = JSON.parse(gh(wt, ['run', 'list', '--workflow', CI_WORKFLOW, '--commit', expected.head, '--event', 'push', '--json', 'databaseId', '--limit', '1']));
+    runId = runs[0]?.databaseId ?? null;
+    if (!runId) spawnSync('sleep', ['10']);
+  }
+  if (!runId) return fail(`${expected.head.slice(0, 7)} の CI run が見つからない`);
+
+  // A failing run still uploads its report: the evidence lines say *what* failed.
+  spawnSync('gh', ['run', 'watch', String(runId), '--interval', '30'], { cwd: wt, stdio: 'ignore' });
+  const dir = mkdtempSync(join(tmpdir(), 'trust-ci-'));
+  try {
+    gh(wt, ['run', 'download', String(runId), '--name', CI_ARTIFACT, '--dir', dir]);
+    return ciEvidenceFromReport(readJson(join(dir, 'evidence.json')), expected, runId);
+  } catch (e) {
+    return fail(`CI run ${runId}: ${CI_ARTIFACT} を取得できない (${String(e.stderr || e.message).trim().split('\n')[0]})`);
+  }
+}
+
 // ---------------------------------------------------------------------------- ledger & config
 
 /** Main checkout root — the ledger outlives any single worktree. */
@@ -347,9 +410,12 @@ async function assessBranch(args) {
 
   const evidence = [];
   evidence.push({ id: 'clean', ok: before.dirty === '', detail: before.dirty ? '未コミットの変更がある（diff_id に含まれない）' : 'working tree clean' });
-  evidence.push(args['no-gate'] ? { id: 'gate', ok: false, detail: '--no-gate: ゲート未実行' } : runGate(wt));
-
-  evidence.push(args['no-runtime'] ? { id: 'executed_tests', ok: false, detail: '--no-runtime: 実行比較なし' } : executedTestsEvidence(wt, mergeBase));
+  if (args.ci) {
+    evidence.push(...ciEvidence(wt, branch, { head: before.head, diff_id: diffId, merge_base: mergeBase }));
+  } else {
+    evidence.push(args['no-gate'] ? { id: 'gate', ok: false, detail: '--no-gate: ゲート未実行' } : runGate(wt));
+    evidence.push(args['no-runtime'] ? { id: 'executed_tests', ok: false, detail: '--no-runtime: 実行比較なし' } : executedTestsEvidence(wt, mergeBase));
+  }
 
   const barMove = [...detectSwiftBarMove(testFiles), ...(await managedBarMove(wt, mergeBase))];
   evidence.push({
@@ -394,6 +460,7 @@ async function assessBranch(args) {
       mode: policy.mode,
       policy_version: policy.version,
       policy_source: policySource,
+      evidence_source: args.ci ? 'ci' : 'local',
       categories: classification.categories,
       scale: classification.scale,
       escalations: classification.escalations.map((e) => e.id),
@@ -571,20 +638,35 @@ function cmdIncident(args) {
   return 0;
 }
 
+/** The runtime evidence `--ci` reads, gathered where it runs (ci.yml) and bound to the tree it ran on. */
+function cmdEvidence(args) {
+  if (!args.out) throw new UsageError('--out <json> が必要');
+  const { wt, ref } = requireWorktree(args);
+  const before = snapshot(wt);
+  const diffId = reviewDiffId(wt, ref);
+  const mergeBase = git(wt, ['merge-base', ref, 'HEAD']).trim();
+  const evidence = [runGate(wt), executedTestsEvidence(wt, mergeBase)];
+  const after = snapshot(wt);
+  if (after.head !== before.head || after.dirty !== before.dirty) throw new Error('証拠収集中に HEAD / tree が変わった');
+  writeFileSync(resolve(String(args.out)), `${JSON.stringify({ head: before.head, diff_id: diffId, merge_base: mergeBase, evidence }, null, 2)}\n`);
+  for (const e of evidence) console.log(`  ${e.ok ? 'ok  ' : 'FAIL'} ${e.id.padEnd(16)} ${e.detail}`);
+  return evidence.every((e) => e.ok) ? 0 : 1;
+}
+
 function cmdDiffId(args) {
   const { wt, ref } = requireWorktree(args);
   console.log(reviewDiffId(wt, ref));
   return 0;
 }
 
-const COMMANDS = { assess: cmdAssess, approve: cmdApprove, reconcile: cmdReconcile, escape: cmdEscape, stats: cmdStats, incident: cmdIncident, 'diff-id': cmdDiffId };
+const COMMANDS = { assess: cmdAssess, approve: cmdApprove, reconcile: cmdReconcile, escape: cmdEscape, stats: cmdStats, incident: cmdIncident, evidence: cmdEvidence, 'diff-id': cmdDiffId };
 
 async function main(argv) {
   try {
     const args = parseArgs(argv);
     const cmd = COMMANDS[args._[0]];
     if (!cmd) {
-      console.error(readFileSync(fileURLToPath(import.meta.url), 'utf-8').split('\n').slice(2, 16).join('\n'));
+      console.error(readFileSync(fileURLToPath(import.meta.url), 'utf-8').split('\n').slice(2, 17).join('\n'));
       return 1;
     }
     return await cmd(args);

@@ -15,7 +15,7 @@ import { checkIncidents } from '../lib/incidents.mjs';
 import { breakerState, summarize } from '../lib/ledger.mjs';
 import { validateReview } from '../lib/review.mjs';
 import { normalizeApproval } from '../../../.cli/lib/approval-vocabulary.mjs';
-import { diffIdOf, humanAnswer, isEntryPoint, recordTrustApproval } from '../trust.mjs';
+import { ciEvidenceFromReport, diffIdOf, humanAnswer, isEntryPoint, recordTrustApproval } from '../trust.mjs';
 
 const policy = JSON.parse(readFileSync(new URL('../../../data/trust/policy.json', import.meta.url), 'utf-8'));
 const file = (path, loc = 10, lines = {}) => ({ path, added: loc, removed: 0, ...lines });
@@ -517,4 +517,30 @@ test('ship merges only after the PR checks finished and passed (PRs #5, #9-#17 m
   assert.equal(waitChecks(1, 'o/r', 'h', bad.opts).passed, false);
   assert.equal(bad.calls.n, 1, 'a failed check stops the wait at once');
   assert.deepEqual(waitChecks(1, 'o/r', 'h', replay(at('h', [])).opts), { passed: false, state: 'CHECKS_TIMEOUT' });
+});
+
+// ------------------------------------------------------------------ CI evidence (--ci)
+
+test('CI evidence: a report bound to this head, diff and merge base is taken as is', () => {
+  const expected = { head: 'h1', diff_id: 'd1', merge_base: 'm1' };
+  const report = { ...expected, evidence: [{ id: 'gate', ok: true, detail: 'GATE PASS' }, { id: 'executed_tests', ok: false, detail: 'X failed' }] };
+  const ev = ciEvidenceFromReport(report, expected, 7);
+  assert.deepEqual(ev.map((e) => [e.id, e.ok]), [['gate', true], ['executed_tests', false]]);
+  assert.match(ev[0].detail, /^CI run 7: GATE PASS/);
+});
+
+test('CI evidence: a report about another tree fails every runtime item', () => {
+  const expected = { head: 'h1', diff_id: 'd1', merge_base: 'm1' };
+  const ok = [{ id: 'gate', ok: true, detail: '' }, { id: 'executed_tests', ok: true, detail: '' }];
+  for (const key of ['head', 'diff_id', 'merge_base']) {
+    const ev = ciEvidenceFromReport({ ...expected, [key]: 'other', evidence: ok }, expected, 1);
+    assert.deepEqual(ev.map((e) => e.ok), [false, false], key);
+  }
+});
+
+test('CI evidence: missing items and truthy-but-not-true ok are failures', () => {
+  const expected = { head: 'h1', diff_id: 'd1', merge_base: 'm1' };
+  const ev = ciEvidenceFromReport({ ...expected, evidence: [{ id: 'gate', ok: 'yes', detail: '' }] }, expected, 1);
+  assert.deepEqual(ev.map((e) => [e.id, e.ok]), [['gate', false], ['executed_tests', false]]);
+  assert.deepEqual(ciEvidenceFromReport(null, expected, 1).map((e) => e.ok), [false, false]);
 });

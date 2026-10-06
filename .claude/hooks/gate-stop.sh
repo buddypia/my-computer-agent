@@ -39,7 +39,9 @@ print(re.sub(r"[^A-Za-z0-9_-]", "", str(s))[:64] or "nosession")
 
 COUNTER="$STATE_DIR/retries-$SESSION"
 
-OUTPUT="$("$ROOT/Scripts/gate.sh" 2>&1)"
+# Every turn pays for this, so it stops at the build (G1). The tests run on CI for the pushed HEAD,
+# and `trust.mjs approve --ci` will not auto-merge without that run's evidence.
+OUTPUT="$("$ROOT/Scripts/gate.sh" --stage "${MCA_GATE_HOOK_STAGE:-1}" 2>&1)"
 STATUS=$?
 
 if [ "$STATUS" -eq 0 ]; then
