@@ -217,7 +217,7 @@ public final class HUDPanel: NSObject, NSWindowDelegate {
         log.info("HUD moved to \(corner.rawValue, privacy: .public)")
     }
 
-    // Deliberately no `focusForInput()` any more. It used to be where ⌥⌘Space
+    // Deliberately no `focusForInput()` any more. It used to be where ⌥Space
     // landed — bring the panel forward, turn click-through off, take key focus
     // — and it is now the wrong answer to that request: asking a question opens
     // `ChatWindow`, which is built for a conversation rather than for one line

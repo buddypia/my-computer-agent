@@ -39,7 +39,7 @@ a browser or an Electron shell.
 | **Talks** | Two buttons, not a mode picker. The microphone is **Dictation**: transcribed on this Mac, then handed to the same chat model a typed question goes to. The waveform beside it is **Live conversation**: Gemini hears you and answers out loud over one socket, and searches the web when it needs something current. Either way, what the microphone heard is drawn across the bottom of the screen you are working on, in type sized for that display. |
 | **Remembers** | SQLite with FTS5, plus on-device query expansion so you can search by meaning rather than exact wording. |
 | **Advises** | An on-device model screens every scan and stays silent by default; only what clears that gate reaches a cloud model. Switch **Watch my screen** on in the chat and it also looks at the screen itself on a timer — a picture, not just text — and speaks only when it sees a mistake, an error or a faster way. Off by default, and off again on every launch. |
-| **Shows** | A chat window one click from the ✨ item or ⌥⌘Space, where answers and the agent's own observations land in one thread. Also a menu bar popover, and — when you ask for it — a floating `NSPanel` that is visible over full-screen apps, never steals focus from your editor, and can optionally let clicks pass straight through. |
+| **Shows** | A chat window one click from the ✨ item or ⌥Space, where answers and the agent's own observations land in one thread. Also a menu bar popover, and — when you ask for it — a floating `NSPanel` that is visible over full-screen apps, never steals focus from your editor, and can optionally let clicks pass straight through. |
 | **Shares** | Exposes your context and GUI automation tool suite (`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`) to other agents (Claude Code, Codex, …) as an MCP server. Tools that act on your Mac or browser are refused over MCP unless you set `"mcpAllowDangerousTools": true` in `config.json`. |
 
 ---
@@ -165,7 +165,7 @@ mca reset-permissions
 
 ## The chat window
 
-`⌥⌘Space`, the **Chat** button on either surface, or ✨ ▸ **Open the Chat…**. It
+`⌥Space`, the **Chat** button on either surface, or ✨ ▸ **Open the Chat…**. It
 opens centred, in front, with the caret already in the field.
 
 It is deliberately not an application-modal window. `NSApp.runModal` would give
@@ -343,10 +343,10 @@ surface with one language.
 
 ### Shortcuts
 
-Defaults: `⌥⌘Space` ask · `⌥⌘H` overlay on/off · `⌥⌘J` collapse/expand ·
+Defaults: `⌥Space` ask · `⌥⌘H` overlay on/off · `⌥⌘J` collapse/expand ·
 `⌥⌘X` click-through · `⌥⌘V` voice session · `⌥⌘W` watch this window.
 
-`⌥⌘Space` opens the chat window with the caret in the field, whatever the
+`⌥Space` opens the chat window with the caret in the field, whatever the
 overlay is doing.
 
 `⌥⌘W` pins the watch to the window you are in and starts watching if it was

@@ -568,7 +568,7 @@ final class Copilot {
 
     /// Opens the chat, ready to type into.
     ///
-    /// This is where ⌥⌘Space and "Ask a Question…" now land. They used to open
+    /// This is where ⌥Space and "Ask a Question…" now land. They used to open
     /// whichever surface happened to be around — the panel if it was on the
     /// desktop, otherwise the menu bar popover — and both are one line at the
     /// bottom of a card list, with the popover closing the moment the user

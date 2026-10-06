@@ -8,7 +8,7 @@ import Observation
 /// The action, not the chord, is what the rest of the app binds to. That
 /// separation is the whole point of this file: a hard-coded chord cannot be
 /// changed when it collides with another app, and a global hot key collision is
-/// not a rare event — ⌥⌘Space is claimed by several launchers, and
+/// not a rare event — ⌥Space is claimed by several launchers, and
 /// `RegisterEventHotKey` gives it to whoever asked first with no error the user
 /// ever sees.
 public enum HotKeyAction: String, CaseIterable, Sendable, Codable {

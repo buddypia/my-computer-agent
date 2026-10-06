@@ -37,9 +37,10 @@ struct ChordTests {
     @Test("carbon modifiers map back to AppKit's mask")
     func modifierMask() {
         let mask = GlobalHotKey.Chord.ask.menuModifierMask
-        #expect(mask.contains(.command))
+        #expect(!mask.contains(.command))
         #expect(mask.contains(.option))
         #expect(!mask.contains(.shift))
+        #expect(GlobalHotKey.Chord.ask.displayString == "⌥Space")
     }
 
     /// A bare key, or a key with only Shift, must be refused: registering it

@@ -39,9 +39,9 @@ public final class GlobalHotKey {
 
         // MARK: Defaults
 
-        /// ⌥⌘Space — ask a question.
+        /// ⌥Space — ask a question.
         public static let ask = Chord(
-            keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | cmdKey), label: "Space")
+            keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey), label: "Space")
         /// ⌥⌘X — toggle click-through.
         ///
         /// X rather than C: ⌥⌘C is taken by "Copy Pathname" in macOS Finder,
@@ -71,7 +71,7 @@ public final class GlobalHotKey {
 
         // MARK: Display
 
-        /// `⌥⌘Space`, in the order macOS draws modifiers.
+        /// `⌥Space`, in the order macOS draws modifiers.
         public var displayString: String {
             var text = ""
             if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
