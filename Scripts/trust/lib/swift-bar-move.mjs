@@ -59,7 +59,7 @@ const TARGET = {
   arch: new Set([process.arch === 'x64' ? 'x86_64' : process.arch]),
   flags: new Set(['DEBUG']),
   targetEnvironment: new Set([]),
-  swift: [6, 4],
+  swift: [6, 3],
   canImport: new Set([
     'Foundation', 'Darwin', 'Dispatch', 'AppKit', 'SwiftUI', 'Combine', 'Observation', 'Testing', 'XCTest',
     'CoreGraphics', 'CoreFoundation', 'CoreText', 'CoreImage', 'CoreMedia', 'CoreVideo', 'CoreAudio',
