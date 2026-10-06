@@ -56,7 +56,7 @@ const BENIGN_IF = /^#(?:if|elseif)\s*!?\s*(?:os|canImport|swift|compiler|arch|ta
  */
 function installedSwift() {
   try {
-    const out = execFileSync('swift', ['--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync('swift', ['--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30_000 });
     const m = /Swift version (\d+)\.(\d+)/.exec(out);
     return m ? [Number(m[1]), Number(m[2])] : null;
   } catch {

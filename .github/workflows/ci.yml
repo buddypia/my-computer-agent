@@ -2,24 +2,22 @@ name: CI
 
 # Pushes, not pull_request: the runtime evidence `trust.mjs approve --ci` reads must be about the
 # branch HEAD itself, and a pull_request run checks out a merge commit instead. Fork PRs cannot push
-# here, so they get their own job (not a required check — a human merges those).
+# here; they run ci-fork.yml, a separate workflow so its checks never share a name with this one
+# (a skipped duplicate reads as a pass to checksVerdict and to branch protection).
 on:
   push:
     branches: [ '**' ]
-  pull_request:
-    branches: [ main ]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
     name: Build & Test (macOS)
-    if: github.event_name == 'push'
     runs-on: macos-26
     timeout-minutes: 60
 
@@ -42,16 +40,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      # The trunk run is keyed by merge-base sha and toolchain inside, so a stale entry is never used.
-      - name: Cache trunk test run
-        if: github.ref != 'refs/heads/main'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .tmp/trust
-          key: ${{ runner.os }}-trust-trunk-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-trust-trunk-
-
       - name: Swift Build (release)
         run: swift build -c release
 
@@ -61,7 +49,8 @@ jobs:
           MCA_GATE_NO_CACHE: '1'
         run: ./Scripts/gate.sh --force
 
-      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD.
+      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk run is
+      # never restored from a cache: the branch's own tests run in this job and could have written one.
       - name: Trust evidence (branch)
         if: github.ref != 'refs/heads/main'
         run: node Scripts/trust/trust.mjs evidence --worktree . --out evidence.json
@@ -73,16 +62,4 @@ jobs:
           name: trust-evidence
           path: evidence.json
           retention-days: 14
-
-  fork-pr:
-    name: Build & Test (fork PR)
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: macos-26
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: swift --version
-      - run: swift build -c release
-      - env:
-          MCA_GATE_NO_CACHE: '1'
-        run: ./Scripts/gate.sh --force
+          overwrite: true

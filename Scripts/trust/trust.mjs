@@ -254,13 +254,15 @@ function executedTestsEvidence(wt, mergeBase) {
 /**
  * The runtime evidence (`gate`, `executed_tests`) is the expensive part of an assessment: three
  * `swift test` runs. With `--ci` it comes from the `ci.yml` run on the pushed HEAD instead of this
- * machine. A branch cannot change what that run does without touching `.github/**`, which escalates
- * as `governance` whatever the evidence says.
+ * machine. The workflow and the evaluator it runs are `.github/**` and `Scripts/**` (governance).
+ * The branch's own tests also run in that job; `cmdEvidence` measures the trunk before any of them
+ * runs, so they cannot plant the baseline they are compared against.
  */
 const CI_WORKFLOW = 'ci.yml';
 export const CI_ARTIFACT = 'trust-evidence';
 const CI_EVIDENCE = ['gate', 'executed_tests'];
 const CI_FIND_TIMEOUT_MS = 3 * 60 * 1000;
+const CI_WAIT_TIMEOUT_MS = 90 * 60 * 1000;
 
 /**
  * The CI report's runtime evidence, or why it does not speak for this tree. Exported for tests.
@@ -294,20 +296,27 @@ function ciEvidence(wt, branch, expected) {
 
   let runId = null;
   for (const deadline = Date.now() + CI_FIND_TIMEOUT_MS; !runId && Date.now() < deadline; ) {
-    const runs = JSON.parse(gh(wt, ['run', 'list', '--workflow', CI_WORKFLOW, '--commit', expected.head, '--event', 'push', '--json', 'databaseId', '--limit', '1']));
+    const runs = JSON.parse(gh(wt, ['run', 'list', '--workflow', CI_WORKFLOW, '--commit', expected.head, '--branch', branch, '--event', 'push', '--json', 'databaseId', '--limit', '1']));
     runId = runs[0]?.databaseId ?? null;
     if (!runId) spawnSync('sleep', ['10']);
   }
   if (!runId) return fail(`${expected.head.slice(0, 7)} の CI run が見つからない`);
 
   // A failing run still uploads its report: the evidence lines say *what* failed.
-  spawnSync('gh', ['run', 'watch', String(runId), '--interval', '30'], { cwd: wt, stdio: 'ignore' });
+  spawnSync('gh', ['run', 'watch', String(runId), '--interval', '30'], { cwd: wt, stdio: 'ignore', timeout: CI_WAIT_TIMEOUT_MS });
+  const run = JSON.parse(gh(wt, ['run', 'view', String(runId), '--json', 'status,headSha,headBranch,event,workflowName']));
+  if (run.status !== 'completed') return fail(`CI run ${runId} が終わっていない (${run.status})`);
+  if (run.headSha !== expected.head || run.headBranch !== branch || run.event !== 'push') {
+    return fail(`CI run ${runId} は別の run (${run.event} ${run.headBranch}@${String(run.headSha).slice(0, 7)})`);
+  }
   const dir = mkdtempSync(join(tmpdir(), 'trust-ci-'));
   try {
     gh(wt, ['run', 'download', String(runId), '--name', CI_ARTIFACT, '--dir', dir]);
     return ciEvidenceFromReport(readJson(join(dir, 'evidence.json')), expected, runId);
   } catch (e) {
     return fail(`CI run ${runId}: ${CI_ARTIFACT} を取得できない (${String(e.stderr || e.message).trim().split('\n')[0]})`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -643,9 +652,12 @@ function cmdEvidence(args) {
   if (!args.out) throw new UsageError('--out <json> が必要');
   const { wt, ref } = requireWorktree(args);
   const before = snapshot(wt);
+  if (before.dirty) throw new Error('未コミットの変更がある（evidence は HEAD についてしか語れない）');
   const diffId = reviewDiffId(wt, ref);
   const mergeBase = git(wt, ['merge-base', ref, 'HEAD']).trim();
-  const evidence = [runGate(wt), executedTestsEvidence(wt, mergeBase)];
+  // executed_tests first: its trunk run must finish before any branch test runs (the gate runs them).
+  const executed = executedTestsEvidence(wt, mergeBase);
+  const evidence = [runGate(wt), executed];
   const after = snapshot(wt);
   if (after.head !== before.head || after.dirty !== before.dirty) throw new Error('証拠収集中に HEAD / tree が変わった');
   writeFileSync(resolve(String(args.out)), `${JSON.stringify({ head: before.head, diff_id: diffId, merge_base: mergeBase, evidence }, null, 2)}\n`);

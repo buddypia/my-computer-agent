@@ -70,8 +70,11 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 
 - artifact の `head`・`diff_id`・`merge_base` がローカルの値と 1 つでも違えば、両方の証拠を失敗とする
 - HEAD が `origin/<branch>` に push されていなければ失敗。run が見つからない・artifact がない場合も失敗
+- run は `ci.yml` の push イベントで、HEAD sha・branch が一致し、完了しているものに限る
 - CI が何を実行するかは `.github/**` と `Scripts/**` が決め、どちらも `governance` なので、ブランチが
   CI の中身を変えた PR は証拠に関係なく人間に回る
+- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の実行はそれより**前に**済ませ、
+  trunk の結果は CI ではキャッシュしない（ブランチのテストが比較の基準を書き換えられないように）
 - `bar_move`・`review`・`clean`・`stable` は従来どおりローカルで判定する（静的で安い）
 - main は branch protection で `Build & Test (macOS)` を必須チェックにしている
 
