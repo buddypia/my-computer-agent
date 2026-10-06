@@ -494,15 +494,15 @@ public struct HUDView: View {
                 help: localized(
                     """
                     Open the chat window. Everything the agent says lands there, \
-                    including what it notices on its own (⌥⌘Space)
+                    including what it notices on its own (⌥Space)
                     """,
                     """
                     チャットウインドウを開きます。エージェントの発言は、\
-                    自分で気づいたことも含めてすべてここに届きます (⌥⌘Space)
+                    自分で気づいたことも含めてすべてここに届きます (⌥Space)
                     """,
                     """
                     채팅 윈도우를 엽니다. 에이전트가 하는 말은 스스로 알아챈 것까지 \
-                    모두 그곳으로 옵니다 (⌥⌘Space)
+                    모두 그곳으로 옵니다 (⌥Space)
                     """),
                 action: onOpenChat)
 

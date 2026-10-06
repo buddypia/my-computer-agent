@@ -112,7 +112,7 @@ The Permissions tab labels each item **Granted**, **Not granted**, or "Belongs t
 2. Right-click the sparkle icon and choose **Settings…**. (Opening the app a second time also opens Settings.)
 3. **Permissions** tab: grant the four permissions as described above.
 4. **Models & Keys** tab: paste a Gemini key and click **Save** (optional but recommended; see [API keys](#5-api-keys)). It takes effect immediately; no relaunch.
-5. Press `⌥⌘Space` to open the chat and ask something about what is on your screen.
+5. Press `⌥Space` to open the chat and ask something about what is on your screen.
 6. Optional check from a terminal: `build/MyComputerAgent.app/Contents/MacOS/mca doctor`.
 
 Nothing that listens or looks at pictures is on after launch: the microphone is closed, and **Watch my screen** is off. See [Privacy model](#13-privacy-model).
@@ -285,7 +285,7 @@ The sparkle icon is the app.
 | Keep in Front of Other Windows | On: stays in front on every Space and over full-screen apps. Off: behaves like an ordinary window. |
 | Let Clicks Pass Through | On: every click on the panel goes to the app behind it, including clicks aimed at its own buttons. Turn it off with `⌥⌘X` or this menu. |
 | Position | Top or bottom, left or right. Dragging the panel (with click-through off) also works, and the dragged position is remembered. |
-| Open the Chat… | Opens the chat window (`⌥⌘Space`). |
+| Open the Chat… | Opens the chat window (`⌥Space`). |
 | Snip Screen & Explain… | Drag to select an area of the screen and have it explained. Esc cancels. |
 | Clear Chat… | Deletes all messages after confirmation. |
 | Choose a Screen to Watch… | Opens the screen picker. The title changes to show what is being watched. |
@@ -300,7 +300,7 @@ The window-related items (collapse, front, click-through, position) apply to the
 
 ## 9. The chat window
 
-Open it with `⌥⌘Space`, the **Chat** button on the panel, or **Open the Chat…** in the menu. It opens centered and in front with the cursor already in the field. It is deliberately not modal: everything else keeps working. Press Esc to close it.
+Open it with `⌥Space`, the **Chat** button on the panel, or **Open the Chat…** in the menu. It opens centered and in front with the cursor already in the field. It is deliberately not modal: everything else keeps working. Press Esc to close it.
 
 Answers and the agent's own observations land in one thread. Press Return to send. Right-click a message to **Copy**, **Delete this message**, or **Delete this and everything above**. The trash icon (or **Clear Chat…** in the menu) starts a new conversation after confirmation. The thread is held in memory for the session.
 
@@ -376,7 +376,7 @@ Defaults (all global, all rebindable):
 
 | Shortcut | Action |
 |---|---|
-| `⌥⌘Space` | Ask a Question: open the chat with the cursor in the field |
+| `⌥Space` | Ask a Question: open the chat with the cursor in the field |
 | `⌥⌘H` | Show / Hide the Panel (the agent keeps watching) |
 | `⌥⌘J` | Collapse / Restore the Panel |
 | `⌥⌘X` | Let Clicks Pass Through (toggle) |

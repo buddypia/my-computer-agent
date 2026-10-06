@@ -452,7 +452,7 @@ func printUsage() {
         ✨ ▸ Settings ▸ General ▸ Audio.
 
         Default hot keys while running:
-          ⌥⌘Space  ask a question      ⌥⌘X  let clicks pass through
+          ⌥Space   ask a question      ⌥⌘X  let clicks pass through
           ⌥⌘H      panel on/off        ⌥⌘J  collapse/restore the panel
           ⌥⌘V      talk to the agent
 
