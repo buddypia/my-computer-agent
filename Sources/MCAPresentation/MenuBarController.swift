@@ -356,7 +356,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             case (true, _): mode.stopCommandTitle
             case (false, _): mode.startCommandTitle
             }
-            // The chord goes on the one item it would actually trigger. ⌥⌘V
+            // The chord goes on the one item it would actually trigger. ⌃⌥V
             // repeats the mode last used, and advertising it on both would make
             // one of the two a lie.
             let entry = item(

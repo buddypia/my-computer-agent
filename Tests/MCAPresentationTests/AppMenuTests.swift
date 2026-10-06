@@ -113,8 +113,8 @@ struct ReservedChordTests {
         }
     }
 
-    /// Only bare ⌘ is reserved. ⌥⌘V collides with nothing, and refusing it
-    /// would shrink the usable chord space for no reason.
+    /// Only bare ⌘ is reserved. Adding another modifier makes the chord
+    /// available again for custom binding, rather than refusing all variants.
     @Test("adding another modifier makes the chord available again")
     func modifiedVariantsAreAllowed() {
         #expect(chord(kVK_ANSI_V, "V", command: false).reservedReason == nil)

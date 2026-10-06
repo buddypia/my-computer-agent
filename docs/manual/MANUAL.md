@@ -356,7 +356,7 @@ Open it with the pin button in the chat, the **Screen** button on the panel, or 
 - **Dictation** (microphone): what you say is transcribed, then goes to the same chat model as a typed question, with screen context and tools. Whether audio stays on your Mac depends on the speech engine (below).
 - **Live conversation** (waveform): Gemini hears you and answers out loud over one connection, and searches the web for current information. **Your microphone audio is streamed to Google for as long as the conversation is open.** It needs a Gemini key.
 
-Press a button to start, press it again to end, press the other one mid-session to switch. `⌥⌘V` starts whichever mode you used last, and ends it. What the microphone heard is drawn as large type across the bottom of the screen you are working on, shown in the voice bar of the chat, and added to the conversation as a normal user message when the turn ends. Settled text and the engine's current guess are drawn at different strengths. You can turn the large caption off in Settings ▸ General ▸ **Voice**.
+Press a button to start, press it again to end, press the other one mid-session to switch. `⌃⌥V` starts whichever mode you used last, and ends it. What the microphone heard is drawn as large type across the bottom of the screen you are working on, shown in the voice bar of the chat, and added to the conversation as a normal user message when the turn ends. Settled text and the engine's current guess are drawn at different strengths. You can turn the large caption off in Settings ▸ General ▸ **Voice**.
 
 The microphone is not open at launch. It opens when a voice session starts and closes when it ends. To keep it (and the system-audio tap) open all the time, turn on **Listen continuously** in Settings ▸ General ▸ **Audio** (off by default; may raise a microphone prompt and download a speech model).
 
@@ -380,7 +380,7 @@ Defaults (all global, all rebindable):
 | `⌥⌘H` | Show / Hide the Panel (the agent keeps watching) |
 | `⌥⌘J` | Collapse / Restore the Panel |
 | `⌥⌘X` | Let Clicks Pass Through (toggle) |
-| `⌥⌘V` | Start / End a Conversation (the voice mode used last) |
+| `⌃⌥V` | Start / End a Conversation (the voice mode used last) |
 | `⌥⌘W` | Watch This Window (pin; press again to release) |
 
 Other keys: `Esc` closes the chat window and cancels Snip and the screen picker; `Return` sends a message and applies the picker's selection; `⌘,` and `⌘Q` work in the menu bar menu while it is open. `⌘W` still closes windows as usual, because the whole chord including Option is what is registered.

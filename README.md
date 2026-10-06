@@ -34,7 +34,7 @@ a browser or an Electron shell.
 |---|---|
 | **Sees** | Reads the focused window's accessibility tree on OS events (focus change, window title change, typing pause). Falls back to on-device Vision OCR for canvas-drawn apps. Never polls at a frame rate. |
 | **Acts** | Autonomous native GUI control (clicks, typing, key combinations, AppleScript execution) using CoreGraphics event synthesis coupled with accessibility inspection (`AXUIElement`). Ultra-low latency UI grounding powered by TypeSafe AI (Jev System One model, <200ms) with seamless offline/unkeyed semantic local fallback. Safe execution available from the built-in Copilot, CLI (`mca act`), and external MCP clients. |
-| **Hears** | Captures your microphone with hardware AEC and the system audio output through a CoreAudio process tap — no virtual audio driver. Two separate channels, so "you" and "everyone else" stay distinct. **Nothing is captured at launch:** the microphone opens for a voice conversation (⌥⌘V) and closes when it ends. Continuous capture is a switch in ✨ ▸ Settings ▸ General ▸ Audio. |
+| **Hears** | Captures your microphone with hardware AEC and the system audio output through a CoreAudio process tap — no virtual audio driver. Two separate channels, so "you" and "everyone else" stay distinct. **Nothing is captured at launch:** the microphone opens for a voice conversation (⌃⌥V) and closes when it ends. Continuous capture is a switch in ✨ ▸ Settings ▸ General ▸ Audio. |
 | **Transcribes** | Dual-engine transcription: Apple's on-device `SpeechAnalyzer` for 100% private local recognition, or **Gemini Flash batch audio transcription** for state-of-the-art multilingual accuracy, homophone disambiguation, and verbal filler cleanup. Audio never leaves the machine when on the Apple engine. |
 | **Talks** | Two buttons, not a mode picker. The microphone is **Dictation**: transcribed on this Mac, then handed to the same chat model a typed question goes to. The waveform beside it is **Live conversation**: Gemini hears you and answers out loud over one socket, and searches the web when it needs something current. Either way, what the microphone heard is drawn across the bottom of the screen you are working on, in type sized for that display. |
 | **Remembers** | SQLite with FTS5, plus on-device query expansion so you can search by meaning rather than exact wording. |
@@ -344,7 +344,7 @@ surface with one language.
 ### Shortcuts
 
 Defaults: `⌥Space` ask · `⌥⌘H` overlay on/off · `⌥⌘J` collapse/expand ·
-`⌥⌘X` click-through · `⌥⌘V` voice session · `⌥⌘W` watch this window.
+`⌥⌘X` click-through · `⌃⌥V` voice session · `⌥⌘W` watch this window.
 
 `⌥Space` opens the chat window with the caret in the field, whatever the
 overlay is doing.
@@ -365,7 +365,7 @@ choosing between them, since what actually differs is what leaves the machine:
 live streams your microphone to Google, dictation transcribes here and sends
 only the text.
 
-`⌥⌘V` has no mode of its own — it starts whichever of the two you used last, and
+`⌃⌥V` has no mode of its own — it starts whichever of the two you used last, and
 ends it. The ✨ menu shows the chord on that one item, so it never advertises a
 shortcut that would do something else.
 
@@ -485,7 +485,7 @@ MyComputerAgent is built on a strict **Zero-Trust, Local-First** security and pr
 - **Secure Text Field Protection**: `AXSecureTextField` contents (passwords, PINs) are never read or processed.
 - **In-Flight PII & Token Redaction**: In-flight UI text is automatically scrubbed with regex sanitizers to mask API keys, bearer tokens, and credit card numbers before any data reaches AI models.
 - **Self-Inspection Guard**: The agent refuses to inspect its own PID or windows (`sharingType = .none`), preventing UI recursion or hallucination loops.
-- **Microphone Off at Launch**: The microphone is never open at startup. It opens only during explicit voice sessions (⌥⌘V) and closes immediately when finished.
+- **Microphone Off at Launch**: The microphone is never open at startup. It opens only during explicit voice sessions (⌃⌥V) and closes immediately when finished.
 - **On-Device By Default**: All audio and screen observation paths transcribe locally on-device by default (`SpeechAnalyzer` / Vision OCR); data is never transmitted to cloud models without explicit user interaction.
 - **Stdio-Only MCP Server**: The MCP server runs over standard I/O (stdio) for local tools; it never opens unauthenticated network ports on your machine.
 

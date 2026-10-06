@@ -58,9 +58,12 @@ public final class GlobalHotKey {
         /// system-wide.
         public static let toggleCollapse = Chord(
             keyCode: UInt32(kVK_ANSI_J), modifiers: UInt32(optionKey | cmdKey), label: "J")
-        /// ⌥⌘V — start or stop a live voice conversation.
+        /// ⌃⌥V — start or stop a live voice conversation.
+        ///
+        /// ⌃⌥V rather than ⌥⌘V: ⌥⌘V is taken by "Move items here" in macOS Finder,
+        /// and registering it system-wide breaks moving files in Finder.
         public static let toggleVoice = Chord(
-            keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(optionKey | cmdKey), label: "V")
+            keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(controlKey | optionKey), label: "V")
         /// ⌥⌘W — pin the watch to the window in front, or let it go.
         ///
         /// W for "watch". Safe despite ⌘W being Close everywhere, because the
