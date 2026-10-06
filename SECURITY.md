@@ -45,7 +45,7 @@ We acknowledge receipt of reports within 48 hours and provide estimated remediat
 - **Self-Inspection Exclusion**: The agent automatically identifies its own process identifier (PID) and refuses to inspect its own windows, preventing recursion or accidental reflection of assistant responses.
 
 ### 3. Local-First & User-Controlled Sensing
-- **Microphone Off at Launch**: The microphone is never open at startup. It opens only during explicit voice sessions (e.g. ⌥⌘V) and immediately closes upon session termination.
+- **Microphone Off at Launch**: The microphone is never open at startup. It opens only during explicit voice sessions (e.g. ⌃⌥V) and immediately closes upon session termination.
 - **Dual Independent Audio Channels**: Microphone input (hardware AEC) and system audio (CoreAudio process tap) are processed in isolated audio pipelines without third-party virtual audio drivers.
 - **On-Device Speech & Vision**: On-device speech recognition (`SpeechAnalyzer`) and Vision OCR ensure audio and screen text remain entirely local on the Mac when on the Apple engine.
 - **Audio Is Sent to Google When the Gemini Engine Is Used**: The default transcription engine is Gemini (cloud). With it, and in live voice sessions (`GeminiLiveSession`), captured microphone/system audio is streamed to Google Gemini for transcription. Select the Apple engine in Settings to keep audio on the Mac. Screenshots and recognized screen text are likewise sent to your configured model provider when you ask the agent about your screen.

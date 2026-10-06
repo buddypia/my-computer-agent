@@ -8,7 +8,7 @@ import MCACore
 /// overlay's placement is: this is a choice the user makes by pressing a button,
 /// not policy they edit in a JSON file. A mode that reset to realtime on every
 /// launch would quietly put the microphone back on the network for someone who
-/// deliberately moved it off — and ⌥⌘V, which repeats whatever was used last,
+/// deliberately moved it off — and ⌃⌥V, which repeats whatever was used last,
 /// would go with it.
 public struct VoicePreferences {
     private let defaults: UserDefaults
@@ -24,7 +24,7 @@ public struct VoicePreferences {
         defaults.register(defaults: [Key.caption: true])
     }
 
-    /// The mode last started, which is what ⌥⌘V repeats. Realtime until
+    /// The mode last started, which is what ⌃⌥V repeats. Realtime until
     /// something is pressed: it is the mode that answers back out loud, which is
     /// what "talk to the agent" is usually asking for.
     public var mode: VoiceMode {

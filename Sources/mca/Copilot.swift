@@ -1948,7 +1948,7 @@ final class Copilot {
 
         if hudState.voiceMode != mode {
             hudState.voiceMode = mode
-            // Remembered so ⌥⌘V repeats whichever was used last, and so the
+            // Remembered so ⌃⌥V repeats whichever was used last, and so the
             // choice survives a relaunch: a mode that reset on every launch
             // would quietly put the microphone back on the network for someone
             // who had deliberately moved it off.
@@ -1965,7 +1965,7 @@ final class Copilot {
         }
     }
 
-    /// ⌥⌘V. No mode of its own — it repeats whichever was used last, which is
+    /// ⌃⌥V. No mode of its own — it repeats whichever was used last, which is
     /// the only reading that stays true now that the modes are two buttons
     /// rather than a setting.
     private func toggleVoiceSession() {
@@ -2191,14 +2191,14 @@ final class Copilot {
             title: localized("Go ahead", "どうぞ話しかけてください", "말씀하세요"),
             body: localized("""
                 Listening in \(heard). Say your question out loud. When you stop talking it is \
-                sent to the chat, and the answer arrives there. ⌥⌘V stops listening.
+                sent to the chat, and the answer arrives there. ⌃⌥V stops listening.
                 """, """
                 \(heard) で聞き取ります。質問を声に出して話してください。話し終えるとチャットに\
-                送られ、回答もそこに届きます。⌥⌘V で聞き取りを終了します。
+                送られ、回答もそこに届きます。⌃⌥V で聞き取りを終了します。
                 """,
                 """
                 \(heard) 로 듣습니다. 질문을 소리 내어 말하세요. 말을 마치면 채팅으로 전송되고 \
-                답변도 그곳에 도착합니다. ⌥⌘V 로 듣기를 종료합니다.
+                답변도 그곳에 도착합니다. ⌃⌥V 로 듣기를 종료합니다.
                 """),
             severity: .info))
         log.info("Dictation session started")
@@ -2299,15 +2299,15 @@ final class Copilot {
                 body: localized(
                     """
                     Say something into the microphone. It can search the web when it needs \
-                    something current. ⌥⌘V ends the conversation.
+                    something current. ⌃⌥V ends the conversation.
                     """,
                     """
                     マイクに話しかけてください。最新の情報が必要なときは Web を検索します。\
-                    終了は ⌥⌘V です。
+                    終了は ⌃⌥V です。
                     """,
                     """
                     마이크에 말을 걸어 보세요. 최신 정보가 필요할 때는 웹을 검색합니다. \
-                    종료는 ⌥⌘V 입니다.
+                    종료는 ⌃⌥V 입니다.
                     """),
                 severity: .info))
         case .searchedWeb(let queries):
@@ -2379,18 +2379,18 @@ final class Copilot {
                         \(message)
 
                         Check the Gemini key in **✨ ▸ Settings ▸ Models & Keys**, then press \
-                        ⌥⌘V to try again.
+                        ⌃⌥V to try again.
                         """, """
                         \(message)
 
                         **✨ ▸ 設定 ▸ モデルとキー** で Gemini のキーを確認してから、\
-                        ⌥⌘V でもう一度お試しください。
+                        ⌃⌥V でもう一度お試しください。
                         """,
                         """
                         \(message)
                         
                         **✨ ▸ 설정 ▸ 모델과 키** 에서 Gemini 키를 확인한 뒤 \
-                        ⌥⌘V 로 다시 시도하세요.
+                        ⌃⌥V 로 다시 시도하세요.
                         """),
                     severity: .error))
                 log.error("Live session failed: \(message, privacy: .public)")

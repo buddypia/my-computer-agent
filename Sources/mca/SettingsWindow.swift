@@ -391,9 +391,9 @@ private struct GeneralSettings: View {
                     }
 
                     Text(localized(
-                        "⌥⌘V starts whichever of the two you used last, and ends it.",
-                        "⌥⌘V は、最後に使ったほうを始めます。もう一度押すと終了します。",
-                        "⌥⌘V 는 마지막에 사용한 쪽을 시작하고, 다시 누르면 종료합니다."))
+                        "⌃⌥V starts whichever of the two you used last, and ends it.",
+                        "⌃⌥V は、最後に使ったほうを始めます。もう一度押すと終了します。",
+                        "⌃⌥V 는 마지막에 사용한 쪽을 시작하고, 다시 누르면 종료합니다."))
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -432,21 +432,21 @@ private struct GeneralSettings: View {
                         detail: localized(
                             """
                             Off by default. With this off the microphone opens only while a voice \
-                            conversation is running (⌥⌘V) and closes as soon as it ends — no \
+                            conversation is running (⌃⌥V) and closes as soon as it ends — no \
                             recording indicator in between, and nothing holding the device away \
                             from your other apps. On, the microphone and system audio are captured \
                             and transcribed for as long as the agent runs, which is what lets it \
                             advise on a meeting you never asked it about.
                             """,
                             """
-                            既定はオフです。オフのあいだ、マイクは音声で会話しているとき（⌥⌘V）だけ\
+                            既定はオフです。オフのあいだ、マイクは音声で会話しているとき（⌃⌥V）だけ\
                             開き、終わればすぐ閉じます。その間は録音インジケータも出ず、他のアプリの\
                             マイク利用も妨げません。オンにすると、エージェントが動いているあいだ\
                             マイクとシステム音声を取り込み続けて文字起こしします。頼まなくても会議の\
                             内容に助言できるのは、このモードのときだけです。
                             """,
                             """
-                            기본값은 꺼짐입니다. 꺼져 있는 동안 마이크는 음성 대화 중(⌥⌘V)에만 열리고 \
+                            기본값은 꺼짐입니다. 꺼져 있는 동안 마이크는 음성 대화 중(⌃⌥V)에만 열리고 \
                             끝나면 곧바로 닫힙니다. 그 사이에는 녹음 표시등도 뜨지 않고 다른 앱의 마이크 \
                             사용도 막지 않습니다. 켜면 에이전트가 동작하는 동안 마이크와 시스템 사운드를 \
                             계속 받아 문자로 변환합니다. 부탁하지 않아도 회의 내용에 조언할 수 있는 것은 \

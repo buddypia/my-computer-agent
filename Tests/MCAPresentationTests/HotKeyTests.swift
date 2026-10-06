@@ -34,6 +34,14 @@ struct ChordTests {
         #expect(GlobalHotKey.Chord.toggleClickThrough.menuKeyEquivalent == "x")
     }
 
+    @Test("toggleVoice uses ⌃⌥V to avoid macOS Finder 'Move items here' shortcut collision")
+    func voiceShortcut() {
+        #expect(GlobalHotKey.Chord.toggleVoice.displayString == "⌃⌥V")
+        #expect(GlobalHotKey.Chord.toggleVoice.label == "V")
+        #expect(GlobalHotKey.Chord.toggleVoice.menuKeyEquivalent == "v")
+        #expect(GlobalHotKey.Chord.toggleVoice.menuModifierMask == [.control, .option])
+    }
+
     @Test("carbon modifiers map back to AppKit's mask")
     func modifierMask() {
         let mask = GlobalHotKey.Chord.ask.menuModifierMask

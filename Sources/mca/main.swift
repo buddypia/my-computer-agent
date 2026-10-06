@@ -447,14 +447,14 @@ func printUsage() {
         you turn on "Show the Panel on the Desktop".
 
         The microphone is not opened at launch. It comes up for a voice
-        conversation (⌥⌘V) and closes when the conversation ends. To capture
+        conversation (⌃⌥V) and closes when the conversation ends. To capture
         and transcribe continuously instead, turn on "Listen continuously" in
         ✨ ▸ Settings ▸ General ▸ Audio.
 
         Default hot keys while running:
           ⌥Space   ask a question      ⌥⌘X  let clicks pass through
           ⌥⌘H      panel on/off        ⌥⌘J  collapse/restore the panel
-          ⌥⌘V      talk to the agent
+          ⌃⌥V      talk to the agent
 
         All five are rebindable in ✨ ▸ Settings ▸ Shortcuts, which is also
         where a chord another app already owns is reported — macOS gives a

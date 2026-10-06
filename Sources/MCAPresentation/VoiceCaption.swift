@@ -176,7 +176,7 @@ struct VoiceCaptionView: View {
     private var hint: String {
         switch state.voiceMode {
         case .realtime:
-            return localized("⌥⌘V to end", "⌥⌘V で終了", "⌥⌘V로 종료")
+            return localized("⌃⌥V to end", "⌃⌥V で終了", "⌃⌥V로 종료")
         case .dictation:
             return state.isStreaming
                 ? localized("Answering — keep talking", "回答中 — 話し続けて構いません",
