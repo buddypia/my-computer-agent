@@ -481,8 +481,7 @@ public struct HUDView: View {
     /// replaces what used to be one button plus a mode menu underneath it.
     private var quickActions: some View {
         HStack(spacing: 6) {
-            voiceButton(.dictation)
-            voiceButton(.realtime)
+            voiceControl
 
             // The one that opens a real conversation, in a window you can type
             // into properly, rather than the single line at the bottom of a
@@ -506,29 +505,45 @@ public struct HUDView: View {
                     """),
                 action: onOpenChat)
 
-            // One-shot: inspect screen right now
-            quickButton(
-                symbol: "sparkles",
-                title: localized("Explain", "画面を説明", "화面 설명"),
-                active: false,
-                help: localized(
-                    "Look at the screen right now and explain it, in the chat (one-shot)",
-                    "いま画面に映っているものを見て、チャットで1回説明します",
-                    "지금 화면에 보이는 것을 살펴보고 채팅으로 1회 설명합니다"),
-                action: onExplainScreen)
-                .disabled(state.isStreaming)
-
-            // One-shot: drag to select region and explain
-            quickButton(
-                symbol: "crop",
-                title: localized("Snip", "範囲指定", "영역 선택"),
-                active: false,
-                help: localized(
-                    "Drag to select a part of your screen and explain it",
-                    "画面の一部をドラッグして選択し、説明させます",
-                    "화면 일부를 드래그하여 선택하고 설명합니다"),
-                action: onSnipScreen)
-                .disabled(state.isStreaming)
+            // One-shot: look at the screen. Click explains all of it; the
+            // menu selects just a region. Same image path, different capture.
+            Menu {
+                Button {
+                    onExplainScreen?()
+                } label: {
+                    Label(localized("Explain the whole screen", "画面全体を説明", "화면 전체 설명"),
+                          systemImage: "sparkles")
+                }
+                Button {
+                    onSnipScreen?()
+                } label: {
+                    Label(localized("Select a region…", "範囲を選んで説明…", "영역을 선택해 설명…"),
+                          systemImage: "crop")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                    Text(localized("Look at screen", "画面を見る", "화면 보기"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.black.opacity(0.22))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            } primaryAction: {
+                onExplainScreen?()
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(localized(
+                "Click to explain the whole screen once. Use the arrow to select just a region.",
+                "クリックで画面全体を1回説明します。矢印から、一部だけを範囲指定することもできます。",
+                "클릭하면 화면 전체를 한 번 설명합니다. 화살표로 일부 영역만 선택할 수도 있습니다."))
+            .accessibilityLabel(localized("Look at screen", "画面を見る", "화면 보기"))
+            .disabled(state.isStreaming)
 
             // Continuous: start/stop background observation and proactive advice
             quickButton(
@@ -573,26 +588,59 @@ public struct HUDView: View {
             "지금 지켜보는 대상: \(subject). 누르면 다시 고를 수 있습니다.")
     }
 
-    /// One mode's button: starts it, or ends it when it is the one running.
-    ///
-    /// Silent while the other mode is live rather than disabled. Pressing it
-    /// then means "switch to this instead", which is what someone who reaches
-    /// for the other button mid-session is asking for; a greyed-out control
-    /// would make them stop, end the session and start again.
-    ///
-    /// The label appears only once something is happening. Off, the icon carries
-    /// it; running, the word is the exit — and "終了" next to a lit microphone is
-    /// the one thing that has to be readable without hovering.
-    private func voiceButton(_ mode: VoiceMode) -> some View {
-        let isCurrent = state.voiceMode == mode && state.voicePhase != .off
-        return quickButton(
-            symbol: isCurrent ? mode.activeSymbol : mode.symbol,
-            title: isCurrent ? voicePhaseTitle : mode.shortTitle,
-            name: mode.title,
-            active: isCurrent,
-            tint: mode == .realtime ? .cyan : nil,
-            help: mode.title + "\n\n" + mode.buttonHelp,
-            action: { onVoice?(mode) })
+    /// One voice control: starts the current mode on click, or ends it when
+    /// running. The menu switches between dictation and live conversation.
+    @ViewBuilder
+    private var voiceControl: some View {
+        let mode = state.voiceMode
+        let isRunning = state.voicePhase != .off
+        if isRunning {
+            quickButton(
+                symbol: mode.activeSymbol,
+                title: voicePhaseTitle,
+                name: mode.title,
+                active: true,
+                tint: mode == .realtime ? .cyan : nil,
+                help: mode.title + "\n\n" + localized("Click to end", "クリックで終了", "클릭하여 종료"),
+                action: { onVoice?(mode) })
+        } else {
+            Menu {
+                Button {
+                    onVoice?(.dictation)
+                } label: {
+                    Label(localized("Dictation (Speech to text)", "音声入力（文字で入力）", "음성 입력(텍스트 변환)"),
+                          systemImage: "mic")
+                }
+                Button {
+                    onVoice?(.realtime)
+                } label: {
+                    Label(localized("Live Conversation (Bidirectional)", "リアルタイム会話（音声対話）", "실시간 대화(음성 대화)"),
+                          systemImage: "waveform")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: mode.symbol)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                    Text(mode.shortTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.black.opacity(0.22))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            } primaryAction: {
+                onVoice?(mode)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(localized(
+                "Click to start \(mode.title). Use the arrow to switch between dictation and live conversation.",
+                "クリックで \(mode.title) を開始します。矢印から、音声入力とリアルタイム会話を切り替えられます。",
+                "클릭하면 \(mode.title)을(를) 시작합니다. 화살표로 음성 입력과 실시간 대화를 전환할 수 있습니다."))
+            .accessibilityLabel(mode.title)
+        }
     }
 
     private var voicePhaseTitle: String {
