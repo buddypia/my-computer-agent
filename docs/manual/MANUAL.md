@@ -308,13 +308,11 @@ Answers and the agent's own observations land in one thread. Press Return to sen
 
 | Control | What it does |
 |---|---|
-| **Explain** | One-shot: looks at what the picker is pointed at and explains it in the chat. With nothing pinned it uses the display the pointer is on. Works on canvas-drawn apps (diagrams, PDFs, video calls) because it uses a picture. |
-| **Snip** | Drag to select part of the screen and explain it. |
+| **Look at screen** | One-shot: click to explain the whole screen once. Use the menu arrow to **Select a region…** (drag to select). Works on canvas-drawn apps (diagrams, PDFs, video calls) because it uses a picture. |
 | **Continuous Watch** | Turns the screen watch on or off (see next section). Shows *Watching* or *Looking…* while active. |
 | Pin button | Opens the screen picker. Shows the pinned window or display, or the number of watched screens. |
 | Interval menu | How often to look: every 15 seconds, 45 seconds or 2 minutes. |
-| Microphone | **Dictation**. |
-| Waveform | **Live conversation**. |
+| **Voice** | Click to start or end the current voice mode. Use the menu arrow to switch between **Dictation** (text reply) and **Live conversation** (bidirectional speech). |
 | Trash | Start a new conversation. |
 
 A bar of **Quick Presets** sits next to the message field, showing the current target. A preset runs once against the current target ("Execute Once"); its menu can also set it as the objective of the continuous watch, edit it, or delete it.
