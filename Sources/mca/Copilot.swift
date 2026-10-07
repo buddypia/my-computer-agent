@@ -1986,19 +1986,25 @@ final class Copilot {
         }
     }
 
+    private var modelSwitchTask: Task<Void, Never>?
+
     /// Updates the local EmbeddingGemma 2 model and refreshes the decision engine and context store embedder.
     func setEmbeddingGemmaModel(_ model: String) {
-        guard configuration.embeddingGemmaModel != model else { return }
-        configuration.embeddingGemmaModel = model
+        let sanitized = AgentConfiguration.sanitizeEmbeddingGemmaModel(model)
+        guard configuration.embeddingGemmaModel != sanitized else { return }
+        configuration.embeddingGemmaModel = sanitized
         do {
             try configuration.save()
         } catch {
             log.error(
                 "Could not save the embedding gemma model setting: \(String(describing: error), privacy: .public)")
         }
-        decisionEngine = TypeSafeDecisionEngine.live(model: model)
-        let embedder = EmbeddingGemmaTextEmbedding(model: model)
-        Task { [store] in
+        decisionEngine = TypeSafeDecisionEngine.live(model: sanitized)
+
+        modelSwitchTask?.cancel()
+        let embedder = EmbeddingGemmaTextEmbedding(model: sanitized)
+        modelSwitchTask = Task { [store] in
+            guard !Task.isCancelled else { return }
             await store?.setEmbedder(embedder)
         }
     }

@@ -10,7 +10,12 @@ import NaturalLanguage
 /// conformance, and nothing above this line changes.
 public protocol TextEmbedding: Sendable {
     var dimension: Int { get }
+    var modelIdentifier: String? { get }
     func embed(_ text: String) async -> [Float]?
+}
+
+public extension TextEmbedding {
+    var modelIdentifier: String? { nil }
 }
 
 /// Apple's on-device sentence embedding.

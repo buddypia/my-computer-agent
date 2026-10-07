@@ -253,7 +253,7 @@ public struct AgentConfiguration: Codable, Sendable {
         self.excludedBundleIDs = excludedBundleIDs
         self.excludedWindowPatterns = excludedWindowPatterns
         self.databaseURL = databaseURL ?? AgentConfiguration.defaultDatabaseURL
-        self.embeddingGemmaModel = embeddingGemmaModel
+        self.embeddingGemmaModel = AgentConfiguration.sanitizeEmbeddingGemmaModel(embeddingGemmaModel)
         self.browser = browser
     }
 
@@ -288,11 +288,24 @@ public struct AgentConfiguration: Codable, Sendable {
         excludedWindowPatterns = try value(
             .excludedWindowPatterns, fallback.excludedWindowPatterns)
         databaseURL = try value(.databaseURL, fallback.databaseURL)
-        embeddingGemmaModel = try value(.embeddingGemmaModel, fallback.embeddingGemmaModel)
+        let rawModel = try value(.embeddingGemmaModel, fallback.embeddingGemmaModel)
+        embeddingGemmaModel = AgentConfiguration.sanitizeEmbeddingGemmaModel(rawModel)
         browser = try value(.browser, fallback.browser)
     }
 
     public static let defaultEmbeddingGemmaModel: String = "google/embeddinggemma-2-740m"
+
+    /// Validates and sanitizes model identifiers to prevent path traversal, control character injection, or DoS.
+    public static func sanitizeEmbeddingGemmaModel(_ model: String?) -> String {
+        guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+            return defaultEmbeddingGemmaModel
+        }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/-_."))
+        guard model.count <= 64, model.unicodeScalars.allSatisfy({ allowed.contains($0) }), !model.contains("..") else {
+            return defaultEmbeddingGemmaModel
+        }
+        return model
+    }
 
     public static let defaultExcludedBundleIDs: [String] = [
         "com.agilebits.onepassword",

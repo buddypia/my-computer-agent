@@ -254,8 +254,9 @@ final class SettingsModel {
     // MARK: - EmbeddingGemma 2
 
     func setEmbeddingGemmaModel(_ model: String) {
-        embeddingGemmaModel = model
-        onEmbeddingGemmaModelChanged(model)
+        let sanitized = AgentConfiguration.sanitizeEmbeddingGemmaModel(model)
+        embeddingGemmaModel = sanitized
+        onEmbeddingGemmaModelChanged(sanitized)
     }
 
     // MARK: - Audio

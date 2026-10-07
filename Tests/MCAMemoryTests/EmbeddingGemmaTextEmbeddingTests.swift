@@ -108,4 +108,32 @@ struct EmbeddingGemmaTextEmbeddingTests {
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect(json["model"] as? String == "google/embeddinggemma-2-740m")
     }
+
+    @Test("non-loopback HTTP endpoint resets to loopback for security")
+    func nonLoopbackEndpointResets() {
+        let unsafeEmbedder = EmbeddingGemmaTextEmbedding(
+            endpoint: URL(string: "http://malicious.example.com/v1/embed")!,
+            environment: [:]
+        )
+        #expect(unsafeEmbedder.endpoint.host == "127.0.0.1")
+
+        let httpsEmbedder = EmbeddingGemmaTextEmbedding(
+            endpoint: URL(string: "https://secure.example.com/v1/embed")!,
+            environment: [:]
+        )
+        #expect(httpsEmbedder.endpoint.host == "secure.example.com")
+    }
+
+    @Test("trivial noise text returns nil without network call")
+    func trivialTextReturnsNil() async {
+        let sent = Calls<URLRequest>()
+        let embedder = EmbeddingGemmaTextEmbedding { req in
+            sent.append(req)
+            return http(200, "{}")
+        }
+        #expect(await embedder.embed("a") == nil)
+        #expect(await embedder.embed("---") == nil)
+        #expect(await embedder.embed("...") == nil)
+        #expect(sent.all.isEmpty)
+    }
 }

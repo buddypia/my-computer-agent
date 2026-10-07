@@ -214,6 +214,15 @@ struct CaptureDefaultTests {
         #expect(decoded.transcriptionEngine == .apple)
         #expect(decoded.embeddingGemmaModel == "google/embeddinggemma-2-440m")
     }
+
+    @Test("model sanitization rejects path traversal and control characters")
+    func modelSanitizationRejectsMaliciousInput() throws {
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("../../etc/passwd") == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("model\nwith\rnewlines") == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel(String(repeating: "a", count: 100)) == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("google/embeddinggemma-2-440m") == "google/embeddinggemma-2-440m")
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("   google/embeddinggemma-2-270m   ") == "google/embeddinggemma-2-270m")
+    }
 }
 
 @Suite("MCP tool approval setting")
