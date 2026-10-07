@@ -444,6 +444,7 @@ public actor CDPPage {
         _ = try? await send("Runtime.releaseObject", .object(["objectId": .string(handle.objectID)]))
     }
 
+    @discardableResult
     func callFunction(on handle: Handle, _ declaration: String, arguments: [JSONValue] = [], awaitPromise: Bool = false) async throws -> JSONValue {
         let result = try await send("Runtime.callFunctionOn", .object([
             "objectId": .string(handle.objectID),
