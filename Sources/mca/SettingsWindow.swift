@@ -113,10 +113,12 @@ final class SettingsModel {
     @ObservationIgnored private let onAlwaysListeningChanged: (Bool) -> Void
     @ObservationIgnored private let onVoiceCaptionChanged: (Bool) -> Void
     @ObservationIgnored private let onTranscriptionEngineChanged: (TranscriptionEngine) -> Void
+    @ObservationIgnored private let onEmbeddingGemmaModelChanged: (String) -> Void
 
     var selectedTab: SettingsTab = .general
     var alwaysListening: Bool
     var transcriptionEngine: TranscriptionEngine
+    var embeddingGemmaModel: String
 
     /// Text typed into each provider's field. Never populated from the
     /// keychain: a stored secret is not re-displayed, only replaced or removed.
@@ -173,6 +175,54 @@ final class SettingsModel {
         ),
     ]
 
+    struct EmbeddingGemmaOption: Identifiable {
+        let id: String
+        let title: LocalizedText
+        let detail: LocalizedText
+    }
+
+    static let embeddingGemmaOptions: [EmbeddingGemmaOption] = [
+        EmbeddingGemmaOption(
+            id: "google/embeddinggemma-2-740m",
+            title: (
+                "740M (Multimodal) — Recommended",
+                "740M（マルチモーダル）— 推奨",
+                "740M (멀티모달) — 권장"
+            ),
+            detail: (
+                "Full multimodal support (Text, Image, Audio) with 256d MRL embeddings.",
+                "テキスト・画像・音声を網羅する完全マルチモーダル対応（256d MRL）。",
+                "텍스트·이미지·음성을 모두 지원하는 완전 멀티모달 대응 (256d MRL)."
+            )
+        ),
+        EmbeddingGemmaOption(
+            id: "google/embeddinggemma-2-440m",
+            title: (
+                "440M (Lightweight Multimodal)",
+                "440M（軽量マルチモーダル）",
+                "440M (경량 멀티모달)"
+            ),
+            detail: (
+                "Balanced multimodal model for machines with lower unified memory.",
+                "ユニファイドメモリの消費を抑えたバランス型マルチモーダルモデルです。",
+                "통합 메모리 사용량을 줄인 밸런스형 멀티모달 모델입니다."
+            )
+        ),
+        EmbeddingGemmaOption(
+            id: "google/embeddinggemma-2-270m",
+            title: (
+                "270M (Ultra-fast Text Only)",
+                "270M（超高速テキスト専用）",
+                "270M (초고속 텍스트 전용)"
+            ),
+            detail: (
+                "Minimal resource usage, text-only embeddings without image/audio capability.",
+                "最小限のリソースで動作するテキスト専用モデル。画像や音声は非対応です。",
+                "최소한의 리소스로 동작하는 텍스트 전용 모델입니다. 이미지·음성은 미지원."
+            )
+        ),
+    ]
+
     init(
         hudState: HUDState,
         hud: HUDPanel,
@@ -182,7 +232,8 @@ final class SettingsModel {
         onCredentialsChanged: @escaping () -> Void,
         onAlwaysListeningChanged: @escaping (Bool) -> Void,
         onVoiceCaptionChanged: @escaping (Bool) -> Void,
-        onTranscriptionEngineChanged: @escaping (TranscriptionEngine) -> Void = { _ in }
+        onTranscriptionEngineChanged: @escaping (TranscriptionEngine) -> Void = { _ in },
+        onEmbeddingGemmaModelChanged: @escaping (String) -> Void = { _ in }
     ) {
         self.hudState = hudState
         self.hud = hud
@@ -193,9 +244,18 @@ final class SettingsModel {
         self.onAlwaysListeningChanged = onAlwaysListeningChanged
         self.onVoiceCaptionChanged = onVoiceCaptionChanged
         self.onTranscriptionEngineChanged = onTranscriptionEngineChanged
+        self.onEmbeddingGemmaModelChanged = onEmbeddingGemmaModelChanged
         self.isCapturable = hud.isCapturable
         self.alwaysListening = configuration.alwaysListening
+        self.embeddingGemmaModel = configuration.embeddingGemmaModel
         refresh()
+    }
+
+    // MARK: - EmbeddingGemma 2
+
+    func setEmbeddingGemmaModel(_ model: String) {
+        embeddingGemmaModel = model
+        onEmbeddingGemmaModelChanged(model)
     }
 
     // MARK: - Audio
@@ -1118,6 +1178,43 @@ private struct ModelSettings: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.green)
                     }
+                }
+
+                SettingsSection(localized(
+                    "EmbeddingGemma 2 (Local)",
+                    "EmbeddingGemma 2（ローカル）",
+                    "EmbeddingGemma 2 (로컬)"
+                )) {
+                    Picker(
+                        localized("Model", "モデル", "모델"),
+                        selection: Binding(
+                            get: { model.embeddingGemmaModel },
+                            set: { model.setEmbeddingGemmaModel($0) }
+                        )
+                    ) {
+                        ForEach(SettingsModel.embeddingGemmaOptions) { option in
+                            Text(localized(option.title)).tag(option.id)
+                        }
+                    }
+
+                    if let selected = SettingsModel.embeddingGemmaOptions.first(where: { $0.id == model.embeddingGemmaModel }) {
+                        Text(localized(selected.detail))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Label(
+                        localized(
+                            "Used for 30-50ms System One GUI grounding and local semantic memory search (256d MRL vectors).",
+                            "30-50msの超高速 System One GUI 判定およびローカルメモリのベクトル検索（256d MRL）に使用されます。",
+                            "30-50ms 초고속 System One GUI 판정 및 로컬 메모리 벡터 검색(256d MRL)에 사용됩니다."
+                        ),
+                        systemImage: "bolt.badge.clock.fill"
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
 
                 SettingsSection(localized("Routing", "ルーティング", "라우팅")) {

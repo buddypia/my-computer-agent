@@ -13,16 +13,19 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
 
     private let log = Logger(subsystem: "com.buddypia.mca", category: "EmbeddingGemmaTextEmbedding")
     public let dimension: Int
+    public let model: String?
     public let endpoint: URL
     private let transport: Transport
 
     public init(
         dimension: Int = 256,
+        model: String? = nil,
         endpoint: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
     ) {
         self.dimension = dimension
+        self.model = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         self.transport = transport
 
         if let endpoint {
@@ -50,10 +53,13 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.timeoutInterval = 5.0
 
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "text": clipped,
             "dim": dimension
         ]
+        if let model {
+            payload["model"] = model
+        }
 
         guard let bodyData = try? JSONSerialization.data(withJSONObject: payload) else {
             return nil

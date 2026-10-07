@@ -33,15 +33,18 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     private let log = Logger(subsystem: "com.buddypia.mca", category: "EmbeddingGemmaClient")
+    public let model: String?
     public let endpoint: URL
     private let transport: Transport
     private let environment: [String: String]
 
     public init(
+        model: String? = nil,
         endpoint: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
     ) {
+        self.model = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         self.environment = environment
         self.transport = transport
 
@@ -101,9 +104,14 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
         // Local inference is fast, but grant a reasonable timeout window
         urlRequest.timeoutInterval = 10.0
 
+        var requestToSend = request
+        if let model {
+            requestToSend.model = model
+        }
+
         let encoder = JSONEncoder()
         do {
-            urlRequest.httpBody = try encoder.encode(request)
+            urlRequest.httpBody = try encoder.encode(requestToSend)
         } catch {
             throw ClientError.decodingError("Failed to encode EvaluationRequest: \(error.localizedDescription)")
         }

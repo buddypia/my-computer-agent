@@ -89,4 +89,23 @@ struct EmbeddingGemmaTextEmbeddingTests {
         let result = await embedder.embed("search text")
         #expect(result == nil)
     }
+
+    @Test("passes explicit model in request payload")
+    func passesExplicitModel() async throws {
+        let sent = Calls<URLRequest>()
+        let mockVector = (0..<256).map { Float($0) / 256.0 }
+        let embedder = EmbeddingGemmaTextEmbedding(
+            dimension: 256,
+            model: "google/embeddinggemma-2-740m"
+        ) { req in
+            sent.append(req)
+            return http(200, "{\"dim\":256,\"vector\":\(mockVector)}")
+        }
+
+        _ = await embedder.embed("test text")
+        let req = try #require(sent.all.first)
+        let body = try #require(req.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["model"] as? String == "google/embeddinggemma-2-740m")
+    }
 }

@@ -169,6 +169,7 @@ struct RoutingPolicyTests {
         #expect(decoded.routing.routes[.answer] == original.routing.routes[.answer])
         #expect(decoded.excludedBundleIDs == original.excludedBundleIDs)
         #expect(decoded.retentionDays == original.retentionDays)
+        #expect(decoded.embeddingGemmaModel == original.embeddingGemmaModel)
     }
 }
 
@@ -199,17 +200,19 @@ struct CaptureDefaultTests {
         #expect(decoded.typingPauseSeconds == 4.0)
         #expect(decoded.alwaysListening == false)
         #expect(decoded.transcriptionEngine == .gemini)
+        #expect(decoded.embeddingGemmaModel == AgentConfiguration.defaultEmbeddingGemmaModel)
         #expect(decoded.excludedBundleIDs == AgentConfiguration.defaultExcludedBundleIDs)
         #expect(decoded.routing.routes[.triage]?.provider == "apple")
     }
 
     @Test("an explicit value still wins over the default")
     func explicitValueDecodes() throws {
-        let json = #"{"alwaysListening": true, "transcriptionEngine": "apple"}"#
+        let json = #"{"alwaysListening": true, "transcriptionEngine": "apple", "embeddingGemmaModel": "google/embeddinggemma-2-440m"}"#
         let decoded = try JSONDecoder().decode(
             AgentConfiguration.self, from: Data(json.utf8))
         #expect(decoded.alwaysListening)
         #expect(decoded.transcriptionEngine == .apple)
+        #expect(decoded.embeddingGemmaModel == "google/embeddinggemma-2-440m")
     }
 }
 

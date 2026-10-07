@@ -73,7 +73,7 @@ public actor SQLiteContextStore: ContextStoring {
 
     private let log = Logger(subsystem: "com.buddypia.mca", category: "Memory")
     private let db: SQLiteDatabase
-    private let embedder: (any TextEmbedding)?
+    private var embedder: (any TextEmbedding)?
 
     /// RRF damping constant. 60 is the value from the original paper and is
     /// insensitive enough that tuning it is rarely worth it.
@@ -85,6 +85,10 @@ public actor SQLiteContextStore: ContextStoring {
         self.db = try SQLiteDatabase(path: url.path)
         self.embedder = embedder
         try Self.migrate(db)
+    }
+
+    public func setEmbedder(_ embedder: (any TextEmbedding)?) {
+        self.embedder = embedder
     }
 
     private static func migrate(_ db: SQLiteDatabase) throws {
