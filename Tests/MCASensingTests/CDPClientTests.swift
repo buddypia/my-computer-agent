@@ -228,3 +228,23 @@ struct AXBrowserDriverMappingTests {
         #expect(AXBrowserDriver.percent(nil) == 0)
     }
 }
+
+@Suite("CDPPage callFunction")
+struct CDPPageCallFunctionTests {
+    @Test("callFunction returns value and allows discarding result without warning")
+    func callFunctionDiscardableResult() async throws {
+        let transport = FakeTransport { message in
+            let id = message["id"] as? Int ?? -1
+            return [#"{"id":\#(id),"result":{"result":{"type":"number","value":42}}}"#]
+        }
+        let client = CDPClient(transport: transport)
+        await client.start()
+        let page = CDPPage(client: client, targetID: "T1", sessionID: "S1")
+        let handle = CDPPage.Handle(objectID: "obj-1")
+        // Discarding the result of callFunction should compile and run cleanly
+        try await page.callFunction(on: handle, "function() { return 42; }")
+        let value = try await page.callFunction(on: handle, "function() { return 42; }")
+        #expect(value.intValue == 42)
+    }
+}
+
