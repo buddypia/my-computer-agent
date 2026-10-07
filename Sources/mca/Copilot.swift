@@ -176,7 +176,8 @@ final class Copilot {
             Task { await self?.setAlwaysListening(enabled) }
         },
         onVoiceCaptionChanged: { [weak self] enabled in self?.setVoiceCaption(enabled) },
-        onTranscriptionEngineChanged: { [weak self] engine in self?.setTranscriptionEngine(engine) })
+        onTranscriptionEngineChanged: { [weak self] engine in self?.setTranscriptionEngine(engine) },
+        onEmbeddingGemmaModelChanged: { [weak self] model in self?.setEmbeddingGemmaModel(model) })
 
     private var store: SQLiteContextStore!
     private var agent: Agent!
@@ -190,7 +191,7 @@ final class Copilot {
     private let capturePinnedSubject: (@Sendable (PinnedWindow) async throws -> ScreenCapturer.WindowCapture)?
     private let textRecognizer = TextRecognizer()
     private let accessibilityReader = AccessibilityReader()
-    private let decisionEngine = TypeSafeDecisionEngine.live()
+    private var decisionEngine: TypeSafeDecisionEngine
     private var eventSource: DesktopEventSource!
 
     private var microphone: MicrophoneCapture?
@@ -226,6 +227,7 @@ final class Copilot {
          capturePinnedSubject: (@Sendable (PinnedWindow) async throws -> ScreenCapturer.WindowCapture)? = nil) {
         self.configuration = configuration
         self.capturePinnedSubject = capturePinnedSubject
+        self.decisionEngine = TypeSafeDecisionEngine.live(model: configuration.embeddingGemmaModel)
     }
 
     // MARK: - Startup
@@ -283,11 +285,8 @@ final class Copilot {
 
     private func startMemory() async {
         do {
-            // No embedder: measurement showed the built-in sentence embedding
-            // ranking irrelevant text above relevant text for these queries.
-            // The semantic path is on-device query expansion instead — see
-            // `QueryExpander` and `NLTextEmbedding`'s documentation.
-            store = try SQLiteContextStore(url: configuration.databaseURL)
+            let embedder = EmbeddingGemmaTextEmbedding(model: configuration.embeddingGemmaModel)
+            store = try SQLiteContextStore(url: configuration.databaseURL, embedder: embedder)
             await health.set(.memory, .running)
         } catch {
             await health.set(.memory, .failed(message: "\(error)"))
@@ -1984,6 +1983,29 @@ final class Copilot {
         configuration.transcriptionEngine = engine
         Task {
             await restartTranscription()
+        }
+    }
+
+    private var modelSwitchTask: Task<Void, Never>?
+
+    /// Updates the local EmbeddingGemma 2 model and refreshes the decision engine and context store embedder.
+    func setEmbeddingGemmaModel(_ model: String) {
+        let sanitized = AgentConfiguration.sanitizeEmbeddingGemmaModel(model)
+        guard configuration.embeddingGemmaModel != sanitized else { return }
+        configuration.embeddingGemmaModel = sanitized
+        do {
+            try configuration.save()
+        } catch {
+            log.error(
+                "Could not save the embedding gemma model setting: \(String(describing: error), privacy: .public)")
+        }
+        decisionEngine = TypeSafeDecisionEngine.live(model: sanitized)
+
+        modelSwitchTask?.cancel()
+        let embedder = EmbeddingGemmaTextEmbedding(model: sanitized)
+        modelSwitchTask = Task { [store] in
+            guard !Task.isCancelled else { return }
+            await store?.setEmbedder(embedder)
         }
     }
 

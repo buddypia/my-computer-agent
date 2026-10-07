@@ -219,6 +219,9 @@ public struct AgentConfiguration: Codable, Sendable {
 
     public var databaseURL: URL
 
+    /// Model used for local EmbeddingGemma 2 System One evaluations and memory embeddings.
+    public var embeddingGemmaModel: String
+
     /// Browser automation (snapshot / act / extract tools).
     public var browser: BrowserAutomationSettings
 
@@ -235,6 +238,7 @@ public struct AgentConfiguration: Codable, Sendable {
         excludedBundleIDs: [String] = AgentConfiguration.defaultExcludedBundleIDs,
         excludedWindowPatterns: [String] = AgentConfiguration.defaultExcludedWindowPatterns,
         databaseURL: URL? = nil,
+        embeddingGemmaModel: String = AgentConfiguration.defaultEmbeddingGemmaModel,
         browser: BrowserAutomationSettings = BrowserAutomationSettings()
     ) {
         self.routing = routing
@@ -249,6 +253,7 @@ public struct AgentConfiguration: Codable, Sendable {
         self.excludedBundleIDs = excludedBundleIDs
         self.excludedWindowPatterns = excludedWindowPatterns
         self.databaseURL = databaseURL ?? AgentConfiguration.defaultDatabaseURL
+        self.embeddingGemmaModel = AgentConfiguration.sanitizeEmbeddingGemmaModel(embeddingGemmaModel)
         self.browser = browser
     }
 
@@ -283,7 +288,23 @@ public struct AgentConfiguration: Codable, Sendable {
         excludedWindowPatterns = try value(
             .excludedWindowPatterns, fallback.excludedWindowPatterns)
         databaseURL = try value(.databaseURL, fallback.databaseURL)
+        let rawModel = try value(.embeddingGemmaModel, fallback.embeddingGemmaModel)
+        embeddingGemmaModel = AgentConfiguration.sanitizeEmbeddingGemmaModel(rawModel)
         browser = try value(.browser, fallback.browser)
+    }
+
+    public static let defaultEmbeddingGemmaModel: String = "google/embeddinggemma-2-740m"
+
+    /// Validates and sanitizes model identifiers to prevent path traversal, control character injection, or DoS.
+    public static func sanitizeEmbeddingGemmaModel(_ model: String?) -> String {
+        guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+            return defaultEmbeddingGemmaModel
+        }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/-_."))
+        guard model.count <= 64, model.unicodeScalars.allSatisfy({ allowed.contains($0) }), !model.contains("..") else {
+            return defaultEmbeddingGemmaModel
+        }
+        return model
     }
 
     public static let defaultExcludedBundleIDs: [String] = [

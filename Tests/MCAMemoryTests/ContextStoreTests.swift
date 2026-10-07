@@ -290,6 +290,35 @@ struct ContextStoreTests {
 
         #expect(try await store.count() == 1)
     }
+
+    @Test("semantic retrieval filters by embedder model to prevent cross-model latent pollution")
+    func semanticRetrievalFiltersByModel() async throws {
+        struct MockModelEmbedding: TextEmbedding {
+            let modelIdentifier: String?
+            var dimension: Int { 2 }
+            func embed(_ text: String) async -> [Float]? {
+                return [1.0, 0.0]
+            }
+        }
+
+        let (store, url) = try Self.makeStore(embedder: MockModelEmbedding(modelIdentifier: "google/embeddinggemma-2-740m"))
+        defer { Self.cleanUp(url) }
+
+        try await store.append(.screen(ScreenObservation(
+            appName: "TestApp", windowTitle: "Title",
+            text: "Important observation content", source: .accessibility)))
+
+        // Query with matching model finds the observation
+        let match = try await store.search(ContextQuery(text: "Important observation content"))
+        #expect(!match.isEmpty)
+
+        // Switch embedder to a different model
+        await store.setEmbedder(MockModelEmbedding(modelIdentifier: "google/embeddinggemma-2-270m"))
+
+        // Search with non-matching lexical query to ensure it cannot match across model boundaries
+        let crossModelSearch = try await store.search(ContextQuery(text: "CompletelyUnrelatedLexicalKeywordXYZ"))
+        #expect(crossModelSearch.isEmpty)
+    }
 }
 
 @Suite("Vector math")

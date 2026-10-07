@@ -32,26 +32,60 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
 
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
+    public static let defaultSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpMaximumConnectionsPerHost = 16
+        config.timeoutIntervalForRequest = 4.0
+        config.timeoutIntervalForResource = 8.0
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }()
+
     private let log = Logger(subsystem: "com.buddypia.mca", category: "EmbeddingGemmaClient")
+    public let model: String?
     public let endpoint: URL
     private let transport: Transport
     private let environment: [String: String]
 
     public init(
+        model: String? = nil,
         endpoint: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
+        transport: @escaping Transport = { try await Self.defaultSession.data(for: $0) }
     ) {
+        let rawModel = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
+        self.model = rawModel.map { AgentConfiguration.sanitizeEmbeddingGemmaModel($0) }
         self.environment = environment
         self.transport = transport
 
+        let resolvedUrl: URL
         if let endpoint {
-            self.endpoint = endpoint
+            resolvedUrl = endpoint
         } else if let envUrl = environment["MCA_EMBEDDING_GEMMA_URL"], let url = URL(string: envUrl) {
-            self.endpoint = url
+            var comp = URLComponents(url: url, resolvingAgainstBaseURL: true)
+            if comp?.path.isEmpty == true || comp?.path == "/" {
+                comp?.path = "/v1/evaluate"
+            }
+            resolvedUrl = comp?.url ?? URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+        } else {
+            resolvedUrl = URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+        }
+
+        let allowInsecureRemote = environment["MCA_ALLOW_INSECURE_REMOTE_EMBEDDING"] == "1"
+        if Self.isSafeEndpoint(resolvedUrl, allowInsecureRemote: allowInsecureRemote) {
+            self.endpoint = resolvedUrl
         } else {
             self.endpoint = URL(string: "http://127.0.0.1:8765/v1/evaluate")!
         }
+    }
+
+    private static func isSafeEndpoint(_ url: URL, allowInsecureRemote: Bool) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return false
+        }
+        if scheme == "https" || allowInsecureRemote { return true }
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "0.0.0.0"
     }
 
     /// Whether this backend was explicitly requested via environment variables.
@@ -101,9 +135,14 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
         // Local inference is fast, but grant a reasonable timeout window
         urlRequest.timeoutInterval = 10.0
 
+        var requestToSend = request
+        if let model {
+            requestToSend.model = model
+        }
+
         let encoder = JSONEncoder()
         do {
-            urlRequest.httpBody = try encoder.encode(request)
+            urlRequest.httpBody = try encoder.encode(requestToSend)
         } catch {
             throw ClientError.decodingError("Failed to encode EvaluationRequest: \(error.localizedDescription)")
         }

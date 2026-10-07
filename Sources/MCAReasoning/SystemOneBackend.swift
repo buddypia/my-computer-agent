@@ -11,16 +11,20 @@ import MCASensing
 /// cf auth login alone does not mean the user agreed to. Library defaults stay on
 /// `TypeSafeClient()` so tests never reach the network by accident.
 public enum SystemOneBackend {
-    public static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> any TypeSafeEvaluating {
+    public static func resolve(
+        model: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any TypeSafeEvaluating {
+        let gemmaModel = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         switch environment["MCA_SYSTEM_ONE"]?.lowercased() {
         case "typesafe": return TypeSafeClient()
         case "clef": return CloudflareClefClient(model: .clef)
         case "clef-flash": return CloudflareClefClient(model: .clefFlash)
         case "embeddinggemma", "embeddinggemma2", "gemma", "local":
-            return EmbeddingGemmaClient(environment: environment)
+            return EmbeddingGemmaClient(model: gemmaModel, environment: environment)
         case "offline": return Offline()
         default:
-            let localGemma = EmbeddingGemmaClient(environment: environment)
+            let localGemma = EmbeddingGemmaClient(model: gemmaModel, environment: environment)
             if localGemma.isConfigured { return localGemma }
             let typeSafe = TypeSafeClient()
             return typeSafe.hasKey ? typeSafe : Offline()
@@ -97,8 +101,8 @@ public enum SystemOneBackend {
 
 extension TypeSafeDecisionEngine {
     /// The engine the app and CLI use: resolved backend, plus a screenshot when the model can read one.
-    public static func live(confidenceThreshold: Float = 0.80) -> TypeSafeDecisionEngine {
-        let client = SystemOneBackend.resolve()
+    public static func live(confidenceThreshold: Float = 0.80, model: String? = nil) -> TypeSafeDecisionEngine {
+        let client = SystemOneBackend.resolve(model: model)
         if client is CloudflareClefClient { CloudflareCredentials.shared.prefetch() }
         return TypeSafeDecisionEngine(
             client: client,

@@ -73,7 +73,7 @@ public actor SQLiteContextStore: ContextStoring {
 
     private let log = Logger(subsystem: "com.buddypia.mca", category: "Memory")
     private let db: SQLiteDatabase
-    private let embedder: (any TextEmbedding)?
+    private var embedder: (any TextEmbedding)?
 
     /// RRF damping constant. 60 is the value from the original paper and is
     /// insensitive enough that tuning it is rarely worth it.
@@ -85,6 +85,10 @@ public actor SQLiteContextStore: ContextStoring {
         self.db = try SQLiteDatabase(path: url.path)
         self.embedder = embedder
         try Self.migrate(db)
+    }
+
+    public func setEmbedder(_ embedder: (any TextEmbedding)?) {
+        self.embedder = embedder
     }
 
     private static func migrate(_ db: SQLiteDatabase) throws {
@@ -141,9 +145,17 @@ public actor SQLiteContextStore: ContextStoring {
                 observation_id INTEGER PRIMARY KEY
                     REFERENCES observations(id) ON DELETE CASCADE,
                 dim    INTEGER NOT NULL,
+                model  TEXT NOT NULL DEFAULT '',
                 vector BLOB NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_embeddings_model_dim ON embeddings(model, dim);
             """)
+
+        let columns = (try? db.query("PRAGMA table_info(embeddings)") { $0.string(1) }) ?? []
+        if !columns.isEmpty && !columns.contains("model") {
+            try? db.execute("ALTER TABLE embeddings ADD COLUMN model TEXT NOT NULL DEFAULT ''")
+            try? db.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_model_dim ON embeddings(model, dim)")
+        }
     }
 
     // MARK: - Ingest
@@ -182,9 +194,10 @@ public actor SQLiteContextStore: ContextStoring {
         // Embedding is best-effort: a failure here degrades search to lexical
         // only, which is still useful, so it must not fail the write.
         if let vector = await embedder.embed(record.text) {
+            let modelName = embedder.modelIdentifier ?? ""
             try? db.run(
-                "INSERT OR REPLACE INTO embeddings (observation_id, dim, vector) VALUES (?,?,?)",
-                [.int(rowID), .int(Int64(vector.count)), .blob(Self.pack(vector))])
+                "INSERT OR REPLACE INTO embeddings (observation_id, dim, model, vector) VALUES (?,?,?,?)",
+                [.int(rowID), .int(Int64(vector.count)), .text(modelName), .blob(Self.pack(vector))])
         }
     }
 
@@ -309,15 +322,32 @@ public actor SQLiteContextStore: ContextStoring {
     ) async -> [Int64] {
         guard let embedder, let queryVector = await embedder.embed(text) else { return [] }
 
-        let joined = whereClause.isEmpty ? "" : whereClause
+        let dim = queryVector.count
+        var filters = ["e.dim = ?"]
+        var filterArgs: [SQLiteDatabase.Value] = [.int(Int64(dim))]
+
+        if let modelName = embedder.modelIdentifier, !modelName.isEmpty {
+            filters.append("(e.model = ? OR e.model = '')")
+            filterArgs.append(.text(modelName))
+        }
+
+        if !whereClause.isEmpty {
+            let stripped = whereClause.hasPrefix("WHERE ")
+                ? String(whereClause.dropFirst(6))
+                : whereClause
+            filters.append(stripped)
+            filterArgs.append(contentsOf: arguments)
+        }
+
+        let whereExpr = "WHERE " + filters.joined(separator: " AND ")
         let sql = """
             SELECT e.observation_id, e.vector FROM embeddings e
             JOIN observations o ON o.id = e.observation_id
-            \(joined)
+            \(whereExpr)
             """
         let candidates: [(Int64, [Float])]
         do {
-            candidates = try db.query(sql, arguments) { row in
+            candidates = try db.query(sql, filterArgs) { row in
                 (row.int(0), Self.unpack(row.blob(1)))
             }
         } catch {

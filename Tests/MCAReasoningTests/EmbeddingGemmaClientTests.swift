@@ -117,4 +117,26 @@ struct EmbeddingGemmaClientTests {
             try await client.evaluate(request: req)
         }
     }
+
+    @Test("passes explicit model into evaluate payload")
+    func passesExplicitModel() async throws {
+        let sent = Calls<URLRequest>()
+        let client = EmbeddingGemmaClient(
+            model: "google/embeddinggemma-2-740m",
+            endpoint: URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+        ) { request in
+            sent.append(request)
+            return http(200, okBody)
+        }
+
+        let req = TypeSafeClient.EvaluationRequest(
+            state: .string("test"),
+            questions: [:]
+        )
+        _ = try await client.evaluate(request: req)
+        let r = try #require(sent.all.first)
+        let bodyData = try #require(r.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+        #expect(json["model"] as? String == "google/embeddinggemma-2-740m")
+    }
 }

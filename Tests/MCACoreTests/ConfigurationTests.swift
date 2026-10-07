@@ -169,6 +169,7 @@ struct RoutingPolicyTests {
         #expect(decoded.routing.routes[.answer] == original.routing.routes[.answer])
         #expect(decoded.excludedBundleIDs == original.excludedBundleIDs)
         #expect(decoded.retentionDays == original.retentionDays)
+        #expect(decoded.embeddingGemmaModel == original.embeddingGemmaModel)
     }
 }
 
@@ -199,17 +200,28 @@ struct CaptureDefaultTests {
         #expect(decoded.typingPauseSeconds == 4.0)
         #expect(decoded.alwaysListening == false)
         #expect(decoded.transcriptionEngine == .gemini)
+        #expect(decoded.embeddingGemmaModel == AgentConfiguration.defaultEmbeddingGemmaModel)
         #expect(decoded.excludedBundleIDs == AgentConfiguration.defaultExcludedBundleIDs)
         #expect(decoded.routing.routes[.triage]?.provider == "apple")
     }
 
     @Test("an explicit value still wins over the default")
     func explicitValueDecodes() throws {
-        let json = #"{"alwaysListening": true, "transcriptionEngine": "apple"}"#
+        let json = #"{"alwaysListening": true, "transcriptionEngine": "apple", "embeddingGemmaModel": "google/embeddinggemma-2-440m"}"#
         let decoded = try JSONDecoder().decode(
             AgentConfiguration.self, from: Data(json.utf8))
         #expect(decoded.alwaysListening)
         #expect(decoded.transcriptionEngine == .apple)
+        #expect(decoded.embeddingGemmaModel == "google/embeddinggemma-2-440m")
+    }
+
+    @Test("model sanitization rejects path traversal and control characters")
+    func modelSanitizationRejectsMaliciousInput() throws {
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("../../etc/passwd") == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("model\nwith\rnewlines") == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel(String(repeating: "a", count: 100)) == AgentConfiguration.defaultEmbeddingGemmaModel)
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("google/embeddinggemma-2-440m") == "google/embeddinggemma-2-440m")
+        #expect(AgentConfiguration.sanitizeEmbeddingGemmaModel("   google/embeddinggemma-2-270m   ") == "google/embeddinggemma-2-270m")
     }
 }
 
