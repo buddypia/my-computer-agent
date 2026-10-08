@@ -148,14 +148,13 @@ public actor SQLiteContextStore: ContextStoring {
                 model  TEXT NOT NULL DEFAULT '',
                 vector BLOB NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_embeddings_model_dim ON embeddings(model, dim);
             """)
 
         let columns = (try? db.query("PRAGMA table_info(embeddings)") { $0.string(1) }) ?? []
         if !columns.isEmpty && !columns.contains("model") {
             try? db.execute("ALTER TABLE embeddings ADD COLUMN model TEXT NOT NULL DEFAULT ''")
-            try? db.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_model_dim ON embeddings(model, dim)")
         }
+        try db.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_model_dim ON embeddings(model, dim)")
     }
 
     // MARK: - Ingest

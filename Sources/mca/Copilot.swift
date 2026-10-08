@@ -291,6 +291,9 @@ final class Copilot {
         } catch {
             await health.set(.memory, .failed(message: "\(error)"))
             log.critical("Memory unavailable: \(String(describing: error), privacy: .public)")
+            let fallbackURL = FileManager.default.temporaryDirectory
+                .appending(path: "mca-fallback-\(UUID().uuidString).sqlite3")
+            store = try? SQLiteContextStore(url: fallbackURL)
         }
     }
 
