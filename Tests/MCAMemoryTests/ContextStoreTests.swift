@@ -319,6 +319,50 @@ struct ContextStoreTests {
         let crossModelSearch = try await store.search(ContextQuery(text: "CompletelyUnrelatedLexicalKeywordXYZ"))
         #expect(crossModelSearch.isEmpty)
     }
+
+    @Test("migrates legacy schema missing model column without error")
+    func legacyMigration() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mca-legacy-test-\(UUID().uuidString).sqlite3")
+        defer { Self.cleanUp(url) }
+
+        // Setup legacy database with embeddings table missing the 'model' column
+        let legacyDb = try SQLiteDatabase(path: url.path)
+        try legacyDb.execute("""
+            CREATE TABLE observations (
+                id           INTEGER PRIMARY KEY,
+                uuid         TEXT NOT NULL UNIQUE,
+                kind         TEXT NOT NULL,
+                ts           REAL NOT NULL,
+                app_name     TEXT NOT NULL DEFAULT '',
+                bundle_id    TEXT,
+                window_title TEXT NOT NULL DEFAULT '',
+                channel      TEXT,
+                speaker_id   TEXT,
+                source       TEXT,
+                trigger      TEXT,
+                text         TEXT NOT NULL
+            );
+            CREATE TABLE embeddings (
+                observation_id INTEGER PRIMARY KEY
+                    REFERENCES observations(id) ON DELETE CASCADE,
+                dim    INTEGER NOT NULL,
+                vector BLOB NOT NULL
+            );
+            """)
+
+        // Initializing the store must run migrations cleanly without throwing
+        let store = try SQLiteContextStore(url: url)
+        _ = store
+
+        // Verify the column and index were created
+        let verifyDb = try SQLiteDatabase(path: url.path)
+        let columns = (try? verifyDb.query("PRAGMA table_info(embeddings)") { $0.string(1) }) ?? []
+        #expect(columns.contains("model"))
+
+        let indices = (try? verifyDb.query("PRAGMA index_list(embeddings)") { $0.string(1) }) ?? []
+        #expect(indices.contains("idx_embeddings_model_dim"))
+    }
 }
 
 @Suite("Vector math")
