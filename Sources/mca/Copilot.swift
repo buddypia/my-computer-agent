@@ -304,7 +304,7 @@ final class Copilot {
         let credentials = CredentialStore()
         router = ModelRouter(policy: configuration.routing, credentials: credentials)
 
-        let approver = AlertToolApprover()
+        let approver = toolApprover()
         let tools = ToolRegistry(tools: [
             SearchContextTool(store: store, expander: QueryExpander(router: router)),
             CurrentScreenTool(store: store, liveReader: { [weak self] in
@@ -1823,6 +1823,15 @@ final class Copilot {
         }
     }
 
+    /// Tool approvals are asked in the chat, the same place as action approvals.
+    private func toolApprover() -> ChatToolApprover {
+        ChatToolApprover { [weak self] request in
+            guard let self else { return .cancelled }
+            self.chatWindow.present()
+            return await self.hudState.requestApproval(request)
+        }
+    }
+
     private func presentActionApproval(_ request: ActionApprovalRequest) async -> ActionApprovalStatus {
         chatWindow.present()
         let result = await hudState.requestApproval(request)
@@ -1897,7 +1906,7 @@ final class Copilot {
             snapshotProvider: inspector,
             config: config,
             delegate: delegate,
-            keystrokeApprover: dryRun ? AutoApproveToolApprover() : AlertToolApprover()
+            keystrokeApprover: dryRun ? AutoApproveToolApprover() : toolApprover()
         )
 
         let task = Task { [weak self] in
