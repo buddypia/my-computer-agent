@@ -218,7 +218,8 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
         maxDurationSeconds: Int = 600
     ) {
         self.maxTotalSteps = maxTotalSteps
-        self.maxDurationSeconds = maxDurationSeconds
+        // Clamped so a decoded config cannot overflow the deadline arithmetic.
+        self.maxDurationSeconds = min(max(0, maxDurationSeconds), 86_400)
         self.defaultSubgoalMaxSteps = defaultSubgoalMaxSteps
         self.confidenceThreshold = confidenceThreshold
         self.settlingDelayMs = settlingDelayMs

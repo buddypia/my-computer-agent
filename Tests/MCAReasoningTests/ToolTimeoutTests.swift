@@ -7,18 +7,33 @@ import Synchronization
 import Testing
 
 /// A tool stuck in a call that ignores cancellation, the way a synchronous AX
-/// read on an unresponsive app does. `release()` lets the thread go at the end.
-private final class StuckTool: AgentTool, @unchecked Sendable {
-    private let gate = DispatchSemaphore(value: 0)
+/// read on an unresponsive app does. It suspends rather than blocking a thread,
+/// so parallel suites cannot starve the cooperative pool on a small CI runner.
+/// `release()` lets every pending call return.
+private final class StuckTool: AgentTool, Sendable {
+    private let waiters = Mutex<(released: Bool, pending: [CheckedContinuation<Void, Never>])>((false, []))
     var definition: ToolDefinition {
         ToolDefinition(name: "stuck", description: "never returns", parameters: Data("{}".utf8))
     }
     func invoke(arguments: Data) async throws -> String {
-        block()
+        await withCheckedContinuation { continuation in
+            let runNow = waiters.withLock { state -> Bool in
+                if state.released { return true }
+                state.pending.append(continuation)
+                return false
+            }
+            if runNow { continuation.resume() }
+        }
         return "late"
     }
-    private func block() { gate.wait() }
-    func release() { gate.signal() }
+    func release() {
+        let pending = waiters.withLock { state in
+            state.released = true
+            defer { state.pending = [] }
+            return state.pending
+        }
+        pending.forEach { $0.resume() }
+    }
 }
 
 private struct ApprovalThenDoneTool: AgentTool {
@@ -96,7 +111,7 @@ struct ToolTimeoutTests {
     @Test("Once enough calls are stuck, further calls are refused without running")
     func stuckCallsSaturateRegistry() async throws {
         let tool = StuckTool()
-        defer { tool.release(); tool.release() }
+        defer { tool.release() }
         let registry = ToolRegistry(tools: [tool, ApprovalThenDoneTool()], timeout: .milliseconds(100),
                                     stuckCallLimit: 2)
         _ = await registry.invoke(ToolCall(id: "1", name: "stuck", arguments: Data("{}".utf8)))
