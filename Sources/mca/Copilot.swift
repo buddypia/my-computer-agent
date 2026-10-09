@@ -134,6 +134,7 @@ public final class CopilotAutonomousLoopDelegate: AutonomousLoopDelegate, @unche
 @MainActor
 final class Copilot {
     private let log = Logger(subsystem: "com.buddypia.mca", category: "Copilot")
+    private let mainThreadWatchdog = MainThreadWatchdog()
 
     private var configuration: AgentConfiguration
     private let health = HealthRegistry()
@@ -233,6 +234,7 @@ final class Copilot {
     // MARK: - Startup
 
     func start() async {
+        mainThreadWatchdog.start()
         NSApp.setActivationPolicy(.accessory)
         // Before any window can open. An accessory app draws no menu bar, but
         // the main menu is still what turns ⌘V into a paste — see `AppMenu`.
@@ -1827,13 +1829,13 @@ final class Copilot {
     private func toolApprover() -> ChatToolApprover {
         ChatToolApprover { [weak self] request in
             guard let self else { return .cancelled }
-            self.chatWindow.present()
+            self.chatWindow.presentForApproval()
             return await self.hudState.requestApproval(request)
         }
     }
 
     private func presentActionApproval(_ request: ActionApprovalRequest) async -> ActionApprovalStatus {
-        chatWindow.present()
+        chatWindow.presentForApproval()
         let result = await hudState.requestApproval(request)
         if result == .approved && request.operation.hasPrefix("Desktop:") {
             guard await chatWindow.closeAndWaitForSurfaceRemoval() else { return .cancelled }

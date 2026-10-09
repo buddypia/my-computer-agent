@@ -64,6 +64,9 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
     /// the window behind their editor will press.
     public func present() {
         let window = makeWindowIfNeeded()
+        // Opened again while an approval is up (a hot key, "explain screen"),
+        // the field still stays unfocused for the reason in `presentForApproval`.
+        state.chatInputFocusSuppressed = state.isAwaitingApproval
         window.makeKeyAndOrderFront(nil)
         // The app runs `.accessory`, so it is never frontmost on its own and the
         // field would silently refuse keystrokes.
@@ -75,6 +78,26 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         // the caret wherever it was left.
         state.chatFocusRequest += 1
         log.debug("Chat window presented")
+    }
+
+    /// Puts the chat in front for an approval card, without a caret in the field.
+    ///
+    /// The caret starts the system's input-mode indicator under it, which waits
+    /// on a reply from another process on the main thread. Shown again seconds
+    /// after the chat closed for the previous desktop action, that reply never
+    /// came, and the whole app froze with the card unanswerable. An approval is
+    /// answered with a button, so the field has no reason to be focused.
+    public func presentForApproval() {
+        // Set before the window exists: a new hosting view focuses the field in
+        // `onAppear`, which runs before the approval itself is registered.
+        state.chatInputFocusSuppressed = true
+        let window = makeWindowIfNeeded()
+        window.makeFirstResponder(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        state.isChatOpen = true
+        state.unseenMessages = 0
+        log.debug("Chat window presented for approval")
     }
 
     public func close() {

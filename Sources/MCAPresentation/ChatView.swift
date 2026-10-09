@@ -780,8 +780,14 @@ public struct ChatView: View {
                         in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(14)
-        .onAppear { inputFocused = true }
-        .onChange(of: state.chatFocusRequest) { inputFocused = true }
+        // Not under an approval card: see `ChatWindow.presentForApproval`.
+        .onAppear { if !state.chatInputFocusSuppressed { inputFocused = true } }
+        .onChange(of: state.chatFocusRequest) {
+            if !state.chatInputFocusSuppressed { inputFocused = true }
+        }
+        .onChange(of: state.chatInputFocusSuppressed) {
+            if state.chatInputFocusSuppressed { inputFocused = false }
+        }
     }
 
     private func submit() {

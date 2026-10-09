@@ -290,6 +290,9 @@ public final class HUDState {
     /// reopening a window that was only ordered out would otherwise leave the
     /// user with a window they have to click into before typing.
     public var chatFocusRequest: Int = 0
+    /// Keeps the caret out of the chat field while an approval card is up.
+    /// See `ChatWindow.presentForApproval`.
+    public var chatInputFocusSuppressed: Bool = false
     /// One line describing what the watch last did.
     ///
     /// On screen because the watch is deliberately quiet — it says nothing when
