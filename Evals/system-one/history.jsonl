@@ -17,3 +17,4 @@
 {"at":"2026-10-04T08:22:02.849Z","train":54,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"root-class repair: disambiguate informational screen terms and phrase search input"}
 {"at":"2026-10-04T11:40:47.300Z","train":53,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"intent root: separate code-composition and how-to questions from screen-operation keywords; Korean screen term boundary"}
 {"at":"2026-10-04T11:44:14.692Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"decision root: map a search request to typeText only when the current observation contains an AXSearchField"}
+{"at":"2026-10-09T15:00:55.853Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":""}
