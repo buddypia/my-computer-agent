@@ -14,10 +14,8 @@ if [[ -n "${MCA_PYTHON:-}" && -x "${MCA_PYTHON}" ]]; then
     PYTHON_BIN="${MCA_PYTHON}"
 elif [[ -x "${SCRIPT_DIR}/../.venv/bin/python" ]]; then
     PYTHON_BIN="${SCRIPT_DIR}/../.venv/bin/python"
-elif [[ -x "${SCRIPT_DIR}/../../../../oss/clef-doom/.venv/bin/python" ]]; then
-    PYTHON_BIN="${SCRIPT_DIR}/../../../../oss/clef-doom/.venv/bin/python"
-elif [[ -x "${HOME}/dev/oss/clef-doom/.venv/bin/python" ]]; then
-    PYTHON_BIN="${HOME}/dev/oss/clef-doom/.venv/bin/python"
+elif [[ -x "${SCRIPT_DIR}/../../.venv/bin/python" ]]; then
+    PYTHON_BIN="${SCRIPT_DIR}/../../.venv/bin/python"
 elif command -v uv >/dev/null 2>&1; then
     exec uv run --with torch --with sentence-transformers python3 "${SERVER_PY}" --port "${PORT}"
 elif command -v python3 >/dev/null 2>&1; then
