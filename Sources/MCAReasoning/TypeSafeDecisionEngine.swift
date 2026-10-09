@@ -27,16 +27,27 @@ public struct TypeSafeDecisionEngine: Sendable {
     /// Confidence threshold below which an action is escalated to System Two or user review.
     public let confidenceThreshold: Float
 
+    /// Orders candidates by meaning before they are offered as choices. `nil` keeps
+    /// the lexical order below.
+    private let elementRanker: (any UIElementRanking)?
+
+    /// How many candidates are offered when a ranker has ordered them. Fewer, better
+    /// choices: the target is picked by a softmax over every option, and with dozens
+    /// of near-equal ones it rarely clears `confidenceThreshold`.
+    static let rankedCandidateLimit = 24
+
     public init(
         client: any TypeSafeEvaluating = TypeSafeClient(),
         confidenceThreshold: Float = 0.80,
         customEvaluator: Evaluator? = nil,
-        screenshot: Screenshot? = nil
+        screenshot: Screenshot? = nil,
+        elementRanker: (any UIElementRanking)? = nil
     ) {
         self.client = client
         self.confidenceThreshold = confidenceThreshold
         self.customEvaluator = customEvaluator
         self.screenshot = screenshot
+        self.elementRanker = elementRanker
     }
 
     private func evaluate(_ request: TypeSafeClient.EvaluationRequest) async throws -> TypeSafeClient.EvaluationResponse {
@@ -143,21 +154,28 @@ public struct TypeSafeDecisionEngine: Sendable {
         }
 
         // Cap candidates to maintain sub-150ms latency while prioritizing candidates matching goal and actionable elements
-        let cappedCandidates: [UIElementCandidate] = {
-            if candidates.count <= 50 {
-                return candidates
-            }
-            let lowerGoal = trimmedGoal.lowercased()
-            let matched = candidates.filter { c in
-                !c.label.isEmpty && !lowerGoal.isEmpty &&
-                    Self.isDirectMatch(target: c.label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), query: lowerGoal)
-            }
-            let matchedIds = Set(matched.map(\.id))
+        let lowerGoal = trimmedGoal.lowercased()
+        let matched = candidates.filter { c in
+            !c.label.isEmpty && !lowerGoal.isEmpty &&
+                Self.isDirectMatch(target: c.label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), query: lowerGoal)
+        }
+        let matchedIds = Set(matched.map(\.id))
+        let cappedCandidates: [UIElementCandidate]
+        if candidates.count > Self.rankedCandidateLimit, let elementRanker {
+            // Unranked (server down), the capture's tree order is kept: the same
+            // elements the narrower capture used to deliver before ranking existed.
+            let ranked = await elementRanker.rank(goal: trimmedGoal, candidates: candidates) ?? candidates
+            // A label the goal names outright stays in whatever the embedding thinks.
+            let rest = ranked.filter { !matchedIds.contains($0.id) }
+            cappedCandidates = Array((matched + rest).prefix(Self.rankedCandidateLimit))
+        } else if candidates.count <= 50 {
+            cappedCandidates = candidates
+        } else {
             let actionable = candidates.filter { $0.isActionable && !matchedIds.contains($0.id) }
             let otherIds = matchedIds.union(actionable.map(\.id))
             let nonActionable = candidates.filter { !otherIds.contains($0.id) }
-            return Array((matched + actionable + nonActionable).prefix(50))
-        }()
+            cappedCandidates = Array((matched + actionable + nonActionable).prefix(50))
+        }
 
         // Build candidate map for Choice criteria
         var candidateCriteria: [String: String] = [:]

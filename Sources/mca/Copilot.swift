@@ -1897,7 +1897,7 @@ final class Copilot {
             self?.activeAutonomousToken === token
         })
         let synthesizer: any EventSynthesizing = dryRun ? DryRunEventSynthesizer() : EventSynthesizer()
-        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: 25)
+        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: SystemOneBackend.loopCandidateLimit)
 
         let coordinator = TwoTierAutonomousLoopCoordinator(
             planner: planner,

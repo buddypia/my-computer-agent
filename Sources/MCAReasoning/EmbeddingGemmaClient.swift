@@ -4,7 +4,7 @@ import OSLog
 
 /// System One client backed by a local EmbeddingGemma 2 inference engine.
 ///
-/// Communicates with the local EmbeddingGemma daemon (by default at `http://127.0.0.1:8765`),
+/// Communicates with the local EmbeddingGemma daemon (by default at `http://127.0.0.1:38765`),
 /// providing 100% offline, zero-cost, sub-50ms System One decision evaluation via
 /// cosine similarity over Matryoshka representations.
 ///
@@ -61,21 +61,21 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
         let resolvedUrl: URL
         if let endpoint {
             resolvedUrl = endpoint
-        } else if let envUrl = environment["MCA_EMBEDDING_GEMMA_URL"], let url = URL(string: envUrl) {
+        } else if let envUrl = environment["MCA_EMBEDDING_GEMMA_URL"] ?? environment["EG2_URL"], let url = URL(string: envUrl) {
             var comp = URLComponents(url: url, resolvingAgainstBaseURL: true)
             if comp?.path.isEmpty == true || comp?.path == "/" {
                 comp?.path = "/v1/evaluate"
             }
-            resolvedUrl = comp?.url ?? URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+            resolvedUrl = comp?.url ?? URL(string: "http://127.0.0.1:38765/v1/evaluate")!
         } else {
-            resolvedUrl = URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+            resolvedUrl = URL(string: "http://127.0.0.1:38765/v1/evaluate")!
         }
 
         let allowInsecureRemote = environment["MCA_ALLOW_INSECURE_REMOTE_EMBEDDING"] == "1"
         if Self.isSafeEndpoint(resolvedUrl, allowInsecureRemote: allowInsecureRemote) {
             self.endpoint = resolvedUrl
         } else {
-            self.endpoint = URL(string: "http://127.0.0.1:8765/v1/evaluate")!
+            self.endpoint = URL(string: "http://127.0.0.1:38765/v1/evaluate")!
         }
     }
 
@@ -90,7 +90,7 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
 
     /// Whether this backend was explicitly requested via environment variables.
     public var isConfigured: Bool {
-        if environment["MCA_EMBEDDING_GEMMA_URL"] != nil { return true }
+        if environment["MCA_EMBEDDING_GEMMA_URL"] != nil || environment["EG2_URL"] != nil { return true }
         if let backend = environment["MCA_SYSTEM_ONE"]?.lowercased() {
             return backend == "embeddinggemma" || backend == "embeddinggemma2" || backend == "gemma" || backend == "local"
         }
