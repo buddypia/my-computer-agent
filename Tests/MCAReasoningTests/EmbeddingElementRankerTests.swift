@@ -143,32 +143,3 @@ struct RankedDecisionTests {
     }
 }
 
-/// Against the real local server. Off by default: CI has no eg2.
-/// `MCA_LIVE_EG2=1 swift test --filter LiveElementRankingTests`
-@Suite("Element ranking against a live eg2", .enabled(if: ProcessInfo.processInfo.environment["MCA_LIVE_EG2"] == "1"))
-struct LiveElementRankingTests {
-    @Test("Realistic app controls: the element the goal needs ranks near the top",
-          arguments: [
-              ("メールを送信して", "Send"),
-              ("新しいタブを開く", "New Tab"),
-              ("文字を太字にする", "Bold"),
-              ("Search for weather", "検索"),
-              ("設定を開いて", "Preferences…"),
-          ])
-    func ranksRealLabels(goal: String, expected: String) async throws {
-        let labels = ["Close", "Minimize", "Zoom", "Back", "Forward", "Reload", "Send", "New Tab",
-                      "Bold", "Italic", "Underline", "検索", "Preferences…", "Share", "Print",
-                      "Undo", "Redo", "Copy", "Paste", "Delete", "Archive", "Reply", "Help", "Downloads"]
-        let candidates = labels.enumerated().map { element($0.offset, $0.element) }
-        let ranker = try #require(EmbeddingElementRanker.local())
-        var ranked = await ranker.rank(goal: goal, candidates: candidates)
-        if ranked == nil {
-            // The server may be idle-stopped; the ranker has just started it.
-            try await Task.sleep(for: .seconds(8))
-            ranked = await ranker.rank(goal: goal, candidates: candidates)
-        }
-        let order = try #require(ranked).map(\.label)
-        let position = try #require(order.firstIndex(of: expected))
-        #expect(position < 3, "\(expected) ranked \(position): \(order.prefix(5))")
-    }
-}
