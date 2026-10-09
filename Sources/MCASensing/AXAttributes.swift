@@ -12,6 +12,7 @@ public enum AXAttributes {
     @discardableResult
     public static func enableEnhancedAccessibility(app: AXUIElement, window: AXUIElement? = nil) -> Bool {
         var success = true
+        AccessibilityInspector.boundQueries
         let enhancedRes = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
         if enhancedRes != .success && enhancedRes != .cannotComplete {
             success = false

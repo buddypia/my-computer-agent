@@ -40,6 +40,13 @@ public struct AccessibilityInspector: Sendable {
     /// Maximum number of actionable candidates returned to prevent token explosion.
     public let maxCandidates: Int
 
+    /// How long one AX query may block. The system default is about 6s, and a
+    /// busy app (Firefox scrolling a heavy page) answers every query at that
+    /// limit, so an 800-node walk could block for over an hour.
+    static let messagingTimeout: Float = 0.5
+    /// Wall-clock budget for one tree walk; past it the walk returns what it has.
+    static let traversalBudget: Duration = .seconds(3)
+
     public init(
         maxCandidates: Int = 25,
         privacyFilter: PrivacyFilter = PrivacyFilter(),
@@ -48,6 +55,7 @@ public struct AccessibilityInspector: Sendable {
         requiresWindowScope: Bool = false
     ) {
         self.maxCandidates = min(max(maxCandidates, 0), 100)
+        Self.boundQueries
         self.privacyFilter = privacyFilter
         self.fallbackProvider = fallbackProvider
         self.targetWindow = targetWindow
@@ -235,14 +243,21 @@ public struct AccessibilityInspector: Sendable {
     private func candidates(in window: AXUIElement, bounds windowBounds: CGRect?) -> [UIElementCandidate] {
         var candidates: [UIElementCandidate] = []
         var visitedCount = 0
+        let started = ContinuousClock.now
+        let deadline = started + Self.traversalBudget
 
         traverseTree(
             element: window,
             windowBounds: windowBounds,
             depth: 0,
+            deadline: deadline,
             visited: &visitedCount,
             into: &candidates
         )
+        let elapsed = ContinuousClock.now - started
+        if elapsed > .seconds(1) {
+            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates)")
+        }
 
         // Sanitize sensitive info and cap to maxCandidates
         let sanitized = privacyFilter.sanitizeCandidates(candidates)
@@ -391,10 +406,12 @@ public struct AccessibilityInspector: Sendable {
         element: AXUIElement,
         windowBounds: CGRect?,
         depth: Int,
+        deadline: ContinuousClock.Instant,
         visited: inout Int,
         into output: inout [UIElementCandidate]
     ) {
-        guard depth < 16, visited < 800, output.count < (maxCandidates * 2) else { return }
+        guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
+              ContinuousClock.now < deadline, !Task.isCancelled else { return }
         visited += 1
 
         let info = extractBatchedElementInfo(element)
@@ -439,6 +456,7 @@ public struct AccessibilityInspector: Sendable {
                 element: child,
                 windowBounds: windowBounds,
                 depth: depth + 1,
+                deadline: deadline,
                 visited: &visited,
                 into: &output
             )
@@ -447,6 +465,12 @@ public struct AccessibilityInspector: Sendable {
     }
 
     // MARK: - Helpers (Fallback and Legacy)
+
+    /// Sets the process-wide AX timeout once. Per-object timeouts set later
+    /// (`windowDecorationRects` uses 50ms) still override it for that object.
+    static let boundQueries: Void = {
+        _ = AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), messagingTimeout)
+    }()
 
     private func getElementLabel(_ element: AXUIElement) -> String {
         for attr in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
