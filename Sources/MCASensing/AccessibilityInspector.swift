@@ -469,15 +469,15 @@ public struct AccessibilityInspector: Sendable {
 
     // MARK: - Helpers (Fallback and Legacy)
 
-    /// The timeout belongs to the exact AX object, not its descendants, so the
-    /// walk sets it on every node it reads. It is deliberately not process-wide:
-    /// press actions must keep the default, or a slow press reports failure,
-    /// the actuator falls back to a synthesized click and the press runs twice.
     /// The walk stops at its deadline or when the calling task is cancelled.
     static func walkMayContinue(until deadline: ContinuousClock.Instant) -> Bool {
         ContinuousClock.now < deadline && !Task.isCancelled
     }
 
+    /// The timeout belongs to the exact AX object, not its descendants, so the
+    /// walk sets it on every node it reads. It is deliberately not process-wide:
+    /// press actions must keep the default, or a slow press reports failure,
+    /// the actuator falls back to a synthesized click and the press runs twice.
     static func boundQueries(on element: AXUIElement) {
         _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
     }
