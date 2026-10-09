@@ -780,7 +780,8 @@ public struct ChatView: View {
                         in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(14)
-        .onAppear { inputFocused = true }
+        // Not under an approval card: see `ChatWindow.presentForApproval`.
+        .onAppear { if !state.isAwaitingApproval { inputFocused = true } }
         .onChange(of: state.chatFocusRequest) { inputFocused = true }
     }
 

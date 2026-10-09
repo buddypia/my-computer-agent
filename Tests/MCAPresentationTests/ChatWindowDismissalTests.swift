@@ -32,6 +32,29 @@ struct ChatWindowDismissalTests {
         #expect(!state.isChatOpen)
     }
 
+    @Test("an approval brings the chat forward without a caret in the input field")
+    func approvalDoesNotFocusInput() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+        // Opened by the user first, so the field holds the caret when it closes.
+        chat.present()
+        try await Task.sleep(for: .milliseconds(300))
+        chat.close()
+
+        chat.presentForApproval()
+        let approval = Task { await state.requestApproval(ActionApprovalRequest(
+            goal: "g", operation: "Desktop: scroll", target: "t", details: "d", consequence: "c")) }
+        // Long enough for SwiftUI to re-apply focus if it were going to.
+        try await Task.sleep(for: .milliseconds(300))
+        let window = try #require(NSApp.windows.first { $0.delegate === chat })
+        #expect(chat.isOpen)
+        #expect(!(window.firstResponder is NSTextView), "the input field took the caret under an approval")
+        state.cancelPendingApprovals()
+        #expect(await approval.value == .cancelled)
+    }
+
     private func surfaceIsVisible(_ number: Int) -> Bool {
         !visibleSurfaceNames(number).isEmpty
     }

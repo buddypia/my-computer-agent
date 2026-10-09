@@ -77,6 +77,23 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         log.debug("Chat window presented")
     }
 
+    /// Puts the chat in front for an approval card, without a caret in the field.
+    ///
+    /// The caret starts the system's input-mode indicator under it, which waits
+    /// on a reply from another process on the main thread. Shown again seconds
+    /// after the chat closed for the previous desktop action, that reply never
+    /// came, and the whole app froze with the card unanswerable. An approval is
+    /// answered with a button, so the field has no reason to be focused.
+    public func presentForApproval() {
+        let window = makeWindowIfNeeded()
+        window.makeFirstResponder(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        state.isChatOpen = true
+        state.unseenMessages = 0
+        log.debug("Chat window presented for approval")
+    }
+
     public func close() {
         if let window {
             window.orderOut(nil)
