@@ -5,12 +5,12 @@ import MCAReasoning
 
 /// Approver for the app: asks in the chat, under the question being answered.
 ///
-/// Not a modal alert. `NSAlert.runModal()` held the main thread for as long as
-/// the alert was up, so an alert that opened behind the browser or on another
-/// display left the chat showing "Thinking" with nothing to answer: the stop
-/// button could not run and the task deadline could not fire. In the chat the
-/// request sits where the user is already looking, the stop button cancels it,
-/// it expires on its own, and the deadline sees it as time spent waiting.
+/// Not a modal alert. `NSAlert.runModal()` held the main thread in a modal
+/// session for as long as the alert was up, so an alert that opened behind the
+/// browser or on another display left the chat showing "Thinking" with nothing
+/// visible to answer and the stop button unclickable. In the chat the request
+/// sits where the user is already looking, the stop button cancels it, it
+/// expires on its own, and the task deadline sees it as time spent waiting.
 struct ChatToolApprover: ToolApproving {
     let present: @MainActor @Sendable (ActionApprovalRequest) async -> ActionApprovalStatus
 
