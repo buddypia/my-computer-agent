@@ -3,46 +3,52 @@ import Foundation
 import MCACore
 import MCAReasoning
 
-/// A modal alert that shows the exact thing about to happen.
+/// Approver for the app: asks in the chat, under the question being answered.
 ///
-/// The first button is the default (it answers Return) and is always the
-/// refusal: an agent that can be steered by on-screen text must not be one
-/// stray keypress away from running what it was steered to.
-@MainActor
-enum ConfirmationAlert {
-    /// - Returns: the index into `buttons` that was clicked.
-    static func present(
-        title: String,
-        message: String,
-        detail: String,
-        buttons: [String]
-    ) -> Int {
-        // The alert has to take focus to be answered, and an approved keystroke
-        // must still land in the app it was approved for, not in this one.
+/// Not a modal alert. `NSAlert.runModal()` held the main thread for as long as
+/// the alert was up, so an alert that opened behind the browser or on another
+/// display left the chat showing "Thinking" with nothing to answer: the stop
+/// button could not run and the task deadline could not fire. In the chat the
+/// request sits where the user is already looking, the stop button cancels it,
+/// it expires on its own, and the deadline sees it as time spent waiting.
+struct ChatToolApprover: ToolApproving {
+    let present: @MainActor @Sendable (ActionApprovalRequest) async -> ActionApprovalStatus
+
+    func decide(_ request: ToolApprovalRequest) async -> ToolApprovalDecision {
+        await Self.ask(request, present: present)
+    }
+
+    @MainActor
+    private static func ask(
+        _ request: ToolApprovalRequest,
+        present: @MainActor @Sendable (ActionApprovalRequest) async -> ActionApprovalStatus
+    ) async -> ToolApprovalDecision {
+        // Taken before the chat comes forward: an approved keystroke must still
+        // land in the app it was approved for, not in this one.
         let previous = NSWorkspace.shared.frontmostApplication
-        defer { restoreFocus(to: previous) }
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = title
-        alert.informativeText = message
-        for button in buttons { alert.addButton(withTitle: button) }
-
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 460, height: 160))
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        textView.string = detail
-        textView.textContainerInset = NSSize(width: 6, height: 6)
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 160))
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.documentView = textView
-        alert.accessoryView = scroll
-
-        let response = alert.runModal()
-        let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-        return buttons.indices.contains(index) ? index : 0
+        let status = await present(ActionApprovalRequest(
+            goal: localized(
+                "The assistant wants to do the following. Check it before allowing.",
+                "アシスタントが次の操作を実行しようとしています。内容を確認してください。",
+                "어시스턴트가 다음 작업을 실행하려고 합니다. 내용을 확인하세요."),
+            operation: request.title,
+            target: request.warning ?? request.toolName,
+            details: request.detail,
+            consequence: localized(
+                "Approving runs exactly what is shown above.",
+                "承認すると、上に表示された内容がそのまま実行されます。",
+                "승인하면 위에 표시된 내용이 그대로 실행됩니다.")))
+        switch status {
+        case .approved:
+            restoreFocus(to: previous)
+            return .approved
+        case .rejected:
+            return .denied(reason: "the user declined")
+        case .expired:
+            return .denied(reason: "nobody answered the approval request in time")
+        case .pending, .cancelled, .invalidated:
+            return .denied(reason: "the approval request was cancelled")
+        }
     }
 
     /// Activation is asynchronous, so wait (briefly) until it took effect.
@@ -55,29 +61,6 @@ enum ConfirmationAlert {
               Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
-    }
-}
-
-/// Approver for the app: asks the user in a modal alert.
-struct AlertToolApprover: ToolApproving {
-    func decide(_ request: ToolApprovalRequest) async -> ToolApprovalDecision {
-        let approved = await MainActor.run {
-            ConfirmationAlert.present(
-                title: request.title,
-                message: [
-                    localized(
-                        "The assistant wants to do the following. Check it before allowing.",
-                        "アシスタントが次の操作を実行しようとしています。内容を確認してください。",
-                        "어시스턴트가 다음 작업을 실행하려고 합니다. 내용을 확인하세요."),
-                    request.warning,
-                ].compactMap { $0 }.joined(separator: "\n"),
-                detail: request.detail,
-                buttons: [
-                    localized("Don't Allow", "許可しない", "허용 안 함"),
-                    localized("Allow", "許可", "허용"),
-                ]) == 1
-        }
-        return approved ? .approved : .denied(reason: "the user declined")
     }
 }
 
