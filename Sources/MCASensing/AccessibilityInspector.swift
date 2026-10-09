@@ -40,6 +40,13 @@ public struct AccessibilityInspector: Sendable {
     /// Maximum number of actionable candidates returned to prevent token explosion.
     public let maxCandidates: Int
 
+    /// How long one AX query may block. The system default is about 6s, and a
+    /// busy app (Firefox scrolling a heavy page) answers every query at that
+    /// limit, so an 800-node walk could block for over an hour.
+    static let messagingTimeout: Float = 0.5
+    /// Wall-clock budget for one tree walk; past it the walk returns what it has.
+    static let traversalBudget: Duration = .seconds(3)
+
     public init(
         maxCandidates: Int = 25,
         privacyFilter: PrivacyFilter = PrivacyFilter(),
@@ -216,6 +223,7 @@ public struct AccessibilityInspector: Sendable {
 
         let pid = frontApp.processIdentifier
         let axApp = AXUIElementCreateApplication(pid)
+        Self.boundQueries(on: axApp)
         AXAttributes.enableEnhancedAccessibility(app: axApp)
 
         guard let window = copyElement(axApp, kAXFocusedWindowAttribute)
@@ -235,14 +243,21 @@ public struct AccessibilityInspector: Sendable {
     private func candidates(in window: AXUIElement, bounds windowBounds: CGRect?) -> [UIElementCandidate] {
         var candidates: [UIElementCandidate] = []
         var visitedCount = 0
+        let started = ContinuousClock.now
+        let deadline = started + Self.traversalBudget
 
         traverseTree(
             element: window,
             windowBounds: windowBounds,
             depth: 0,
+            deadline: deadline,
             visited: &visitedCount,
             into: &candidates
         )
+        let elapsed = ContinuousClock.now - started
+        if elapsed > .seconds(1) {
+            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates)")
+        }
 
         // Sanitize sensitive info and cap to maxCandidates
         let sanitized = privacyFilter.sanitizeCandidates(candidates)
@@ -391,11 +406,14 @@ public struct AccessibilityInspector: Sendable {
         element: AXUIElement,
         windowBounds: CGRect?,
         depth: Int,
+        deadline: ContinuousClock.Instant,
         visited: inout Int,
         into output: inout [UIElementCandidate]
     ) {
-        guard depth < 16, visited < 800, output.count < (maxCandidates * 2) else { return }
+        guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
+              ContinuousClock.now < deadline, !Task.isCancelled else { return }
         visited += 1
+        Self.boundQueries(on: element)
 
         let info = extractBatchedElementInfo(element)
 
@@ -433,12 +451,13 @@ public struct AccessibilityInspector: Sendable {
         }
 
         // Recurse into children
-        guard let children = copyElementArray(element, kAXChildrenAttribute) else { return }
+        guard ContinuousClock.now < deadline, let children = copyElementArray(element, kAXChildrenAttribute) else { return }
         for child in children {
             traverseTree(
                 element: child,
                 windowBounds: windowBounds,
                 depth: depth + 1,
+                deadline: deadline,
                 visited: &visited,
                 into: &output
             )
@@ -447,6 +466,14 @@ public struct AccessibilityInspector: Sendable {
     }
 
     // MARK: - Helpers (Fallback and Legacy)
+
+    /// The timeout belongs to the exact AX object, not its descendants, so the
+    /// walk sets it on every node it reads. It is deliberately not process-wide:
+    /// press actions must keep the default, or a slow press reports failure,
+    /// the actuator falls back to a synthesized click and the press runs twice.
+    static func boundQueries(on element: AXUIElement) {
+        _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
+    }
 
     private func getElementLabel(_ element: AXUIElement) -> String {
         for attr in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
@@ -687,8 +714,10 @@ extension AccessibilityInspector: UIStateProviding {
         var focusedBounds: CGRect?
         if AXIsProcessTrusted() {
             let axApp = AXUIElementCreateApplication(pid)
+            Self.boundQueries(on: axApp)
             AXAttributes.enableEnhancedAccessibility(app: axApp)
             let windows = copyElementArray(axApp, kAXWindowsAttribute) ?? []
+            windows.forEach(Self.boundQueries(on:))
             let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
             guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
                 throw SnapshotError.selectedWindowUnavailable
