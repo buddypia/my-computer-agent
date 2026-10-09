@@ -835,6 +835,14 @@ public actor TwoTierAutonomousLoopCoordinator {
     /// ``AutoApproveToolApprover`` only where the caller already approved the
     /// whole run (MCP `autonomous_act`) or nothing is sent (dry run).
     public let keystrokeApprover: any ToolApproving
+    /// Time spent waiting on a person in `keystrokeRefusal` during the current
+    /// run. The wall-clock limit bounds the agent's work, not how long a person
+    /// takes to decide. Each excluded wait is capped, so a very slow answer
+    /// still counts past the cap. A prompt never answered blocks in the
+    /// approver itself (alerts and terminal prompts do not expire); this limit
+    /// is only checked after it returns.
+    private var approvalWait: Duration = .zero
+    static let approvalWaitCap: Duration = .seconds(300)
 
     public init(
         planner: any System2Planning = DefaultSubgoalPlanner(),
@@ -897,6 +905,7 @@ public actor TwoTierAutonomousLoopCoordinator {
         let startTime = Date()
         // Monotonic: a wall-clock jump (NTP, manual change) must not end or extend the run.
         let deadline = ContinuousClock.now + .seconds(config.maxDurationSeconds)
+        approvalWait = .zero
         var stepBudget = StepBudgetMonitor(
             maxSteps: config.maxTotalSteps,
             maxSubgoalSteps: config.defaultSubgoalMaxSteps
@@ -958,7 +967,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                     try cancellationToken.throwIfCancelled()
 
                     // Checkpoint: Wall clock
-                    if ContinuousClock.now >= deadline {
+                    if ContinuousClock.now >= deadline + approvalWait {
                         throw LoopExecutionError.timeLimitExceeded(seconds: config.maxDurationSeconds)
                     }
 
@@ -1544,6 +1553,8 @@ public actor TwoTierAutonomousLoopCoordinator {
         default:
             return nil
         }
+        let asked = ContinuousClock.now
+        defer { approvalWait += min(asked.duration(to: .now), Self.approvalWaitCap) }
         return await approver.gate(request)
     }
 
