@@ -230,6 +230,7 @@ public struct AccessibilityInspector: Sendable {
             ?? (copyElementArray(axApp, kAXWindowsAttribute)?.first) else {
             return []
         }
+        Self.boundQueries(on: window)
         guard !PrivacyFilter.isWindowExcluded(bundleID: frontApp.bundleIdentifier,
                                                windowTitle: copyString(window, kAXTitleAttribute) ?? "") else { return [] }
         AXAttributes.enableEnhancedAccessibility(app: axApp, window: window)
@@ -256,7 +257,8 @@ public struct AccessibilityInspector: Sendable {
         )
         let elapsed = ContinuousClock.now - started
         if elapsed > .seconds(1) {
-            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates)")
+            let cut = !Self.walkMayContinue(until: deadline)
+            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates, budget \(cut ? "hit" : "not hit", privacy: .public))")
         }
 
         // Sanitize sensitive info and cap to maxCandidates
@@ -411,7 +413,7 @@ public struct AccessibilityInspector: Sendable {
         into output: inout [UIElementCandidate]
     ) {
         guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
-              ContinuousClock.now < deadline, !Task.isCancelled else { return }
+              Self.walkMayContinue(until: deadline) else { return }
         visited += 1
         Self.boundQueries(on: element)
 
@@ -451,7 +453,7 @@ public struct AccessibilityInspector: Sendable {
         }
 
         // Recurse into children
-        guard ContinuousClock.now < deadline, let children = copyElementArray(element, kAXChildrenAttribute) else { return }
+        guard Self.walkMayContinue(until: deadline), let children = copyElementArray(element, kAXChildrenAttribute) else { return }
         for child in children {
             traverseTree(
                 element: child,
@@ -471,6 +473,11 @@ public struct AccessibilityInspector: Sendable {
     /// walk sets it on every node it reads. It is deliberately not process-wide:
     /// press actions must keep the default, or a slow press reports failure,
     /// the actuator falls back to a synthesized click and the press runs twice.
+    /// The walk stops at its deadline or when the calling task is cancelled.
+    static func walkMayContinue(until deadline: ContinuousClock.Instant) -> Bool {
+        ContinuousClock.now < deadline && !Task.isCancelled
+    }
+
     static func boundQueries(on element: AXUIElement) {
         _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
     }
@@ -563,7 +570,9 @@ extension AccessibilityInspector: UIStateProviding {
         let bundleId = frontApp?.bundleIdentifier
 
         let axApp = pid.map { AXUIElementCreateApplication($0) }
+        axApp.map(Self.boundQueries(on:))
         let window = axApp.flatMap { copyElement($0, kAXFocusedWindowAttribute) ?? copyElementArray($0, kAXWindowsAttribute)?.first }
+        window.map(Self.boundQueries(on:))
         let windowTitle = window.flatMap { copyString($0, kAXTitleAttribute) }
         guard !PrivacyFilter.isWindowExcluded(bundleID: bundleId, windowTitle: windowTitle ?? "") else {
             throw SnapshotError.selectedWindowExcluded
@@ -573,12 +582,14 @@ extension AccessibilityInspector: UIStateProviding {
         var focusedRole: String? = nil
         var focusedBounds: CGRect? = nil
         if let axApp, let focusedElem = copyElement(axApp, kAXFocusedUIElementAttribute) {
+            Self.boundQueries(on: focusedElem)
             focusedRole = copyString(focusedElem, kAXRoleAttribute)
             focusedBounds = getElementBounds(focusedElem)
             focusedId = copyString(focusedElem, kAXIdentifierAttribute)
         }
 
         let candidates = await inspectFocusedWindowAsync(targetPID: pid)
+        try Task.checkCancellation()
         return UIStateSnapshot(
             windowTitle: windowTitle,
             appBundleId: bundleId,
@@ -727,6 +738,7 @@ extension AccessibilityInspector: UIStateProviding {
             observed = candidates(in: window, bounds: before.bounds)
             if let focusedWindow = copyElement(axApp, kAXFocusedWindowAttribute), CFEqual(focusedWindow, window),
                let focused = copyElement(axApp, kAXFocusedUIElementAttribute) {
+                Self.boundQueries(on: focused)
                 focusedId = copyString(focused, kAXIdentifierAttribute)
                 focusedRole = copyString(focused, kAXRoleAttribute)
                 focusedBounds = getElementBounds(focused)
