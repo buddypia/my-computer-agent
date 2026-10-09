@@ -90,7 +90,9 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
 
     /// Whether this backend was explicitly requested via environment variables.
     public var isConfigured: Bool {
-        if environment["MCA_EMBEDDING_GEMMA_URL"] != nil || environment["EG2_URL"] != nil { return true }
+        // `EG2_URL` only says where the server is. eg2's own tools set it, and reading
+        // it as a request for this backend would move triage onto it unasked.
+        if environment["MCA_EMBEDDING_GEMMA_URL"] != nil { return true }
         if let backend = environment["MCA_SYSTEM_ONE"]?.lowercased() {
             return backend == "embeddinggemma" || backend == "embeddinggemma2" || backend == "gemma" || backend == "local"
         }

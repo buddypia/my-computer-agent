@@ -77,6 +77,14 @@ struct EmbeddingElementRankerTests {
         #expect(EmbeddingElementRanker.local(environment: [:]) != nil)
     }
 
+    @Test("EG2_URL says where eg2 is, but does not move System One decisions onto it")
+    func eg2URLDoesNotPickBackend() {
+        let env = ["EG2_URL": "http://127.0.0.1:38765"]
+        #expect(EmbeddingGemmaClient(environment: env).isConfigured == false)
+        #expect(!(SystemOneBackend.resolve(environment: env) is EmbeddingGemmaClient))
+        #expect(EmbeddingGemmaClient(environment: env).endpoint.absoluteString == "http://127.0.0.1:38765/v1/evaluate")
+    }
+
     @Test("eg2 is found by path, with EG2_BIN first")
     func locatesExecutable() {
         let found = EG2Launcher.locate(environment: ["EG2_BIN": "/custom/eg2", "HOME": "/Users/x"],

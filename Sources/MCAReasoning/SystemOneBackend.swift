@@ -19,7 +19,10 @@ public enum SystemOneBackend {
     /// How many elements an autonomous step captures. Wider with a ranker, which
     /// narrows them back to `TypeSafeDecisionEngine.rankedCandidateLimit` by meaning,
     /// so an element deep in a large window is no longer cut by tree order alone.
-    public static var loopCandidateLimit: Int { elementRanker == nil ? 25 : 80 }
+    ///
+    /// Not wider than 50: approval compares the snapshot before and after exactly, and
+    /// every extra element is one more that a clock or a counter can change.
+    public static var loopCandidateLimit: Int { elementRanker == nil ? 25 : 50 }
 
     public static func resolve(
         model: String? = nil,
@@ -121,7 +124,8 @@ extension TypeSafeDecisionEngine {
             client: client,
             confidenceThreshold: confidenceThreshold,
             screenshot: client.acceptsImages ? SystemOneBackend.screenshot : nil,
-            elementRanker: SystemOneBackend.elementRanker
+            // The offline heuristics ignore the order, so ranking would only add latency.
+            elementRanker: client is SystemOneBackend.Offline ? nil : SystemOneBackend.elementRanker
         )
     }
 }

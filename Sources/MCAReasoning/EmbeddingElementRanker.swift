@@ -77,9 +77,13 @@ public actor EmbeddingElementRanker: UIElementRanking {
             async let elementVectors = embed(missing, inputType: "document")
             let (query, documents) = try await (goalVectors, elementVectors)
             guard let goalVector = query.first else { return nil }
+            // Scored from a local copy: evicting the cache in `store` must not drop the
+            // vectors this step is about to use, and another step may run meanwhile.
+            var vectors = cache
+            for (text, vector) in zip(missing, documents) { vectors[text] = vector }
             store(zip(missing, documents))
             let scored = zip(candidates, texts).map { candidate, text in
-                (candidate, cache[text].map { Self.cosine(goalVector, $0) } ?? -1)
+                (candidate, vectors[text].map { Self.cosine(goalVector, $0) } ?? -1)
             }
             // Stable for ties, so equal scores keep tree order.
             return scored.enumerated()
@@ -115,8 +119,12 @@ public actor EmbeddingElementRanker: UIElementRanking {
     }
 
     private func store(_ pairs: Zip2Sequence<[String], [[Float]]>) {
-        if cache.count > cacheLimit { cache.removeAll(keepingCapacity: true) }
+        if cache.count + missingCount(pairs) > cacheLimit { cache.removeAll(keepingCapacity: true) }
         for (text, vector) in pairs { cache[text] = vector }
+    }
+
+    private func missingCount(_ pairs: Zip2Sequence<[String], [[Float]]>) -> Int {
+        pairs.reduce(0) { $0 + (cache[$1.0] == nil ? 1 : 0) }
     }
 
     private struct EmbeddingsResponse: Decodable {
