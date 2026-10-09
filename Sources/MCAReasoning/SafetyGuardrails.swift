@@ -11,10 +11,6 @@ public enum LoopExecutionError: LocalizedError, Sendable, Equatable {
     /// Step budget exceeded total allowable steps.
     case stepBudgetExceeded(steps: Int)
 
-    /// Wall-clock limit reached. Steps can each wait on a model or a slow app,
-    /// so a step budget alone does not bound how long a run takes.
-    case timeLimitExceeded(seconds: Int)
-
     /// Infinite loop detected via action repetition or invariant screen state.
     case infiniteLoopDetected(reason: String)
 
@@ -27,12 +23,17 @@ public enum LoopExecutionError: LocalizedError, Sendable, Equatable {
     /// Low-level execution failure (e.g. accessibility permissions denied or hardware error).
     case executionFailed(reason: String)
 
+    /// The wall-clock limit is reported as `.executionFailed` rather than a new
+    /// case: `LoopExecutionError` is public through MCAKit, and a new case would
+    /// break every exhaustive `switch` a client already has.
+    public static func timeLimitExceeded(seconds: Int) -> LoopExecutionError {
+        .executionFailed(reason: "time limit exceeded (\(seconds)s).")
+    }
+
     public var errorDescription: String? {
         switch self {
         case .stepBudgetExceeded(let steps):
             return "Autonomous loop terminated: maximum step budget exceeded (\(steps) steps executed)."
-        case .timeLimitExceeded(let seconds):
-            return "Autonomous loop terminated: time limit exceeded (\(seconds)s)."
         case .infiniteLoopDetected(let reason):
             return "Autonomous loop aborted: infinite loop detected. \(reason)"
         case .cancelled:

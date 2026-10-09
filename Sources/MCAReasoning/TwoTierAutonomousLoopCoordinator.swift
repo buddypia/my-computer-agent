@@ -228,6 +228,26 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
         self.isDebugMode = isDebugMode
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case maxTotalSteps, defaultSubgoalMaxSteps, maxDurationSeconds, confidenceThreshold, settlingDelayMs,
+             maxConsecutiveEscalations, identicalActionThreshold, unchangedStateThreshold, isDebugMode
+    }
+
+    /// Configs encoded before `maxDurationSeconds` existed still decode, with the default.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            maxTotalSteps: try c.decode(Int.self, forKey: .maxTotalSteps),
+            defaultSubgoalMaxSteps: try c.decode(Int.self, forKey: .defaultSubgoalMaxSteps),
+            confidenceThreshold: try c.decode(Float.self, forKey: .confidenceThreshold),
+            settlingDelayMs: try c.decode(Int.self, forKey: .settlingDelayMs),
+            maxConsecutiveEscalations: try c.decode(Int.self, forKey: .maxConsecutiveEscalations),
+            identicalActionThreshold: try c.decode(Int.self, forKey: .identicalActionThreshold),
+            unchangedStateThreshold: try c.decode(Int.self, forKey: .unchangedStateThreshold),
+            isDebugMode: try c.decode(Bool.self, forKey: .isDebugMode),
+            maxDurationSeconds: try c.decodeIfPresent(Int.self, forKey: .maxDurationSeconds) ?? 600)
+    }
+
     public static let `default` = AutonomousLoopConfig()
 
     /// Configuration for zero-delay, deterministic test execution.
@@ -874,6 +894,8 @@ public actor TwoTierAutonomousLoopCoordinator {
         }
 
         let startTime = Date()
+        // Monotonic: a wall-clock jump (NTP, manual change) must not end or extend the run.
+        let deadline = ContinuousClock.now + .seconds(config.maxDurationSeconds)
         var stepBudget = StepBudgetMonitor(
             maxSteps: config.maxTotalSteps,
             maxSubgoalSteps: config.defaultSubgoalMaxSteps
@@ -935,7 +957,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                     try cancellationToken.throwIfCancelled()
 
                     // Checkpoint: Wall clock
-                    if Date().timeIntervalSince(startTime) >= Double(config.maxDurationSeconds) {
+                    if ContinuousClock.now >= deadline {
                         throw LoopExecutionError.timeLimitExceeded(seconds: config.maxDurationSeconds)
                     }
 
@@ -1362,7 +1384,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                 case .cancelled, .stepBudgetExceeded:
                     // cancellation handled via token, stepBudget doesn't require release
                     break
-                case .infiniteLoopDetected, .executionFailed, .escalationFailed, .timeLimitExceeded:
+                case .infiniteLoopDetected, .executionFailed, .escalationFailed:
                     synthesizer.releaseAllHeldEvents()
                 }
             } else {
