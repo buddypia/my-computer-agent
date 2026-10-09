@@ -64,6 +64,9 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
     /// the window behind their editor will press.
     public func present() {
         let window = makeWindowIfNeeded()
+        // Opened again while an approval is up (a hot key, "explain screen"),
+        // the field still stays unfocused for the reason in `presentForApproval`.
+        state.chatInputFocusSuppressed = state.isAwaitingApproval
         window.makeKeyAndOrderFront(nil)
         // The app runs `.accessory`, so it is never frontmost on its own and the
         // field would silently refuse keystrokes.
@@ -85,6 +88,9 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
     /// came, and the whole app froze with the card unanswerable. An approval is
     /// answered with a button, so the field has no reason to be focused.
     public func presentForApproval() {
+        // Set before the window exists: a new hosting view focuses the field in
+        // `onAppear`, which runs before the approval itself is registered.
+        state.chatInputFocusSuppressed = true
         let window = makeWindowIfNeeded()
         window.makeFirstResponder(nil)
         window.makeKeyAndOrderFront(nil)

@@ -55,6 +55,37 @@ struct ChatWindowDismissalTests {
         #expect(await approval.value == .cancelled)
     }
 
+    @Test("an approval that first creates the chat window does not focus the input field")
+    func approvalOnFreshWindowDoesNotFocusInput() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+        chat.presentForApproval()
+        let window = try #require(NSApp.windows.first { $0.delegate === chat })
+        // `onAppear` runs on a later pass; give it every chance to take the caret.
+        for _ in 0..<10 {
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(!(window.firstResponder is NSTextView), "the input field took the caret under an approval")
+        }
+    }
+
+    @Test("a user-opened chat still puts the caret in the input field")
+    func presentFocusesInput() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+        chat.present()
+        let window = try #require(NSApp.windows.first { $0.delegate === chat })
+        var focused = false
+        for _ in 0..<40 where !focused {
+            try await Task.sleep(for: .milliseconds(50))
+            focused = window.firstResponder is NSTextView
+        }
+        #expect(focused)
+    }
+
     private func surfaceIsVisible(_ number: Int) -> Bool {
         !visibleSurfaceNames(number).isEmpty
     }
