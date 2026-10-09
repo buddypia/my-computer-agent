@@ -837,9 +837,10 @@ public actor TwoTierAutonomousLoopCoordinator {
     public let keystrokeApprover: any ToolApproving
     /// Time spent waiting on a person in `keystrokeRefusal` during the current
     /// run. The wall-clock limit bounds the agent's work, not how long a person
-    /// takes to decide. Not every approver expires (a modal alert, a terminal
-    /// prompt), so each excluded wait is capped: an unanswered prompt still
-    /// ends the run once the cap and the remaining budget are spent.
+    /// takes to decide. Each excluded wait is capped, so a very slow answer
+    /// still counts past the cap. A prompt never answered blocks in the
+    /// approver itself (alerts and terminal prompts do not expire); this limit
+    /// is only checked after it returns.
     private var approvalWait: Duration = .zero
     static let approvalWaitCap: Duration = .seconds(300)
 
