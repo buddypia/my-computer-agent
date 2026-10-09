@@ -290,6 +290,9 @@ public final class CLIAutonomousLoopReporter: AutonomousLoopDelegate, @unchecked
         case .stepBudgetExceeded(let steps):
             status = "FAILED"
             message = "Step budget exceeded (\(steps) steps)."
+        case .timeLimitExceeded(let seconds):
+            status = "FAILED"
+            message = "Time limit exceeded (\(seconds)s)."
         case .infiniteLoopDetected(let reason):
             status = "FAILED"
             message = "Infinite loop detected: \(reason)"

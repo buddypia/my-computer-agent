@@ -2,6 +2,7 @@ import Foundation
 import MCACore
 import MCAMemory
 import MCASensing
+import OSLog
 
 /// A capability the model can invoke mid-generation.
 public protocol AgentTool: Sendable {
@@ -16,8 +17,15 @@ public protocol AgentTool: Sendable {
 /// OpenAI function calls all reduce to this.
 public actor ToolRegistry {
     private var tools: [String: any AgentTool] = [:]
+    /// How long one call may work before it is abandoned. Time spent waiting on
+    /// the user's approval does not count (see `ToolClock`).
+    private let timeout: Duration
+    private let log = Logger(subsystem: "com.buddypia.mca", category: "ToolRegistry")
 
-    public init(tools: [any AgentTool] = []) {
+    public static let defaultTimeout: Duration = .seconds(90)
+
+    public init(tools: [any AgentTool] = [], timeout: Duration = ToolRegistry.defaultTimeout) {
+        self.timeout = timeout
         for tool in tools { self.tools[tool.definition.name] = tool }
     }
 
@@ -35,16 +43,26 @@ public actor ToolRegistry {
                 callID: call.id, name: call.name,
                 content: "Error: no tool named '\(call.name)' is registered")
         }
+        let started = ContinuousClock.now
         do {
             try Task.checkCancellation()
             if await ActionAuthorization.current?.terminalFailure != nil {
                 throw ActionAuthorizationError.denied
             }
             try Task.checkCancellation()
-            let result = try await tool.invoke(arguments: call.arguments)
+            let arguments = call.arguments
+            let result = try await ToolClock.run(name: call.name, timeout: timeout) {
+                try await tool.invoke(arguments: arguments)
+            }
+            log.info("Tool \(call.name, privacy: .public) finished in \(Self.milliseconds(since: started), privacy: .public) ms")
             return ToolOutput(callID: call.id, name: call.name, content: result)
         } catch {
-            if error is ActionAuthorizationError || error is CancellationError { await ActionAuthorization.current?.abort(error) }
+            log.error("Tool \(call.name, privacy: .public) failed after \(Self.milliseconds(since: started), privacy: .public) ms: \(error.localizedDescription, privacy: .public)")
+            // A timed-out action left the screen in an unknown state, so it ends
+            // the action session just like a refusal does.
+            if error is ActionAuthorizationError || error is CancellationError || error is ToolTimeoutError {
+                await ActionAuthorization.current?.abort(error)
+            }
             // Errors are returned to the model rather than thrown: a failed
             // tool call is information the model can recover from, and killing
             // the turn instead would lose the whole response.
@@ -52,6 +70,109 @@ public actor ToolRegistry {
                 callID: call.id, name: call.name,
                 content: "Error: \(error.localizedDescription)")
         }
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Int64 {
+        let elapsed = ContinuousClock.now - start
+        return elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000
+    }
+}
+
+public struct ToolTimeoutError: LocalizedError, Sendable, Equatable {
+    public let toolName: String
+    public let timeout: Duration
+
+    public var errorDescription: String? {
+        "Tool '\(toolName)' did not finish within \(timeout.components.seconds)s and was abandoned. "
+            + "Do not call it again with the same arguments; tell the user what got stuck."
+    }
+}
+
+/// Working time of one tool call, with the time spent waiting on a human paused.
+///
+/// A tool that never returns used to hang the whole answer turn: nothing above
+/// it had a deadline. Approval prompts legitimately wait minutes for the user,
+/// so they bracket that wait with `notCounting` and only the machine's own time
+/// is held against the limit.
+public actor ToolClock {
+    @TaskLocal public static var current: ToolClock?
+
+    private let start = ContinuousClock.now
+    private var pausedSince: ContinuousClock.Instant?
+    private var pauseDepth = 0
+    private var paused: Duration = .zero
+
+    public init() {}
+
+    public var workingTime: Duration {
+        let now = ContinuousClock.now
+        return (now - start) - paused - (pausedSince.map { now - $0 } ?? .zero)
+    }
+
+    private func pause() {
+        if pauseDepth == 0 { pausedSince = .now }
+        pauseDepth += 1
+    }
+
+    private func resume() {
+        pauseDepth -= 1
+        if pauseDepth == 0, let since = pausedSince {
+            paused += .now - since
+            pausedSince = nil
+        }
+    }
+
+    /// Runs a wait on the user without charging it to the current tool call.
+    public static func notCounting<T: Sendable>(_ operation: () async throws -> T) async rethrows -> T {
+        guard let clock = current else { return try await operation() }
+        await clock.pause()
+        do {
+            let value = try await operation()
+            await clock.resume()
+            return value
+        } catch {
+            await clock.resume()
+            throw error
+        }
+    }
+
+    /// Runs `body`, throwing `ToolTimeoutError` once it has worked for `timeout`.
+    ///
+    /// The body runs in its own task and is raced against a watchdog, so the
+    /// caller gets control back even when the body is stuck in a call that
+    /// ignores cancellation (a synchronous AX read on an unresponsive app). The
+    /// body is cancelled and left to unwind on its own.
+    static func run(
+        name: String, timeout: Duration, tick: Duration = .milliseconds(100),
+        _ body: @escaping @Sendable () async throws -> String
+    ) async throws -> String {
+        let clock = ToolClock()
+        let (results, sink) = AsyncStream.makeStream(of: Result<String, any Error>.self)
+        let work = Task {
+            do {
+                let value = try await ToolClock.$current.withValue(clock) { try await body() }
+                sink.yield(.success(value))
+            } catch {
+                sink.yield(.failure(error))
+            }
+            sink.finish()
+        }
+        let watchdog = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: tick)
+                if await clock.workingTime >= timeout {
+                    sink.yield(.failure(ToolTimeoutError(toolName: name, timeout: timeout)))
+                    sink.finish()
+                    return
+                }
+            }
+        }
+        sink.onTermination = { _ in
+            work.cancel()
+            watchdog.cancel()
+        }
+        for await result in results { return try result.get() }
+        throw CancellationError()
     }
 }
 

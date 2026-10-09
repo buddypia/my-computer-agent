@@ -427,7 +427,7 @@ public actor Agent {
             transcript.append(.toolCalls(response.toolCalls))
             for call in response.toolCalls {
                 try Task.checkCancellation()
-                log.info("Executing tool: \(call.name, privacy: .public)")
+                log.info("Executing tool: \(call.name, privacy: .public) (round \(round + 1, privacy: .public)/\(effectiveMaxRounds, privacy: .public))")
                 let output = await tools.invoke(call)
                 let argString = String(decoding: call.arguments, as: UTF8.self)
                 toolExecutions.append(ToolExecutionRecord(

@@ -11,6 +11,10 @@ public enum LoopExecutionError: LocalizedError, Sendable, Equatable {
     /// Step budget exceeded total allowable steps.
     case stepBudgetExceeded(steps: Int)
 
+    /// Wall-clock limit reached. Steps can each wait on a model or a slow app,
+    /// so a step budget alone does not bound how long a run takes.
+    case timeLimitExceeded(seconds: Int)
+
     /// Infinite loop detected via action repetition or invariant screen state.
     case infiniteLoopDetected(reason: String)
 
@@ -27,6 +31,8 @@ public enum LoopExecutionError: LocalizedError, Sendable, Equatable {
         switch self {
         case .stepBudgetExceeded(let steps):
             return "Autonomous loop terminated: maximum step budget exceeded (\(steps) steps executed)."
+        case .timeLimitExceeded(let seconds):
+            return "Autonomous loop terminated: time limit exceeded (\(seconds)s)."
         case .infiniteLoopDetected(let reason):
             return "Autonomous loop aborted: infinite loop detected. \(reason)"
         case .cancelled:

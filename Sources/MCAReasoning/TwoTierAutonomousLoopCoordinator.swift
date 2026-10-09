@@ -167,6 +167,9 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
     /// Default max steps for a single subgoal if not specified. Default: 10.
     public var defaultSubgoalMaxSteps: Int
 
+    /// Wall-clock ceiling for the whole goal, checked before every step. Default: 600s.
+    public var maxDurationSeconds: Int
+
     /// Alias for defaultSubgoalMaxSteps matching test suites.
     public var maxSubgoalSteps: Int {
         get { defaultSubgoalMaxSteps }
@@ -211,9 +214,11 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
         maxConsecutiveEscalations: Int = 3,
         identicalActionThreshold: Int = 3,
         unchangedStateThreshold: Int = 3,
-        isDebugMode: Bool = AutonomousLoopConfig.defaultDebugMode
+        isDebugMode: Bool = AutonomousLoopConfig.defaultDebugMode,
+        maxDurationSeconds: Int = 600
     ) {
         self.maxTotalSteps = maxTotalSteps
+        self.maxDurationSeconds = maxDurationSeconds
         self.defaultSubgoalMaxSteps = defaultSubgoalMaxSteps
         self.confidenceThreshold = confidenceThreshold
         self.settlingDelayMs = settlingDelayMs
@@ -929,6 +934,11 @@ public actor TwoTierAutonomousLoopCoordinator {
                 while !subgoalResolved {
                     try cancellationToken.throwIfCancelled()
 
+                    // Checkpoint: Wall clock
+                    if Date().timeIntervalSince(startTime) >= Double(config.maxDurationSeconds) {
+                        throw LoopExecutionError.timeLimitExceeded(seconds: config.maxDurationSeconds)
+                    }
+
                     // Checkpoint: Step Budget
                     do {
                         try stepBudget.increment()
@@ -1352,7 +1362,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                 case .cancelled, .stepBudgetExceeded:
                     // cancellation handled via token, stepBudget doesn't require release
                     break
-                case .infiniteLoopDetected, .executionFailed, .escalationFailed:
+                case .infiniteLoopDetected, .executionFailed, .escalationFailed, .timeLimitExceeded:
                     synthesizer.releaseAllHeldEvents()
                 }
             } else {

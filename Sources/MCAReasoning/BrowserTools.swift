@@ -532,7 +532,7 @@ public struct BrowserWaitTool: AgentTool {
                   "properties": {
                     "for": {"type": "string", "enum": ["load", "selector", "text", "ms"]},
                     "value": {"type": "string", "description": "Load state, CSS selector, text, or milliseconds."},
-                    "timeout_ms": {"type": "integer", "description": "Give up after this many ms (default 15000)."}
+                    "timeout_ms": {"type": "integer", "description": "Give up after this many ms (default 15000, max 60000)."}
                   },
                   "required": ["for"]
                 }
@@ -543,7 +543,7 @@ public struct BrowserWaitTool: AgentTool {
         let parsed = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
         let kind = parsed.string("for") ?? "load"
         let value = parsed.string("value") ?? ""
-        let timeout = Double(min(max(parsed.int("timeout_ms") ?? 15_000, 100), 120_000)) / 1000
+        let timeout = Double(min(max(parsed.int("timeout_ms") ?? 15_000, 100), 60_000)) / 1000
         let condition: BrowserWaitCondition
         switch kind {
         case "selector":

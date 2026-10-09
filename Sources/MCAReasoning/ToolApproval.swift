@@ -84,7 +84,7 @@ extension ToolApproving {
     /// The wording tells the model not to route around the refusal: a model
     /// that is told only "no" tends to try the same thing through another tool.
     public func gate(_ request: ToolApprovalRequest) async -> String? {
-        switch await decide(request) {
+        switch await ToolClock.notCounting({ await decide(request) }) {
         case .approved:
             return nil
         case .denied(let reason):
