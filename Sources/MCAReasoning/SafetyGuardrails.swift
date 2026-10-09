@@ -23,6 +23,13 @@ public enum LoopExecutionError: LocalizedError, Sendable, Equatable {
     /// Low-level execution failure (e.g. accessibility permissions denied or hardware error).
     case executionFailed(reason: String)
 
+    /// The wall-clock limit is reported as `.executionFailed` rather than a new
+    /// case: `LoopExecutionError` is public through MCAKit, and a new case would
+    /// break every exhaustive `switch` a client already has.
+    public static func timeLimitExceeded(seconds: Int) -> LoopExecutionError {
+        .executionFailed(reason: "time limit exceeded (\(seconds)s).")
+    }
+
     public var errorDescription: String? {
         switch self {
         case .stepBudgetExceeded(let steps):

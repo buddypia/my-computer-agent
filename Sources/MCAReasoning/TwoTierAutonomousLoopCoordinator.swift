@@ -167,6 +167,9 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
     /// Default max steps for a single subgoal if not specified. Default: 10.
     public var defaultSubgoalMaxSteps: Int
 
+    /// Wall-clock ceiling for the whole goal, checked before every step. Default: 600s.
+    public var maxDurationSeconds: Int
+
     /// Alias for defaultSubgoalMaxSteps matching test suites.
     public var maxSubgoalSteps: Int {
         get { defaultSubgoalMaxSteps }
@@ -211,9 +214,12 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
         maxConsecutiveEscalations: Int = 3,
         identicalActionThreshold: Int = 3,
         unchangedStateThreshold: Int = 3,
-        isDebugMode: Bool = AutonomousLoopConfig.defaultDebugMode
+        isDebugMode: Bool = AutonomousLoopConfig.defaultDebugMode,
+        maxDurationSeconds: Int = 600
     ) {
         self.maxTotalSteps = maxTotalSteps
+        // Clamped so a decoded config cannot overflow the deadline arithmetic.
+        self.maxDurationSeconds = min(max(0, maxDurationSeconds), 86_400)
         self.defaultSubgoalMaxSteps = defaultSubgoalMaxSteps
         self.confidenceThreshold = confidenceThreshold
         self.settlingDelayMs = settlingDelayMs
@@ -221,6 +227,26 @@ public struct AutonomousLoopConfig: Sendable, Codable, Equatable {
         self.identicalActionThreshold = identicalActionThreshold
         self.unchangedStateThreshold = unchangedStateThreshold
         self.isDebugMode = isDebugMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxTotalSteps, defaultSubgoalMaxSteps, maxDurationSeconds, confidenceThreshold, settlingDelayMs,
+             maxConsecutiveEscalations, identicalActionThreshold, unchangedStateThreshold, isDebugMode
+    }
+
+    /// Configs encoded before `maxDurationSeconds` existed still decode, with the default.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            maxTotalSteps: try c.decode(Int.self, forKey: .maxTotalSteps),
+            defaultSubgoalMaxSteps: try c.decode(Int.self, forKey: .defaultSubgoalMaxSteps),
+            confidenceThreshold: try c.decode(Float.self, forKey: .confidenceThreshold),
+            settlingDelayMs: try c.decode(Int.self, forKey: .settlingDelayMs),
+            maxConsecutiveEscalations: try c.decode(Int.self, forKey: .maxConsecutiveEscalations),
+            identicalActionThreshold: try c.decode(Int.self, forKey: .identicalActionThreshold),
+            unchangedStateThreshold: try c.decode(Int.self, forKey: .unchangedStateThreshold),
+            isDebugMode: try c.decode(Bool.self, forKey: .isDebugMode),
+            maxDurationSeconds: try c.decodeIfPresent(Int.self, forKey: .maxDurationSeconds) ?? 600)
     }
 
     public static let `default` = AutonomousLoopConfig()
@@ -869,6 +895,8 @@ public actor TwoTierAutonomousLoopCoordinator {
         }
 
         let startTime = Date()
+        // Monotonic: a wall-clock jump (NTP, manual change) must not end or extend the run.
+        let deadline = ContinuousClock.now + .seconds(config.maxDurationSeconds)
         var stepBudget = StepBudgetMonitor(
             maxSteps: config.maxTotalSteps,
             maxSubgoalSteps: config.defaultSubgoalMaxSteps
@@ -928,6 +956,11 @@ public actor TwoTierAutonomousLoopCoordinator {
                 // 4. System 1 Micro-Action Loop
                 while !subgoalResolved {
                     try cancellationToken.throwIfCancelled()
+
+                    // Checkpoint: Wall clock
+                    if ContinuousClock.now >= deadline {
+                        throw LoopExecutionError.timeLimitExceeded(seconds: config.maxDurationSeconds)
+                    }
 
                     // Checkpoint: Step Budget
                     do {

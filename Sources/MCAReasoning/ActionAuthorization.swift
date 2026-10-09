@@ -97,7 +97,7 @@ public struct ActionAuthorization: Sendable {
         do {
             let request = ActionApprovalRequest(goal: session.goal, operation: operation,
                                                 target: target, details: details, consequence: consequence)
-            let status = try await session.presenter(request)
+            let status = try await ToolClock.notCounting { try await session.presenter(request) }
             try Task.checkCancellation()
             guard status == .approved else { throw ActionAuthorizationError.denied }
             let validators = [session.validateTarget, revalidate].compactMap { $0 }

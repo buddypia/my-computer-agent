@@ -515,6 +515,10 @@ public struct BrowserTabsTool: AgentTool {
 // MARK: - browser_wait
 
 public struct BrowserWaitTool: AgentTool {
+    /// `timeout_ms` may ask for up to 120s; leave room to report the result.
+    public static let callTimeout: Duration = .seconds(135)
+    public var timeout: Duration? { Self.callTimeout }
+
     private let session: BrowserSession
     public init(session: BrowserSession) { self.session = session }
 
