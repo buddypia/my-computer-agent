@@ -11,7 +11,7 @@ private final class Calls<T>: @unchecked Sendable {
 }
 
 private func http(_ status: Int, _ body: String) -> (Data, URLResponse) {
-    let url = URL(string: "http://127.0.0.1:8765/v1/embed")!
+    let url = URL(string: "http://127.0.0.1:38765/v1/embed")!
     return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!)
 }
 
@@ -43,7 +43,7 @@ struct EmbeddingGemmaTextEmbeddingTests {
         #expect(abs(sumSquares - 1.0) < 0.001)
 
         let req = try #require(sent.all.first)
-        #expect(req.url?.absoluteString == "http://127.0.0.1:8765/v1/embed")
+        #expect(req.url?.absoluteString == "http://127.0.0.1:38765/v1/embed")
         #expect(req.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 

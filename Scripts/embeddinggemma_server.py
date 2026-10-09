@@ -302,7 +302,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description="EmbeddingGemma 2 Inference Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host interface (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
+    parser.add_argument("--port", type=int, default=38765, help="Port (default: 38765)")
     parser.add_argument("--device", default=None, help="Device (mps, cpu, cuda)")
     args = parser.parse_args()
 

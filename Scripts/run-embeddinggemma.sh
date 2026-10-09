@@ -4,7 +4,7 @@ set -euo pipefail
 # Helper launcher for EmbeddingGemma 2 Local Server
 # Detects available Python environments with torch + sentence_transformers
 
-PORT="${1:-8765}"
+PORT="${1:-38765}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_PY="${SCRIPT_DIR}/embeddinggemma_server.py"
 

@@ -11,6 +11,19 @@ import MCASensing
 /// cf auth login alone does not mean the user agreed to. Library defaults stay on
 /// `TypeSafeClient()` so tests never reach the network by accident.
 public enum SystemOneBackend {
+    /// Shared so every engine reuses one element-vector cache. `MCA_ELEMENT_RANKING=off` disables it.
+    static let elementRanker: EmbeddingElementRanker? =
+        ProcessInfo.processInfo.environment["MCA_ELEMENT_RANKING"]?.lowercased() == "off"
+            ? nil : EmbeddingElementRanker.local()
+
+    /// How many elements an autonomous step captures. Wider with a ranker, which
+    /// narrows them back to `TypeSafeDecisionEngine.rankedCandidateLimit` by meaning,
+    /// so an element deep in a large window is no longer cut by tree order alone.
+    ///
+    /// Not wider than 50: approval compares the snapshot before and after exactly, and
+    /// every extra element is one more that a clock or a counter can change.
+    public static var loopCandidateLimit: Int { elementRanker == nil ? 25 : 50 }
+
     public static func resolve(
         model: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
@@ -101,13 +114,18 @@ public enum SystemOneBackend {
 
 extension TypeSafeDecisionEngine {
     /// The engine the app and CLI use: resolved backend, plus a screenshot when the model can read one.
+    /// The engine for the app and CLI. Elements are ranked by the local `eg2` server
+    /// whichever backend decides: ranking is on the machine and only reorders, so it
+    /// is not an opt-in the way a decision backend is.
     public static func live(confidenceThreshold: Float = 0.80, model: String? = nil) -> TypeSafeDecisionEngine {
         let client = SystemOneBackend.resolve(model: model)
         if client is CloudflareClefClient { CloudflareCredentials.shared.prefetch() }
         return TypeSafeDecisionEngine(
             client: client,
             confidenceThreshold: confidenceThreshold,
-            screenshot: client.acceptsImages ? SystemOneBackend.screenshot : nil
+            screenshot: client.acceptsImages ? SystemOneBackend.screenshot : nil,
+            // The offline heuristics ignore the order, so ranking would only add latency.
+            elementRanker: client is SystemOneBackend.Offline ? nil : SystemOneBackend.elementRanker
         )
     }
 }

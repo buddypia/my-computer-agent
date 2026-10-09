@@ -415,7 +415,7 @@ public enum ActCommand {
         let planner = DefaultSubgoalPlanner(modelExecutor: modelExecutor)
         let decisionEngine = TypeSafeDecisionEngine.live(confidenceThreshold: options.confidence)
         let synthesizer: any EventSynthesizing = options.isDryRun ? DryRunEventSynthesizer() : EventSynthesizer()
-        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: 25)
+        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: SystemOneBackend.loopCandidateLimit)
         let reporter = CLIAutonomousLoopReporter(isDryRun: options.isDryRun)
 
         let config = AutonomousLoopConfig(
@@ -463,7 +463,7 @@ public enum ActCommand {
     }
 
     private static func runSingleStep(_ options: ActOptions) async -> Int32 {
-        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: 25)
+        let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: SystemOneBackend.loopCandidateLimit)
         let candidates = await inspector.inspectFocusedWindowAsync()
         print("Inspected frontmost application: found \(candidates.count) actionable UI elements.")
 

@@ -51,14 +51,14 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
             resolvedUrl = endpoint
         } else if let envUrl = environment["MCA_EMBEDDING_GEMMA_EMBED_URL"], let url = URL(string: envUrl) {
             resolvedUrl = url
-        } else if let envBase = environment["MCA_EMBEDDING_GEMMA_URL"], let base = URL(string: envBase) {
+        } else if let envBase = environment["MCA_EMBEDDING_GEMMA_URL"] ?? environment["EG2_URL"], let base = URL(string: envBase) {
             var comp = URLComponents(url: base, resolvingAgainstBaseURL: true)
             if comp?.path.isEmpty == true || comp?.path == "/" {
                 comp?.path = "/v1/embed"
             }
-            resolvedUrl = comp?.url ?? URL(string: "http://127.0.0.1:8765/v1/embed")!
+            resolvedUrl = comp?.url ?? URL(string: "http://127.0.0.1:38765/v1/embed")!
         } else {
-            resolvedUrl = URL(string: "http://127.0.0.1:8765/v1/embed")!
+            resolvedUrl = URL(string: "http://127.0.0.1:38765/v1/embed")!
         }
 
         // SSRF Guard: enforce loopback or HTTPS to prevent leaking sensitive screen/voice transcripts
@@ -66,7 +66,7 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
         if Self.isSafeEndpoint(resolvedUrl, allowInsecureRemote: allowInsecureRemote) {
             self.endpoint = resolvedUrl
         } else {
-            self.endpoint = URL(string: "http://127.0.0.1:8765/v1/embed")!
+            self.endpoint = URL(string: "http://127.0.0.1:38765/v1/embed")!
         }
     }
 
