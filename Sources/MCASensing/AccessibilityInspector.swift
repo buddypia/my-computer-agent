@@ -55,7 +55,6 @@ public struct AccessibilityInspector: Sendable {
         requiresWindowScope: Bool = false
     ) {
         self.maxCandidates = min(max(maxCandidates, 0), 100)
-        Self.boundQueries
         self.privacyFilter = privacyFilter
         self.fallbackProvider = fallbackProvider
         self.targetWindow = targetWindow
@@ -224,6 +223,7 @@ public struct AccessibilityInspector: Sendable {
 
         let pid = frontApp.processIdentifier
         let axApp = AXUIElementCreateApplication(pid)
+        Self.boundQueries(on: axApp)
         AXAttributes.enableEnhancedAccessibility(app: axApp)
 
         guard let window = copyElement(axApp, kAXFocusedWindowAttribute)
@@ -413,6 +413,7 @@ public struct AccessibilityInspector: Sendable {
         guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
               ContinuousClock.now < deadline, !Task.isCancelled else { return }
         visited += 1
+        Self.boundQueries(on: element)
 
         let info = extractBatchedElementInfo(element)
 
@@ -450,7 +451,7 @@ public struct AccessibilityInspector: Sendable {
         }
 
         // Recurse into children
-        guard let children = copyElementArray(element, kAXChildrenAttribute) else { return }
+        guard ContinuousClock.now < deadline, let children = copyElementArray(element, kAXChildrenAttribute) else { return }
         for child in children {
             traverseTree(
                 element: child,
@@ -466,11 +467,13 @@ public struct AccessibilityInspector: Sendable {
 
     // MARK: - Helpers (Fallback and Legacy)
 
-    /// Sets the process-wide AX timeout once. Per-object timeouts set later
-    /// (`windowDecorationRects` uses 50ms) still override it for that object.
-    static let boundQueries: Void = {
-        _ = AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), messagingTimeout)
-    }()
+    /// The timeout belongs to the exact AX object, not its descendants, so the
+    /// walk sets it on every node it reads. It is deliberately not process-wide:
+    /// press actions must keep the default, or a slow press reports failure,
+    /// the actuator falls back to a synthesized click and the press runs twice.
+    static func boundQueries(on element: AXUIElement) {
+        _ = AXUIElementSetMessagingTimeout(element, messagingTimeout)
+    }
 
     private func getElementLabel(_ element: AXUIElement) -> String {
         for attr in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
@@ -711,8 +714,10 @@ extension AccessibilityInspector: UIStateProviding {
         var focusedBounds: CGRect?
         if AXIsProcessTrusted() {
             let axApp = AXUIElementCreateApplication(pid)
+            Self.boundQueries(on: axApp)
             AXAttributes.enableEnhancedAccessibility(app: axApp)
             let windows = copyElementArray(axApp, kAXWindowsAttribute) ?? []
+            windows.forEach(Self.boundQueries(on:))
             let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
             guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
                 throw SnapshotError.selectedWindowUnavailable
