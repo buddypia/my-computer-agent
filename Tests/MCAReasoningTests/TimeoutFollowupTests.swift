@@ -84,7 +84,7 @@ struct TimeoutFollowupTests {
                 focusedElementId: nil, visibleCandidates: [field], timestamp: Date(), frameHash: "hash_\(title)")
         }
         var config = AutonomousLoopConfig.testing
-        config.maxDurationSeconds = 1
+        config.maxDurationSeconds = 3
         let coordinator = TwoTierAutonomousLoopCoordinator(
             planner: MockPlanningLLM.staticPlan(subgoals: [Subgoal(
                 id: "sg_t", description: "Type user@example.com into Email",
@@ -93,7 +93,7 @@ struct TimeoutFollowupTests {
             synthesizer: MockEventSynthesizer(),
             inspector: MockUIInspector(snapshots: [snapshot("Form"), snapshot("Form"), snapshot("Form Typed")]),
             config: config,
-            keystrokeApprover: SlowApprover(delay: .milliseconds(1500)))
+            keystrokeApprover: SlowApprover(delay: .seconds(4)))
         _ = try await coordinator.execute(goal: "Enter email")
     }
 }

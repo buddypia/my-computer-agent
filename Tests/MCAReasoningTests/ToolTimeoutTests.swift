@@ -74,9 +74,11 @@ struct ToolTimeoutTests {
 
     @Test("Time spent waiting on the user's approval is not held against the tool")
     func approvalWaitNotCounted() async throws {
-        let registry = ToolRegistry(tools: [ApprovalThenDoneTool()], timeout: .milliseconds(300))
+        // Wide margins: the working time before and after the pause must fit in
+        // the limit on a loaded CI runner, while the pause alone exceeds it.
+        let registry = ToolRegistry(tools: [ApprovalThenDoneTool()], timeout: .seconds(2))
         let session = ActionAuthorization(goal: "Scroll", requestApproval: { _ in
-            try await Task.sleep(for: .milliseconds(900))
+            try await Task.sleep(for: .seconds(3))
             return .approved
         })
         let output = await ActionAuthorization.withSession(session) {
