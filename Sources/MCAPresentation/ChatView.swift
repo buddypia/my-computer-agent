@@ -90,7 +90,7 @@ public struct ChatView: View {
         HStack(spacing: 8) {
             TextField(localized("Screen objective", "この画面で自動的に行うこと", "화면에서 자동으로 할 작업"), text: $state.screenObjectiveText)
                 .textFieldStyle(.roundedBorder)
-                .disabled(state.screenObjective?.isActive == true)
+                .disabled(state.screenObjective?.isActive == true || state.chatInputFocusSuppressed || state.isAwaitingApproval)
             if state.screenObjective?.isActive == true {
                 Button(localized("Stop objective", "目的を停止", "목표 중지")) { state.onStopObjective?() }
             } else {

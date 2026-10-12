@@ -744,7 +744,7 @@ final class ScreenWatcher {
 
     // MARK: - One tick
 
-    private func tick() async {
+    func tick() async {
         guard state.watchPhase != .off else { return }
         if !watchItems.isEmpty {
             await tickMulti()
@@ -832,7 +832,7 @@ final class ScreenWatcher {
             return
         }
 
-        guard !Task.isCancelled, let fingerprint = captured.fingerprint else { return }
+        guard !Task.isCancelled, let fingerprint = await captured.fingerprint else { return }
 
         let decision = policy.decide(
             for: item.targetKey,
@@ -865,7 +865,7 @@ final class ScreenWatcher {
         }
 
         // Content changed: recognize text and invoke model with the assigned role
-        let text = (try? await recognizer.recognizeText(in: captured.image)) ?? ""
+        let text = await recognizeText(in: captured.image)
         let image = router.blockedReason(for: .vision) == nil
             ? await Self.encode(captured.image)
             : nil
@@ -980,9 +980,11 @@ final class ScreenWatcher {
         var fingerprintMasks: [CGRect] = []
 
         var fingerprint: String? {
-            guard let picture = FrameFingerprint.compute(image, masking: fingerprintMasks) else { return nil }
-            // Title wording remains meaningful even when its focus color is normalized.
-            return fingerprintMasks.isEmpty ? picture : "\(picture):\(windowTitle)"
+            get async {
+                guard let picture = await FrameFingerprint.computeAsync(image, masking: fingerprintMasks) else { return nil }
+                // Title wording remains meaningful even when its focus color is normalized.
+                return fingerprintMasks.isEmpty ? picture : "\(picture):\(windowTitle)"
+            }
         }
     }
 
@@ -1076,7 +1078,7 @@ final class ScreenWatcher {
         // `nil` means the frame could not be measured, which is not the same as
         // it being unchanged — so the look is skipped without being recorded and
         // the next tick starts over.
-        guard let fingerprint = captured.fingerprint else {
+        guard let fingerprint = await captured.fingerprint else {
             state.watchStatus = describe(.nothingReadable)
             return
         }
@@ -1099,7 +1101,7 @@ final class ScreenWatcher {
 
         // Everything from here costs something, and none of it runs for a
         // subject that has not changed.
-        let text = (try? await recognizer.recognizeText(in: captured.image)) ?? ""
+        let text = await recognizeText(in: captured.image)
         let image = router.blockedReason(for: .vision) == nil
             ? await Self.encode(captured.image)
             : nil
@@ -1298,7 +1300,7 @@ final class ScreenWatcher {
                 isExcluded: false)
         }
 
-        guard let snapshot = reader.readFocusedWindow() else { return nil }
+        guard let snapshot = await reader.readWindowAsync(pid: frontmost.processIdentifier) else { return nil }
         let isExcluded = configuration.isExcluded(
             bundleID: snapshot.bundleID, windowTitle: snapshot.windowTitle)
 
@@ -1331,8 +1333,11 @@ final class ScreenWatcher {
                 // Same fallback the capture path uses: a canvas app exposes
                 // almost no accessibility tree, and OCR is what makes its text
                 // searchable in the prompt alongside the picture.
-                if text.count < 40, let recognised = try? await recognizer.recognizeText(in: frame) {
-                    text = recognised
+                if text.count < 40 {
+                    let recognised = await recognizeText(in: frame)
+                    if !recognised.isEmpty {
+                        text = recognised
+                    }
                 }
             } catch {
                 log.debug("Watch capture failed: \(error.localizedDescription, privacy: .public)")
@@ -1358,6 +1363,14 @@ final class ScreenWatcher {
     private static func encode(_ frame: CGImage) async -> ImageAttachment? {
         await Task.detached(priority: .utility) {
             ImageEncoder.jpeg(frame).map { ImageAttachment(data: $0, mimeType: "image/jpeg") }
+        }.value
+    }
+
+    /// Recognizes text off the main actor using Vision OCR on a background utility thread.
+    private func recognizeText(in frame: CGImage) async -> String {
+        let recognizer = self.recognizer
+        return await Task.detached(priority: .utility) {
+            (try? await recognizer.recognizeText(in: frame)) ?? ""
         }.value
     }
 
