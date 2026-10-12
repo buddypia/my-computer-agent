@@ -224,6 +224,9 @@ public final class HUDState {
         if let index = messages.firstIndex(where: { $0.approval?.id == id }) {
             messages[index].approvalStatus = resolvedStatus
         }
+        if approvalWaiters.isEmpty {
+            chatInputFocusSuppressed = false
+        }
         waiter.resume(returning: resolvedStatus)
     }
 

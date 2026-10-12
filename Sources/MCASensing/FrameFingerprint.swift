@@ -51,6 +51,18 @@ public enum FrameFingerprint {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Computes the frame fingerprint asynchronously off the main thread in a cooperative background task.
+    public static func computeAsync(
+        _ image: CGImage,
+        gridSize: Int = 32,
+        levels: Int = 8,
+        masking: [CGRect] = []
+    ) async -> String? {
+        await Task.detached(priority: .utility) {
+            compute(image, gridSize: gridSize, levels: levels, masking: masking)
+        }.value
+    }
+
     /// Rectangles use image pixels with a top-left origin. Invalid metadata
     /// falls back to the complete image so content is never hidden by it.
     private static func normalized(_ image: CGImage, masking: [CGRect]) -> CGImage {

@@ -28,11 +28,18 @@ public struct AccessibilityReader: Sendable {
     private let maxElements: Int
     private let maxDepth: Int
     private let maxCharacters: Int
+    private let traversalBudget: TimeInterval
 
-    public init(maxElements: Int = 1500, maxDepth: Int = 24, maxCharacters: Int = 12_000) {
+    public init(
+        maxElements: Int = 1500,
+        maxDepth: Int = 24,
+        maxCharacters: Int = 12_000,
+        traversalBudget: TimeInterval = 1.0
+    ) {
         self.maxElements = maxElements
         self.maxDepth = maxDepth
         self.maxCharacters = maxCharacters
+        self.traversalBudget = traversalBudget
     }
 
     /// Whether the Accessibility TCC permission has been granted.
@@ -71,6 +78,7 @@ public struct AccessibilityReader: Sendable {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return nil }
 
         let axApp = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(axApp, 0.5)
         AXAttributes.enableEnhancedAccessibility(app: axApp)
 
         guard let window = copyElement(axApp, kAXFocusedWindowAttribute)
@@ -82,13 +90,15 @@ public struct AccessibilityReader: Sendable {
                 text: "",
                 elementCount: 0)
         }
+        _ = AXUIElementSetMessagingTimeout(window, 0.5)
         AXAttributes.enableEnhancedAccessibility(app: axApp, window: window)
 
         let title = copyString(window, kAXTitleAttribute) ?? ""
 
         var collected = ""
         var visited = 0
-        collectText(from: window, depth: 0, visited: &visited, into: &collected)
+        let deadline = DispatchTime.now() + .milliseconds(max(1, Int(traversalBudget * 1000)))
+        collectText(from: window, depth: 0, visited: &visited, deadline: deadline, into: &collected)
 
         return Snapshot(
             bundleID: app.bundleIdentifier,
@@ -98,11 +108,27 @@ public struct AccessibilityReader: Sendable {
             elementCount: visited)
     }
 
+    /// Reads a window for a specific process by PID asynchronously on a background utility thread.
+    public func readWindowAsync(pid: pid_t) async -> Snapshot? {
+        await Task.detached(priority: .utility) {
+            self.readWindow(pid: pid)
+        }.value
+    }
+
     /// Reads the currently focused window. Returns `nil` when there is no
     /// frontmost app or the app exposes nothing readable.
     public func readFocusedWindow() -> Snapshot? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         return readWindow(pid: app.processIdentifier)
+    }
+
+    /// Reads the currently focused window asynchronously without holding the main thread.
+    public func readFocusedWindowAsync() async -> Snapshot? {
+        let pid = await MainActor.run {
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+        }
+        guard let pid else { return nil }
+        return await readWindowAsync(pid: pid)
     }
 
     // MARK: - Tree walk
@@ -111,11 +137,13 @@ public struct AccessibilityReader: Sendable {
         from element: AXUIElement,
         depth: Int,
         visited: inout Int,
+        deadline: DispatchTime,
         into output: inout String
     ) {
         guard depth < maxDepth,
               visited < maxElements,
-              output.count < maxCharacters
+              output.count < maxCharacters,
+              DispatchTime.now() < deadline
         else { return }
 
         visited += 1
@@ -142,7 +170,8 @@ public struct AccessibilityReader: Sendable {
 
         guard let children = copyElementArray(element, kAXChildrenAttribute) else { return }
         for child in children {
-            collectText(from: child, depth: depth + 1, visited: &visited, into: &output)
+            if DispatchTime.now() >= deadline { return }
+            collectText(from: child, depth: depth + 1, visited: &visited, deadline: deadline, into: &output)
             if visited >= maxElements || output.count >= maxCharacters { return }
         }
     }

@@ -40,7 +40,7 @@ struct ChatToolApprover: ToolApproving {
                 "승인하면 위에 표시된 내용이 그대로 실행됩니다.")))
         switch status {
         case .approved:
-            restoreFocus(to: previous)
+            await restoreFocus(to: previous)
             return .approved
         case .rejected:
             return .denied(reason: "the user declined")
@@ -52,14 +52,23 @@ struct ChatToolApprover: ToolApproving {
     }
 
     /// Activation is asynchronous, so wait (briefly) until it took effect.
-    private static func restoreFocus(to app: NSRunningApplication?) {
+    private static func restoreFocus(to app: NSRunningApplication?) async {
         guard let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !app.isTerminated else { return }
-        app.activate()
-        let deadline = Date().addingTimeInterval(1)
+        if #available(macOS 14.0, *) {
+            app.activate()
+        } else {
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(1)
         while NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier,
-              Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+              clock.now < deadline {
+            do {
+                try await Task.sleep(for: .milliseconds(20))
+            } catch {
+                return
+            }
         }
     }
 }

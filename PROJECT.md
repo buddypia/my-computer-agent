@@ -1,67 +1,67 @@
-# Project: Fix Autonomous Loop Escalation Failure
+# Project: Watchdog Main Thread Fix
 
 ## Architecture
-The system consists of the Two-Tier Autonomous Loop (`TwoTierAutonomousLoopCoordinator`), the local and cloud-based Decision Engine (`TypeSafeDecisionEngine`), the Deliberative/Subgoal Planner (`DefaultSubgoalPlanner`), and the synthetic event actuator (`EventSynthesizer`).
-Under offline/unkeyed TypeSafe Jev conditions, the coordinator relies on the decision engine's local deterministic fallback (`fallbackLocalDecision`) and the planner's heuristic replanner (`heuristicReplan`).
-The fix introduces:
-1. **Target-Grounded & Stagnation-Aware Fallback Engine** (`TypeSafeDecisionEngine.swift`): Container detection (`AXScrollArea`, etc.), coordinate resolution, history/diff feedback integration, and robust partial candidate matching.
-2. **Replan & Escalation Feedback Loop** (`TwoTierAutonomousLoopCoordinator.swift`): Passing history and diff to decision cycles, clean non-repeating heuristic replans, coordinate fallback in event execution, and structured recovery before escalation limit exhaustion.
-3. **Deterministic Regression Test Suite** (`TwoTierAutonomousLoopOfflineRegressionTests.swift`): Reproducing offline scroll stagnation, confidence drops, and verifying clean recovery.
+- **Layer 0 (`MCACore`)**: Foundation models, value types (`ScreenLook`, `ActionApprovalRequest`, `ActionApprovalStatus`).
+- **Layer 1 (`MCASensing`)**: Low-level screen capture (`ScreenCapturer`), accessibility reading (`AccessibilityReader`), image fingerprinting (`FrameFingerprint`).
+- **Layer 2 (`MCAPerception`)**: OCR and text recognition (`TextRecognizer`).
+- **Layer 6 (`MCAPresentation`)**: User interface, chat windows (`ChatWindow`), SwiftUI views (`ChatView`), HUD state (`HUDState`).
+- **Application (`mca`)**: Composition root, periodic screen observation coordinator (`ScreenWatcher`), application coordinator (`Copilot`), tool approval helper (`ToolApprovalUI`), health monitor (`MainThreadWatchdog`).
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Container Grounded Fallback Scroll | In offline fallback, target valid `AXScrollArea` / scroll container candidates and their coordinates instead of `target=none` / `at: nil`. | M1 | ORIGINAL_REQUEST §R1 |
-| 2 | Stagnation-Aware Action Adaptation | Detect when prior scroll actions yielded `isStateUnchanged == true`, and adapt by switching to keyboard navigation (`PageDown`/`Down`) or concluding the subgoal. | M1 | ORIGINAL_REQUEST §R1 |
-| 3 | Token-Based Candidate Matching | In offline fallback, use token/partial matching across label, value, and role to prevent premature 0.00 confidence fallthrough. | M1 | ORIGINAL_REQUEST §R3 |
-| 4 | Graceful Low-Confidence Recovery | Prevent zero-confidence fallthroughs from immediately tripping consecutive escalations by providing structured local recovery. | M1 | ORIGINAL_REQUEST §R3 |
-| 5 | Feedback Loop to Decision Engine | Pass execution history, recent escalation records, and `lastDiff` into `decideNextAction` / `fallbackLocalDecision`. | M2 | ORIGINAL_REQUEST §R2 |
-| 6 | Non-Recursive Heuristic Replan | In `heuristicReplan`, strip stagnant trigger words (`scroll`, `feed`, etc.) from retry subgoal descriptions so the decision engine does not re-issue the failed action. | M2 | ORIGINAL_REQUEST §R2 |
-| 7 | Coordinator Coordinate Fallback | In `executeSyntheticAction`, if action is `.scroll` and `targetCenter == nil`, target the active window or container center rather than unpositioned `at: nil`. | M2 | ORIGINAL_REQUEST §R1 |
-| 8 | Consecutive Escalation Recovery Guard | Prevent cascading low-confidence or stagnant replans from prematurely exhausting the 3-strike escalation limit. | M2 | ORIGINAL_REQUEST §R2, R3 |
-| 9 | Offline Regression Test Suite | Deterministic regression tests reproducing 3-step stagnant scroll and confidence-drop escalation sequences under simulated offline TypeSafe API conditions. | M3 | ORIGINAL_REQUEST §R4 |
-| 10 | Quality Gate Verification | Ensure all stages of `Scripts/gate.sh` (G0 classify, G1 build, G2 trust, G2 test, G2 guards) pass cleanly. | M3 | ORIGINAL_REQUEST §R4, AGENTS.md |
-| 11 | Comprehensive E2E Verification & Adversarial Coverage | Opaque-box requirement-driven test suite (Tiers 1-4) plus adversarial coverage hardening (Tier 5). | M4 | PROJECT PATTERN §Final Milestone |
+| 1 | Non-Blocking AX Tree Traversal | Add messaging timeout and background execution for `AccessibilityReader` | M1 | Survey R1 |
+| 2 | Background Image Fingerprinting | Compute `FrameFingerprint` in background tasks off `@MainActor` | M1 | Survey R1 |
+| 3 | Non-Blocking ScreenWatcher Loop | Refactor `ScreenWatcher.tick()` and sub-ticks to run heavy sensing in background | M1 | Survey R1 |
+| 4 | Event-Driven Capture Offloading | Offload `Copilot.captureScreen` on `.focusChanged` off `@MainActor` | M1 | Survey R1 |
+| 5 | AppKit First Responder Correction | Reorder `makeKeyAndOrderFront` and `makeFirstResponder(contentView)`, configure `becomesKeyOnlyIfNeeded = false` | M2 | Survey R2 |
+| 6 | Multi-Round Focus Suppression Reset | Reset `chatInputFocusSuppressed = false` on approval resolve/window close to prevent dead zones | M2 | Survey R2 |
+| 7 | Objective Field Focus Shielding | Disable/shield `screenObjectiveText` when awaiting approval | M2 | Survey R2 |
+| 8 | Asynchronous Focus Restoration | Replace synchronous `RunLoop.current.run` in `ToolApprovalUI.restoreFocus` with async non-blocking task | M2 | Survey R2 |
+| 9 | Tool Approval Window Dismissal | Ensure `Copilot.toolApprover()` dismisses/closes floating panel on approval | M2 | Survey R2 |
+| 10 | Non-Blocking Screen Observation Tests | Automated tests verifying `ScreenWatcher` ticks do not trip `MainThreadWatchdog` | M3 | Survey R3 |
+| 11 | Multi-Round Approval Unit Tests | Automated tests in `ChatWindowDismissalTests` verifying 3+ consecutive approval cycles | M3 | Survey R3 |
+| 12 | Quality Gate & Regression Verification | Verify `Scripts/gate.sh --stage 1`, `MCASensingTests`, `MCAPresentationTests`, `mcaTests` | M3 | Survey R3 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Fallback Engine Grounding & Adaptation | `Sources/MCAReasoning/TypeSafeDecisionEngine.swift` (Container targeting, stagnation adaptation, token candidate matching, confidence recovery) | none | DONE |
-| M2 | Replan Feedback & Coordinator Hardening | `Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift` (Feedback wiring, non-repeating replan, coordinate fallback, escalation guard) | M1 | DONE |
-| M3 | Offline Regression Test Suite | `Tests/MCAReasoningTests/TwoTierAutonomousLoopOfflineRegressionTests.swift` & unit test additions | M1, M2 | DONE |
-| M4 | Final Milestone: E2E Test Pass & Adversarial Hardening | Pass 100% of E2E tests (Tiers 1-4) and Tier 5 Adversarial Coverage Hardening | M1, M2, M3 | DONE |
+| 1 | M1: Non-Blocking Screen Observation | Refactor `AccessibilityReader`, `FrameFingerprint`, and `ScreenWatcher` sensing pipeline off `@MainActor` (Features 1-4) | none | DONE |
+| 2 | M2: Responsive Action Approval Presentation | Refactor `ChatWindow`, `ChatView`, `HUDState`, `ToolApprovalUI`, and `Copilot` approval presentation (Features 5-9) | none | DONE |
+| 3 | M3: Verification, Test Coverage & Quality Gate | Add regression tests for non-blocking observation and multi-round approvals; pass all quality gates (Features 10-12) | M1, M2 | DONE |
 
 ## Interface Contracts
-### TypeSafeDecisionEngine ↔ TwoTierAutonomousLoopCoordinator
-- `TypeSafeDecisionEngine.decideNextAction`:
-  ```swift
-  public func decideNextAction(
-      goal: String,
-      activeApp: String? = nil,
-      candidates: [UIElementCandidate],
-      history: [LoopStepRecord] = [],
-      recentEscalations: [EscalationRecord] = [],
-      lastDiff: UIStateDiff? = nil
-  ) async throws -> ComputerActionDecision
-  ```
-- `TypeSafeDecisionEngine.fallbackLocalDecision`:
-  ```swift
-  public func fallbackLocalDecision(
-      goal: String,
-      candidates: [UIElementCandidate],
-      history: [LoopStepRecord] = [],
-      recentEscalations: [EscalationRecord] = [],
-      lastDiff: UIStateDiff? = nil
-  ) -> ComputerActionDecision
-  ```
-- **Semantics**:
-  - If `candidates` contains an element with role `"AXScrollArea"`, `"AXWebArea"`, `"AXTable"`, `"AXList"`, or `"AXOutline"`, `fallbackLocalDecision` selects that container, populating `targetElementId: container.id` and `targetCenter: container.center`.
-  - If `lastDiff?.isStateUnchanged == true` or `recentEscalations.contains(where: { if case .actionStagnant = $0.reason { return true }; return false })`, `fallbackLocalDecision` does NOT repeat a scroll on the same target. It selects an alternate action (e.g. keyboard navigation `keyPress` with `["PageDown"]` or concludes the subgoal if at boundary).
-  - If no candidate matches label heuristics, `fallbackLocalDecision` uses token overlap before falling through to low confidence, and provides structured recovery.
+
+### `MCASensing.AccessibilityReader`
+- `public func readFocusedWindowAsync() async -> Snapshot?`
+- `public func readWindowAsync(pid: pid_t) async -> Snapshot?`
+- Timeout: `AXUIElementSetMessagingTimeout(axApp, 0.5)` applied to foreign applications.
+- Traversal: Maximum execution time budget per window inspection.
+
+### `MCASensing.FrameFingerprint`
+- `public static func computeAsync(_ image: CGImage, gridSize: Int, levels: Int, masking: [CGRect]) async -> String?`
+- Runs CoreGraphics downscaling and masking inside background cooperative thread pool.
+
+### `MCAPresentation.ChatWindow` ↔ `mca.ToolApprovalUI` / `mca.Copilot`
+- `public func presentForApproval()`:
+  - Sets `state.chatInputFocusSuppressed = true`
+  - Calls `window.makeKeyAndOrderFront(nil)`
+  - Calls `window.makeFirstResponder(window.contentView)`
+  - Configures `window.becomesKeyOnlyIfNeeded = false` and `window.initialFirstResponder = window.contentView`
+- `public func close()`:
+  - Resets `state.chatInputFocusSuppressed = false`
+- `restoreFocus(to app: NSRunningApplication?) async`:
+  - Replaces nested runloop with non-blocking async activation check using `Task.sleep`.
 
 ## Code Layout
-- `Sources/MCAReasoning/TypeSafeDecisionEngine.swift`: Offline local deterministic fallback, candidate grounding, scroll targeting.
-- `Sources/MCAReasoning/TwoTierAutonomousLoopCoordinator.swift`: Loop coordination, heuristic replanning, escalation management, event synthesis dispatch.
-- `Tests/MCAReasoningTests/TwoTierAutonomousLoopOfflineRegressionTests.swift`: Dedicated offline regression test suite covering R1–R4.
-- `Tests/MCAReasoningTests/TypeSafeDecisionEngineTests.swift`: Decision engine unit tests.
-- `Tests/MCAReasoningTests/TwoTierAutonomousLoopCoordinatorTests.swift`: Coordinator unit tests.
+- `Sources/MCASensing/AccessibilityReader.swift`
+- `Sources/MCASensing/FrameFingerprint.swift`
+- `Sources/mca/ScreenWatcher.swift`
+- `Sources/mca/ToolApprovalUI.swift`
+- `Sources/mca/Copilot.swift`
+- `Sources/MCAPresentation/ChatWindow.swift`
+- `Sources/MCAPresentation/ChatView.swift`
+- `Sources/MCAPresentation/HUDState.swift`
+- `Tests/MCASensingTests/`
+- `Tests/MCAPresentationTests/ChatWindowDismissalTests.swift`
+- `Tests/mcaTests/`

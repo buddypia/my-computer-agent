@@ -1179,7 +1179,7 @@ final class Copilot {
         // sees instead, so memory keeps its subject rather than losing one.
         guard !hudState.watchTarget.isPinned else { return }
 
-        guard let snapshot = accessibilityReader.readFocusedWindow() else { return }
+        guard let snapshot = await accessibilityReader.readFocusedWindowAsync() else { return }
 
         // Privacy gate runs before anything is built, let alone stored.
         guard !configuration.isExcluded(
@@ -1830,7 +1830,9 @@ final class Copilot {
         ChatToolApprover { [weak self] request in
             guard let self else { return .cancelled }
             self.chatWindow.presentForApproval()
-            return await self.hudState.requestApproval(request)
+            let status = await self.hudState.requestApproval(request)
+            _ = await self.chatWindow.closeAndWaitForSurfaceRemoval()
+            return status
         }
     }
 

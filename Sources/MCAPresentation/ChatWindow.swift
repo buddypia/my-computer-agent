@@ -92,8 +92,10 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         // `onAppear`, which runs before the approval itself is registered.
         state.chatInputFocusSuppressed = true
         let window = makeWindowIfNeeded()
-        window.makeFirstResponder(nil)
+        window.becomesKeyOnlyIfNeeded = false
+        window.initialFirstResponder = window.contentView
         window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
         state.isChatOpen = true
         state.unseenMessages = 0
@@ -106,6 +108,7 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
             window.close()
         }
         state.isChatOpen = false
+        state.chatInputFocusSuppressed = false
     }
 
     /// Closes the chat and waits until Quartz no longer lists its panel.
@@ -190,7 +193,9 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         // a chat window that appears in that photograph would feed the agent its
         // own advice back as if it were the user's screen.
         window.sharingType = .none
+        window.becomesKeyOnlyIfNeeded = false
         window.contentView = NSHostingView(rootView: makeView())
+        window.initialFirstResponder = window.contentView
 
         // Centred only the first time. After that the window goes back where the
         // user put it — re-centring on every open would drag a window they
