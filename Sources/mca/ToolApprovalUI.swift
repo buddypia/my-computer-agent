@@ -55,7 +55,11 @@ struct ChatToolApprover: ToolApproving {
     private static func restoreFocus(to app: NSRunningApplication?) async {
         guard let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !app.isTerminated else { return }
-        app.activate(options: [.activateIgnoringOtherApps])
+        if #available(macOS 14.0, *) {
+            app.activate()
+        } else {
+            app.activate(options: [.activateIgnoringOtherApps])
+        }
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(1)
         while NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier,

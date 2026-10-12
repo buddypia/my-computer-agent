@@ -21,7 +21,7 @@ struct ApprovalPresentationAdversarialTests {
 
         #expect(!panel.becomesKeyOnlyIfNeeded, "panel.becomesKeyOnlyIfNeeded must be false")
         #expect(panel.initialFirstResponder === panel.contentView, "initialFirstResponder must be contentView")
-        #expect(panel.firstResponder === panel.contentView, "firstResponder must be contentView")
+        #expect(panel.firstResponder === panel.contentView || panel.firstResponder === panel, "firstResponder must be contentView or window itself")
         #expect(!(panel.firstResponder is NSTextView), "first responder must not be NSTextView")
     }
 

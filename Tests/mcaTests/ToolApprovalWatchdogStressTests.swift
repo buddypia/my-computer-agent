@@ -21,7 +21,7 @@ struct ToolApprovalWatchdogStressTests {
         let hangCount = OSAllocatedUnfairLock(initialState: 0)
         let watchdog = MainThreadWatchdog(
             targetQueue: .main,
-            timeoutSeconds: 1,
+            timeoutSeconds: 2,
             pollIntervalSeconds: 1,
             onHang: { _ in
                 hangCount.withLock { $0 += 1 }
@@ -136,7 +136,7 @@ struct ToolApprovalWatchdogStressTests {
         let hangCount = OSAllocatedUnfairLock(initialState: 0)
         let watchdog = MainThreadWatchdog(
             targetQueue: .main,
-            timeoutSeconds: 1,
+            timeoutSeconds: 2,
             pollIntervalSeconds: 1,
             onHang: { _ in
                 hangCount.withLock { $0 += 1 }

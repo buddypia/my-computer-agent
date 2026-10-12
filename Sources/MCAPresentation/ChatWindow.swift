@@ -94,8 +94,8 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         let window = makeWindowIfNeeded()
         window.becomesKeyOnlyIfNeeded = false
         window.initialFirstResponder = window.contentView
+        window.makeFirstResponder(nil)
         window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(window.contentView)
         NSApp.activate(ignoringOtherApps: true)
         state.isChatOpen = true
         state.unseenMessages = 0

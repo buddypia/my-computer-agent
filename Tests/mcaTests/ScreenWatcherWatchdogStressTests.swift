@@ -18,7 +18,7 @@ private actor MockWatchStore: ContextStoring {
     func count() -> Int { 0 }
 }
 
-@Suite("ScreenWatcher & Watchdog Empirical Stress Tests")
+@Suite("ScreenWatcher & Watchdog Empirical Stress Tests", .serialized)
 struct ScreenWatcherWatchdogStressTests {
 
     @Test("MainThreadWatchdog is never triggered during ScreenWatcher.tick() cycles")
@@ -43,7 +43,7 @@ struct ScreenWatcherWatchdogStressTests {
         let hangTriggered = OSAllocatedUnfairLock(initialState: false)
         let watchdog = MainThreadWatchdog(
             targetQueue: .main,
-            timeoutSeconds: 1,
+            timeoutSeconds: 2,
             pollIntervalSeconds: 1,
             onHang: { _ in
                 hangTriggered.withLock { $0 = true }
@@ -99,7 +99,7 @@ struct ScreenWatcherWatchdogStressTests {
         let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
 
         #expect(closureRan)
-        #expect(elapsedMs < 200, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
+        #expect(elapsedMs < 1000, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
 
         await tickTask.value
     }

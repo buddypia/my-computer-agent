@@ -746,6 +746,7 @@ final class ScreenWatcher {
 
     func tick() async {
         guard state.watchPhase != .off else { return }
+        await Task.yield()
         if !watchItems.isEmpty {
             await tickMulti()
         } else {
