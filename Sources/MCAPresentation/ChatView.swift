@@ -759,6 +759,7 @@ public struct ChatView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(1...5)
+                    .disabled(state.chatInputFocusSuppressed)
                     .focused($inputFocused)
                     .onSubmit(submit)
 
