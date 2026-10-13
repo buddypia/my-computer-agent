@@ -69,9 +69,9 @@ struct ScreenWatcherVisionStressTests {
 
     // MARK: - 1. Vision OCR Offloading Responsiveness on @MainActor
 
-    @Test("Vision OCR executes off @MainActor without inducing main thread latency")
+    @Test("Vision OCR executes off @MainActor without inducing main thread latency", .isolatedMeasurement)
     @MainActor
-    func visionOCROffloadingMainActorResponsiveness() async throws {
+    func visionOCROffloadingMainActorResponsivenessIsolated() async throws {
         let sampleLines = [
             "Watchdog MainThread Fix Milestone 1 Verification",
             "Non-blocking Vision OCR execution via Task.detached",
@@ -185,9 +185,9 @@ struct ScreenWatcherVisionStressTests {
 
     // MARK: - 3. ScreenWatcher Tick Inactivity and Cancellation Integrity
 
-    @Test("ScreenWatcher tick when off returns immediately without blocking")
+    @Test("ScreenWatcher tick when off returns immediately without blocking", .isolatedMeasurement)
     @MainActor
-    func screenWatcherTickWhenOffIsImmediate() async {
+    func screenWatcherTickWhenOffIsImmediateIsolated() async {
         let state = HUDState()
         let store = MockContextStore()
         let router = ModelRouter(policy: .default, credentials: CredentialStore(environment: [:]))

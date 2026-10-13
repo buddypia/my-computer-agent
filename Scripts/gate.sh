@@ -17,6 +17,7 @@
 #   G1  build      swift build          (~20s incremental)
 #   G2  trust      node --test Scripts/trust/tests/*.test.mjs  (~1s)
 #       test       swift test --xunit-output   (~12s)
+#       isolated   whole-process measurements, alone and serial (~25s)
 #       guards     trust.mjs incident check against this run's TAP + xUnit  (~0s)
 #   G3  bundle     Scripts/bundle.sh    (opt-in; minutes, and it codesigns)
 #
@@ -137,6 +138,27 @@ swift_tests() {
     swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT"
 }
 
+# Tests that measure the whole process (main-thread latency, the watchdog, resident memory) carry
+# `.isolatedMeasurement` and an `…Isolated()` name. The parallel run above skips them: there they
+# measure their neighbours, which is what made CI red on a slow runner. Here they run alone, one at
+# a time. Fails closed: nothing matched, or something skipped, is not a pass.
+isolated_tests() {
+    local out rc
+    out="$(MCA_ISOLATED_TESTS=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
+        --filter 'Isolated\(\)' 2>&1)"
+    rc=$?
+    printf '%s\n' "$out"
+    [ "$rc" -eq 0 ] || return 1
+    if ! printf '%s\n' "$out" | grep -q '✔ Test .* passed'; then
+        echo "isolated: no test matched 'Isolated()'"
+        return 1
+    fi
+    if printf '%s\n' "$out" | grep -q '➜ Test .* skipped'; then
+        echo "isolated: a test was skipped in its own pass"
+        return 1
+    fi
+}
+
 trust_guards() {
     local xunit=()
     [ -f "$SWIFT_XUNIT_ST" ] && xunit=(--xunit "$SWIFT_XUNIT_ST")
@@ -211,6 +233,7 @@ run_stage() {
 run_stage 1 build  swift build --package-path "$ROOT" || exit 1
 run_stage 2 trust  trust_tests                         || exit 1
 run_stage 2 test   swift_tests                         || exit 1
+run_stage 2 isolated isolated_tests                    || exit 1
 run_stage 2 guards trust_guards                        || exit 1
 run_stage 3 bundle "$ROOT/Scripts/bundle.sh"          || exit 1
 

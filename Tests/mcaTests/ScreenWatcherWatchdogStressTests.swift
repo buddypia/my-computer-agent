@@ -21,9 +21,9 @@ private actor MockWatchStore: ContextStoring {
 @Suite("ScreenWatcher & Watchdog Empirical Stress Tests", .serialized)
 struct ScreenWatcherWatchdogStressTests {
 
-    @Test("MainThreadWatchdog is never triggered during ScreenWatcher.tick() cycles")
+    @Test("MainThreadWatchdog is never triggered during ScreenWatcher.tick() cycles", .isolatedMeasurement)
     @MainActor
-    func testScreenWatcherTickDoesNotTriggerWatchdog() async throws {
+    func testScreenWatcherTickDoesNotTriggerWatchdogIsolated() async throws {
         let state = HUDState()
         let store = MockWatchStore()
         let router = ModelRouter(policy: .default, credentials: CredentialStore(environment: [:]))
@@ -65,9 +65,9 @@ struct ScreenWatcherWatchdogStressTests {
         #expect(!didHang, "ScreenWatcher.tick() blocked the main thread and tripped MainThreadWatchdog!")
     }
 
-    @Test("Main actor remains responsive while tick is executing")
+    @Test("Main actor remains responsive while tick is executing", .isolatedMeasurement)
     @MainActor
-    func testMainActorResponsivenessDuringTick() async throws {
+    func testMainActorResponsivenessDuringTickIsolated() async throws {
         let state = HUDState()
         let store = MockWatchStore()
         let router = ModelRouter(policy: .default, credentials: CredentialStore(environment: [:]))
