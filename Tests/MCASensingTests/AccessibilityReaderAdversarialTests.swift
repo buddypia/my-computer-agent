@@ -59,7 +59,7 @@ struct AccessibilityReaderAdversarialTests {
         }
     }
 
-    @Test("invalid and dead PIDs return nil or safe empty snapshot immediately without hanging", .isolatedMeasurement)
+    @Test("invalid and dead PIDs return nil or safe empty snapshot immediately without hanging")
     func testInvalidPIDsFailFastIsolated() async {
         let reader = AccessibilityReader(traversalBudget: 0.2)
 
@@ -77,7 +77,7 @@ struct AccessibilityReaderAdversarialTests {
         }
     }
 
-    @Test("traversalBudget halts tree walking promptly on active running apps", .isolatedMeasurement)
+    @Test("traversalBudget halts tree walking promptly on active running apps")
     func testTraversalBudgetHaltsPromptlyIsolated() async {
         // Query running applications
         let runningApps = NSWorkspace.shared.runningApplications.filter {

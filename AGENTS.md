@@ -21,16 +21,17 @@ Scripts/gate.sh             # G0..G2
 | G1 | ビルド | `swift build` | 実行 | ~20s |
 | G2 | trust | `node --test Scripts/trust/tests/*.test.mjs` + `trust.mjs incident check` | 実行 | ~1s |
 | G2 | テスト | `swift test` | 実行 | ~12s |
-| G2 | 隔離 | `MCA_ISOLATED_TESTS=1 swift test --no-parallel --filter 'Isolated\('` | 実行 | ~25s |
+| G2 | 隔離 | `MCA_ISOLATED_TIMING=1 swift test --no-parallel --filter 'Isolated\('` | 実行 | ~25s |
 | G3 | リリース束 | `Scripts/bundle.sh` | **手動のみ** | 数分 |
 
 G3 が既定に入っていないのは、`build/` を作り直して `codesign` を走らせるためで、
 これはエージェントが毎ターン行ってよい副作用ではない。リリース前に人が
 `Scripts/gate.sh --stage 3` として明示的に通す。
 
-プロセス全体を測るテスト（main thread の遅延・watchdog・常駐メモリ・壁時計の上限）は
-`@Test(..., .isolatedMeasurement)` を付け、関数名を `…Isolated` で終える（`Tests/*/IsolatedMeasurement.swift`）。並列実行では隣のテストの
-仕事まで測ってしまうため既定の実行では skip され、G2「隔離」で単独・直列に走る。
+プロセス全体の量（main thread の遅延・watchdog・共有プールの壁時計・常駐メモリ）は並列の `swift test` で
+アサートしない。隣のテストの負荷まで測ってしまう。そのアサートだけを `if IsolatedTiming.enabled { … }` に入れ、
+テスト関数名を `…Isolated` で終える（`Tests/*/IsolatedTiming.swift`）。機能のアサートは常に走り、数値は
+G2「隔離」が単独・直列に強制する。
 
 ### G0 がスキップする条件
 
@@ -111,5 +112,3 @@ triage・routing・offline fallback（`TypeSafeDecisionEngine` / `RequestRoute`�
 - 依存の追加は `Package.swift` のレイヤ順（Core → Sensing → Perception → Memory
   → Reasoning → Realtime → Interop → Presentation）を壊さないこと。
 - 秘密情報をリポジトリに書かない。`SecretStore` 経由で Keychain に置く。
-- 並列の `swift test` ではプロセス全体の量（メインスレッドの遅延・watchdog の hang・常駐メモリ）をアサートしない。
-  他のテストの負荷が混ざり、対象コードについて何も言えないまま CI だけが落ちる。機能のアサートは常に走らせ、その数値は `IsolatedTiming`（手動の隔離実行・診断用）でだけ確かめる。

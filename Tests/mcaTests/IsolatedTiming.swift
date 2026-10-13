@@ -1,13 +1,13 @@
 import Foundation
 
-/// Main-thread latency, watchdog hangs and resident memory belong to the whole test process. Under a
-/// parallel `swift test` every other test's work lands in them: in CI run 38265466985 three suites tripped
-/// together, one on a 7.68s main-thread stall while its own work ran off the main thread. The functional
-/// checks of those tests always run; the process-wide numbers are asserted only on request:
+/// Main-thread latency, watchdog hangs, wall-clock bounds on the shared pool and resident memory belong
+/// to the whole test process. Under the parallel `swift test` every other test's load lands in them (CI
+/// run 38265466985: a 7.68s main-thread stall, sampled as other tests' window layout). The functional
+/// checks of those tests always run; the process-wide numbers are asserted behind this switch, inside a
+/// test named `…Isolated`, and `Scripts/gate.sh` enforces them in its G2 isolated stage — those tests
+/// alone, one at a time, with `MCA_ISOLATED_TIMING=1`.
 ///
-///     MCA_ISOLATED_TIMING=1 swift test --no-parallel --filter StressTests
-///
-/// That run is a diagnostic, not a CI guard: a cold process (first window, first OCR) can still stall.
+/// Every test target that uses it keeps an identical copy (checked by IsolatedTimingConventionTests).
 enum IsolatedTiming {
     static let enabled = ProcessInfo.processInfo.environment["MCA_ISOLATED_TIMING"] == "1"
 }
