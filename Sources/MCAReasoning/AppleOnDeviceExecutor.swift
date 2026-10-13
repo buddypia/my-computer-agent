@@ -139,15 +139,19 @@ public struct AppleOnDeviceExecutor: LanguageModelExecuting {
         } catch is CancellationError {
             channel.send(.finished(.cancelled))
             throw LanguageModelError.cancelled
-        } catch LanguageModelSession.GenerationError.unsupportedLanguageOrLocale {
-            // The framework judges the language of the text itself, so a mixed or
-            // symbol-heavy screen can be refused even on a supported system locale.
-            channel.send(.finished(.error))
-            throw LanguageModelError.unsupportedInput(
-                "the on-device model does not support the language detected in this request")
         } catch {
             channel.send(.finished(.error))
-            throw LanguageModelError.transport(error.localizedDescription)
+            throw Self.classify(error)
         }
+    }
+
+    /// The framework judges the language of the text itself, so a mixed or
+    /// symbol-heavy screen can be refused even on a supported system locale.
+    /// That is a refusal of this input, not a network failure.
+    static func classify(_ error: Error) -> LanguageModelError {
+        if case LanguageModelSession.GenerationError.unsupportedLanguageOrLocale = error {
+            return .unsupportedInput("the on-device model does not support the language or locale of this request")
+        }
+        return .transport(error.localizedDescription)
     }
 }

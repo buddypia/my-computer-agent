@@ -636,7 +636,8 @@ extension AccessibilityInspector: UIStateProviding {
     private static let diagnostics = Logger(subsystem: "com.buddypia.mca", category: "AccessibilityInspector")
 
     static func unavailable(_ check: String) -> SnapshotError {
-        diagnostics.info("Selected window unavailable: \(check, privacy: .public)")
+        // Notice, not info: this line is the evidence read after a halted run.
+        diagnostics.notice("Selected window unavailable: \(check, privacy: .public)")
         return .selectedWindowUnavailable
     }
 

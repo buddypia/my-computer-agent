@@ -58,6 +58,18 @@ struct AccessibilityInspectorTests {
         #expect(await excluded.value == 1)
     }
 
+    @Test("A selected-window snapshot goes through the re-observation, not a single check")
+    func selectedWindowSnapshotIsRetried() async {
+        // No process can match: every attempt fails, so the elapsed time shows the retries ran.
+        let gone = PinnedWindow(id: 0, appName: "Gone", windowTitle: "Gone", processID: nil)
+        let inspector = AccessibilityInspector(targetWindow: gone, requiresWindowScope: true)
+        let start = ContinuousClock.now
+        await #expect(throws: AccessibilityInspector.SnapshotError.selectedWindowUnavailable) {
+            _ = try await inspector.captureSnapshot()
+        }
+        #expect(ContinuousClock.now - start >= .milliseconds(550))
+    }
+
     @Test("The identity diagnostic says which half failed and never logs a title")
     func identityMismatchDiagnostic() {
         let frame = CGRect(x: 10, y: 10, width: 200, height: 120)
