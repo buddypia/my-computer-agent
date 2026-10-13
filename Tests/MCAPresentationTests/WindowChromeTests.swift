@@ -18,24 +18,27 @@ struct WindowChromeTests {
             .appendingPathComponent("Sources")
         let files = try #require(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
         let mask = try Regex(#"styleMask:\s*\[([^\]]*)\]"#)
-        var titled = 0
+        var titled: Set<String> = []
         for case let file as URL in files where file.pathExtension == "swift" {
             let text = try String(contentsOf: file, encoding: .utf8)
             for match in text.matches(of: mask) {
                 let options = String(text[match.range])
                 guard options.contains(".titled") else { continue }
-                titled += 1
+                titled.insert(file.lastPathComponent)
                 let place = "\(file.lastPathComponent): \(options)"
                 #expect(options.contains(".resizable"), "\(place)")
                 #expect(options.contains(".miniaturizable"), "\(place)")
                 #expect(!options.contains(".utilityWindow"), "\(place)")
             }
         }
-        // The scan itself has to find something, or a moved Sources/ passes it.
-        #expect(titled >= 4)
+        // The scan has to see the windows it guards, or a moved Sources/ or a
+        // rewritten styleMask passes it vacuously.
+        #expect(titled.isSuperset(of: [
+            "ChatWindow.swift", "ScreenPicker.swift", "SettingsWindow.swift", "SetupWindow.swift",
+        ]), "\(titled)")
     }
 
-    @Test("minimizing the chat stops counting it as on screen; presenting restores it")
+    @Test("a minimized chat is not on screen until restored from the Dock or toggled back")
     func chatMiniaturize() async throws {
         _ = NSApplication.shared
         let state = HUDState()
@@ -48,12 +51,16 @@ struct WindowChromeTests {
 
         window.miniaturize(nil)
         try await waitUntil { window.isMiniaturized && !state.isChatOpen }
-        #expect(!state.isChatOpen)
 
+        // The Dock path: `present()` would set the flag itself.
+        window.deminiaturize(nil)
+        try await waitUntil { !window.isMiniaturized && state.isChatOpen }
+
+        // The hot key / HUD button path on a minimized chat brings it back.
+        window.miniaturize(nil)
+        try await waitUntil { window.isMiniaturized && !state.isChatOpen }
         chat.toggle()
         try await waitUntil { !window.isMiniaturized && state.isChatOpen }
-        #expect(!window.isMiniaturized)
-        #expect(state.isChatOpen)
     }
 
     @Test("minimizing the screen picker stops its thumbnail refresh")
@@ -67,17 +74,20 @@ struct WindowChromeTests {
 
         window.miniaturize(nil)
         try await waitUntil { window.isMiniaturized && !state.isScreenPickerOpen }
-        #expect(!state.isScreenPickerOpen)
 
-        picker.toggle()
+        window.deminiaturize(nil)
         try await waitUntil { !window.isMiniaturized && state.isScreenPickerOpen }
-        #expect(!window.isMiniaturized)
-        #expect(state.isScreenPickerOpen)
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        for _ in 0..<100 where !condition() {
+    /// The minimize animation takes about 1.5 s locally; 10 s leaves room for
+    /// a loaded CI runner, and a timeout fails here rather than at a later,
+    /// less telling expectation.
+    private func waitUntil(
+        _ condition: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+        for _ in 0..<200 where !condition() {
             try await Task.sleep(for: .milliseconds(50))
         }
+        #expect(condition(), "timed out", sourceLocation: sourceLocation)
     }
 }
