@@ -24,7 +24,7 @@ public struct TypeSafeClient: Sendable, TypeSafeEvaluating {
         public var errorDescription: String? {
             switch self {
             case .missingApiKey:
-                return "TypeSafe API key is missing. Please set TYPESAFE_API_KEY in environment or SecretStore."
+                return "TypeSafe API key is missing. Store it encrypted with `mca auth set typesafe` (or Settings), or export TYPESAFE_API_KEY."
             case .invalidUrl:
                 return "Invalid TypeSafe API endpoint URL."
             case .httpError(let status, let message):

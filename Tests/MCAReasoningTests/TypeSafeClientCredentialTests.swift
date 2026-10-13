@@ -15,7 +15,10 @@ struct TypeSafeClientCredentialTests {
     @Test("configured() takes the key from the credential store")
     func configuredUsesCredentials() throws {
         let secrets = SecretStore(namespace: "com.buddypia.mca.tests.\(UUID().uuidString)")
-        defer { secrets.delete(account: "typesafe") }
+        defer {
+            secrets.delete(account: "typesafe")
+            secrets.destroyWrappingKeyForTesting()
+        }
 
         #expect(!TypeSafeClient.configured(credentials: CredentialStore(environment: [:], secrets: secrets)).hasKey)
         #expect(TypeSafeClient.configured(
