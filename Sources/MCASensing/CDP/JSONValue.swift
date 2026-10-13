@@ -55,7 +55,8 @@ public indirect enum JSONValue: Sendable, Equatable {
         case .null: return NSNull()
         case .bool(let value): return value
         case .number(let value):
-            if value.rounded() == value, abs(value) < 1e15 { return Int(value) }
+            guard value.isFinite else { return NSNull() }
+            if value.rounded() == value, abs(value) < 1e15, let exact = Int(exactly: value) { return exact }
             return value
         case .string(let value): return value
         case .array(let values): return values.map(\.anyValue)
@@ -82,7 +83,10 @@ public indirect enum JSONValue: Sendable, Equatable {
     public var isNull: Bool { if case .null = self { return true } else { return false } }
     public var stringValue: String? { if case .string(let value) = self { return value } else { return nil } }
     public var doubleValue: Double? { if case .number(let value) = self { return value } else { return nil } }
-    public var intValue: Int? { doubleValue.map { Int($0) } }
+    public var intValue: Int? {
+        guard let value = doubleValue, value.isFinite else { return nil }
+        return Int(exactly: value.rounded(.towardZero))
+    }
     public var boolValue: Bool? {
         switch self {
         case .bool(let value): return value

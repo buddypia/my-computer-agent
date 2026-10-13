@@ -70,6 +70,8 @@ public actor AudioChannelPipeline {
     /// The transcriber's failure is still thrown, so the caller can report it;
     /// it just no longer stops the audio.
     public func start() async throws {
+        pump?.cancel()
+        forwarder?.cancel()
         // 100 ms cadence: long enough that we are not spinning, short enough
         // that VAD onset latency stays inside the barge-in budget when combined
         // with the 30 ms frame size.
@@ -106,11 +108,13 @@ public actor AudioChannelPipeline {
 
     public func stop() async {
         pump?.cancel()
-        forwarder?.cancel()
         pump = nil
-        forwarder = nil
         audioTap = nil
+        residue.removeAll()
         await transcriber.finish()
+        let pendingForwarder = forwarder
+        forwarder = nil
+        await pendingForwarder?.value
         continuation.finish()
     }
 
