@@ -139,24 +139,23 @@ swift_tests() {
 }
 
 # Tests that measure the whole process (main-thread latency, the watchdog, resident memory) carry
-# `.isolatedMeasurement` and an `…Isolated()` name. The parallel run above skips them: there they
+# `.isolatedMeasurement` and an `…Isolated` name. The parallel run above skips them: there they
 # measure their neighbours, which is what made CI red on a slow runner. Here they run alone, one at
-# a time. Fails closed: nothing matched, or something skipped, is not a pass.
+# a time. Fails closed, read from xUnit rather than console glyphs: fewer test cases than declared
+# `…Isolated(` functions (a filter or a target that matched nothing), or any skip, is not a pass.
+ISOLATED_XUNIT="$LOG_DIR/isolated-xunit.xml"
+ISOLATED_XUNIT_ST="$LOG_DIR/isolated-xunit-swift-testing.xml"
+
 isolated_tests() {
-    local out rc
-    out="$(MCA_ISOLATED_TESTS=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
-        --filter 'Isolated\(\)' 2>&1)"
-    rc=$?
-    printf '%s\n' "$out"
-    [ "$rc" -eq 0 ] || return 1
-    if ! printf '%s\n' "$out" | grep -q '✔ Test .* passed'; then
-        echo "isolated: no test matched 'Isolated()'"
-        return 1
-    fi
-    if printf '%s\n' "$out" | grep -q '➜ Test .* skipped'; then
-        echo "isolated: a test was skipped in its own pass"
-        return 1
-    fi
+    local declared ran skipped
+    rm -f "$ISOLATED_XUNIT" "$ISOLATED_XUNIT_ST"
+    MCA_ISOLATED_TESTS=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
+        --filter 'Isolated\(' --xunit-output "$ISOLATED_XUNIT" || return 1
+    declared="$(grep -rEho '\bfunc[[:space:]]+[A-Za-z0-9_]+Isolated[[:space:]]*\(' "$ROOT/Tests" | wc -l | tr -d ' ')"
+    ran="$(grep -o '<testcase ' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
+    skipped="$(grep -o '<skipped' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
+    echo "isolated: declared $declared, ran $ran, skipped $skipped"
+    [ "$declared" -gt 0 ] && [ "$ran" -ge "$declared" ] && [ "$skipped" -eq 0 ]
 }
 
 trust_guards() {

@@ -21,7 +21,7 @@ Scripts/gate.sh             # G0..G2
 | G1 | ビルド | `swift build` | 実行 | ~20s |
 | G2 | trust | `node --test Scripts/trust/tests/*.test.mjs` + `trust.mjs incident check` | 実行 | ~1s |
 | G2 | テスト | `swift test` | 実行 | ~12s |
-| G2 | 隔離 | `MCA_ISOLATED_TESTS=1 swift test --no-parallel --filter 'Isolated\(\)'` | 実行 | ~25s |
+| G2 | 隔離 | `MCA_ISOLATED_TESTS=1 swift test --no-parallel --filter 'Isolated\('` | 実行 | ~25s |
 | G3 | リリース束 | `Scripts/bundle.sh` | **手動のみ** | 数分 |
 
 G3 が既定に入っていないのは、`build/` を作り直して `codesign` を走らせるためで、
@@ -29,7 +29,7 @@ G3 が既定に入っていないのは、`build/` を作り直して `codesign`
 `Scripts/gate.sh --stage 3` として明示的に通す。
 
 プロセス全体を測るテスト（main thread の遅延・watchdog・常駐メモリ・壁時計の上限）は
-`@Test(..., .isolatedMeasurement)` を付け、関数名を `…Isolated()` で終える。並列実行では隣のテストの
+`@Test(..., .isolatedMeasurement)` を付け、関数名を `…Isolated` で終える（`Tests/*/IsolatedMeasurement.swift`）。並列実行では隣のテストの
 仕事まで測ってしまうため既定の実行では skip され、G2「隔離」で単独・直列に走る。
 
 ### G0 がスキップする条件
