@@ -43,23 +43,23 @@ jobs:
       - name: Swift Build (release)
         run: swift build -c release
 
-      # DIAGNOSTIC ONLY (reverted before merge): sample the test process to find what
-      # holds the main thread for seconds on the runner.
-      - name: Diagnose main-thread stall
-        run: |
-          swift build --build-tests
-          ( swift test --skip-build > test.log 2>&1 ) &
-          for i in $(seq 1 300); do P=$(pgrep -f 'PackageTests' | head -1); [ -n "$P" ] && break; sleep 0.1; done
-          echo "test pid=$P"
-          sample "$P" 40 1 -mayDie -file sample.txt > /dev/null 2>&1 || true
-          wait || true
-          grep -E "✘|Test run with" test.log | cut -c1-220 || true
-      - name: Upload diagnostics
-        if: always()
+      - name: Quality Gate (main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          MCA_GATE_NO_CACHE: '1'
+        run: ./Scripts/gate.sh --force
+
+      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk run is
+      # never restored from a cache: the branch's own tests run in this job and could have written one.
+      - name: Trust evidence (branch)
+        if: github.ref != 'refs/heads/main'
+        run: node Scripts/trust/trust.mjs evidence --worktree . --out evidence.json
+
+      - name: Upload trust evidence
+        if: always() && github.ref != 'refs/heads/main' && hashFiles('evidence.json') != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: stall-diagnostics
-          path: |
-            sample.txt
-            test.log
-          retention-days: 3
+          name: trust-evidence
+          path: evidence.json
+          retention-days: 14
+          overwrite: true
