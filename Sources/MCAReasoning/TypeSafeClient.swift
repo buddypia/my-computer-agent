@@ -24,7 +24,7 @@ public struct TypeSafeClient: Sendable, TypeSafeEvaluating {
         public var errorDescription: String? {
             switch self {
             case .missingApiKey:
-                return "TypeSafe API key is missing. Please set TYPESAFE_API_KEY in environment or SecretStore."
+                return "TypeSafe API key is missing. Store it with `mca auth set typesafe`, or set TYPESAFE_API_KEY."
             case .invalidUrl:
                 return "Invalid TypeSafe API endpoint URL."
             case .httpError(let status, let message):
@@ -39,13 +39,16 @@ public struct TypeSafeClient: Sendable, TypeSafeEvaluating {
     public let endpoint: URL
     private let apiKey: String?
 
+    /// Without `apiKey` the client has no key and fails with `missingApiKey`: it never
+    /// looks one up itself, so a default-constructed engine in a test cannot reach the
+    /// network because the developer running it has a key. The app passes the key
+    /// from `SystemOneBackend.resolve`.
     public init(
         endpoint: URL = URL(string: "https://api.typesafe.ai/v1/systemone")!,
         apiKey: String? = nil
     ) {
         self.endpoint = endpoint
-        self.apiKey = apiKey ?? ProcessInfo.processInfo.environment["TYPESAFE_API_KEY"]
-            ?? SecretStore.shared.read(account: "typesafe")
+        self.apiKey = apiKey
     }
 
     /// Whether an API key is currently available for TypeSafe Jev.

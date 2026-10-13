@@ -81,7 +81,7 @@ struct EmbeddingElementRankerTests {
     func eg2URLDoesNotPickBackend() {
         let env = ["EG2_URL": "http://127.0.0.1:38765"]
         #expect(EmbeddingGemmaClient(environment: env).isConfigured == false)
-        #expect(!(SystemOneBackend.resolve(environment: env) is EmbeddingGemmaClient))
+        #expect(!(SystemOneBackend.resolve(environment: env, secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is EmbeddingGemmaClient))
         #expect(EmbeddingGemmaClient(environment: env).endpoint.absoluteString == "http://127.0.0.1:38765/v1/evaluate")
     }
 

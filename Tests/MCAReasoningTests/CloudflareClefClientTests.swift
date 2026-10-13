@@ -141,7 +141,7 @@ struct CloudflareClefClientTests {
         #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef-flash"]) as? CloudflareClefClient)?.model == .clefFlash)
         #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef"]) as? CloudflareClefClient)?.model == .clef)
         #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "offline"]) is SystemOneBackend.Offline)
-        #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "typesafe"]) is TypeSafeClient)
+        #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "typesafe"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is TypeSafeClient)
     }
 
     @Test("Clef is opt-in: Cloudflare credentials alone never select it")
