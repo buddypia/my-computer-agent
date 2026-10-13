@@ -8,11 +8,6 @@ import Testing
 @Suite("FrameFingerprint Stress and Empirical Adversarial Suite")
 struct FrameFingerprintStressTests {
 
-    /// Pool latency and resident memory belong to the whole test process, so a parallel run mixes in every
-    /// other test's work. Asserted only in an isolated run (see `IsolatedTiming` in mcaTests):
-    /// `MCA_ISOLATED_TIMING=1 swift test --no-parallel --filter StressTests`
-    static let isolatedTiming = ProcessInfo.processInfo.environment["MCA_ISOLATED_TIMING"] == "1"
-
     /// Generates synthetic RGB test image with configurable dimensions and content.
     private func createTestImage(
         width: Int,
@@ -154,7 +149,7 @@ struct FrameFingerprintStressTests {
         let worstProbeLatency = maxProbeLatency.withLock { $0 }
 
         // Assert probe was not starved for > 800ms
-        if Self.isolatedTiming {
+        if IsolatedTiming.enabled {
             #expect(worstProbeLatency < .milliseconds(800), "Cooperative probe suffered excessive latency: \(worstProbeLatency)")
         }
     }
@@ -191,7 +186,7 @@ struct FrameFingerprintStressTests {
         let memGrowth = finalMem - initialMem
 
         // Allow reasonable runtime growth but ensure no runaway buffer leak (< 150MB growth for 100 4K frames)
-        if Self.isolatedTiming {
+        if IsolatedTiming.enabled {
             #expect(memGrowth < 150.0, "Memory grew excessively: \(memGrowth) MB (initial: \(initialMem), final: \(finalMem))")
         }
     }
