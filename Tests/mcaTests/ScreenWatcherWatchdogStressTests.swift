@@ -21,7 +21,7 @@ private actor MockWatchStore: ContextStoring {
 @Suite("ScreenWatcher & Watchdog Empirical Stress Tests", .serialized)
 struct ScreenWatcherWatchdogStressTests {
 
-    @Test("MainThreadWatchdog is never triggered during ScreenWatcher.tick() cycles", .isolatedMeasurement)
+    @Test("MainThreadWatchdog is never triggered during ScreenWatcher.tick() cycles")
     @MainActor
     func testScreenWatcherTickDoesNotTriggerWatchdogIsolated() async throws {
         let state = HUDState()
@@ -67,7 +67,7 @@ struct ScreenWatcherWatchdogStressTests {
         }
     }
 
-    @Test("Main actor remains responsive while tick is executing", .isolatedMeasurement)
+    @Test("Main actor remains responsive while tick is executing")
     @MainActor
     func testMainActorResponsivenessDuringTickIsolated() async throws {
         let state = HUDState()

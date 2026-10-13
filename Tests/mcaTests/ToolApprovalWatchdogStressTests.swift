@@ -11,7 +11,7 @@ import Testing
 @MainActor
 struct ToolApprovalWatchdogStressTests {
 
-    @Test("5 consecutive approval cycles present and dismiss responsively without tripping MainThreadWatchdog", .isolatedMeasurement)
+    @Test("5 consecutive approval cycles present and dismiss responsively without tripping MainThreadWatchdog")
     func consecutiveApprovalCyclesWithoutWatchdogHangIsolated() async throws {
         _ = NSApplication.shared
         let state = HUDState()
@@ -128,7 +128,7 @@ struct ToolApprovalWatchdogStressTests {
         }
     }
 
-    @Test("ToolApprovalUI.restoreFocus cooperative polling yields to MainActor without freezing runloop", .isolatedMeasurement)
+    @Test("ToolApprovalUI.restoreFocus cooperative polling yields to MainActor without freezing runloop")
     func restoreFocusCooperativeYieldingIsolated() async throws {
         _ = NSApplication.shared
         let state = HUDState()

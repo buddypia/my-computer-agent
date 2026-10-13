@@ -69,7 +69,7 @@ struct ScreenWatcherVisionStressTests {
 
     // MARK: - 1. Vision OCR Offloading Responsiveness on @MainActor
 
-    @Test("Vision OCR executes off @MainActor without inducing main thread latency", .isolatedMeasurement)
+    @Test("Vision OCR executes off @MainActor without inducing main thread latency")
     @MainActor
     func visionOCROffloadingMainActorResponsivenessIsolated() async throws {
         let sampleLines = [
@@ -186,7 +186,7 @@ struct ScreenWatcherVisionStressTests {
 
     // MARK: - 3. ScreenWatcher Tick Inactivity and Cancellation Integrity
 
-    @Test("ScreenWatcher tick when off returns immediately without blocking", .isolatedMeasurement)
+    @Test("ScreenWatcher tick when off returns immediately without blocking")
     @MainActor
     func screenWatcherTickWhenOffIsImmediateIsolated() async {
         let state = HUDState()
@@ -211,6 +211,8 @@ struct ScreenWatcherVisionStressTests {
         await watcher.tick()
         let duration = ContinuousClock.now - start
 
-        #expect(duration < .milliseconds(100), "Tick when off should return immediately")
+        if IsolatedTiming.enabled {
+            #expect(duration < .milliseconds(100), "Tick when off should return immediately")
+        }
     }
 }

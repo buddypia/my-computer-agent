@@ -138,18 +138,18 @@ swift_tests() {
     swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT"
 }
 
-# Tests that measure the whole process (main-thread latency, the watchdog, resident memory) carry
-# `.isolatedMeasurement` and an `…Isolated` name. The parallel run above skips them: there they
-# measure their neighbours, which is what made CI red on a slow runner. Here they run alone, one at
-# a time. Fails closed, read from xUnit rather than console glyphs: fewer test cases than declared
-# `…Isolated(` functions (a filter or a target that matched nothing), or any skip, is not a pass.
+# Process-wide numbers (main-thread latency, the watchdog, pool wall-clock, resident memory) are
+# asserted behind `IsolatedTiming.enabled` in tests named `…Isolated`. The parallel run above checks
+# only their functional part: there the numbers measure the neighbours, which made CI red on a slow
+# runner. Here those tests run alone, one at a time, with the numbers switched on. Fails closed, read
+# from xUnit: fewer test cases than declared `…Isolated(` functions, or any skip, is not a pass.
 ISOLATED_XUNIT="$LOG_DIR/isolated-xunit.xml"
 ISOLATED_XUNIT_ST="$LOG_DIR/isolated-xunit-swift-testing.xml"
 
 isolated_tests() {
     local declared ran skipped
     rm -f "$ISOLATED_XUNIT" "$ISOLATED_XUNIT_ST"
-    MCA_ISOLATED_TESTS=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
+    MCA_ISOLATED_TIMING=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
         --filter 'Isolated\(' --xunit-output "$ISOLATED_XUNIT" || return 1
     declared="$(grep -rEho '\bfunc[[:space:]]+[A-Za-z0-9_]+Isolated[[:space:]]*\(' "$ROOT/Tests" | wc -l | tr -d ' ')"
     ran="$(grep -o '<testcase ' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
