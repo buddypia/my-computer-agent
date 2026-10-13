@@ -9,7 +9,7 @@ import MCASensing
 /// TypeSafe key wins, then the offline heuristics. Clef is opt-in only: it sends the
 /// request and on-screen labels (and sometimes a screenshot) to Cloudflare, which a
 /// cf auth login alone does not mean the user agreed to. Library defaults stay on
-/// `TypeSafeClient()` so tests never reach the network by accident.
+/// a keyless `TypeSafeClient()` so tests never reach the network by accident.
 public enum SystemOneBackend {
     /// Shared so every engine reuses one element-vector cache. `MCA_ELEMENT_RANKING=off` disables it.
     static let elementRanker: EmbeddingElementRanker? =
@@ -30,7 +30,7 @@ public enum SystemOneBackend {
     ) -> any TypeSafeEvaluating {
         let gemmaModel = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         switch environment["MCA_SYSTEM_ONE"]?.lowercased() {
-        case "typesafe": return TypeSafeClient()
+        case "typesafe": return TypeSafeClient.configured(credentials: CredentialStore(environment: environment))
         case "clef": return CloudflareClefClient(model: .clef)
         case "clef-flash": return CloudflareClefClient(model: .clefFlash)
         case "embeddinggemma", "embeddinggemma2", "gemma", "local":
@@ -39,7 +39,7 @@ public enum SystemOneBackend {
         default:
             let localGemma = EmbeddingGemmaClient(model: gemmaModel, environment: environment)
             if localGemma.isConfigured { return localGemma }
-            let typeSafe = TypeSafeClient()
+            let typeSafe = TypeSafeClient.configured(credentials: CredentialStore(environment: environment))
             return typeSafe.hasKey ? typeSafe : Offline()
         }
     }

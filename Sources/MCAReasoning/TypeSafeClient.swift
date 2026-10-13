@@ -39,13 +39,21 @@ public struct TypeSafeClient: Sendable, TypeSafeEvaluating {
     public let endpoint: URL
     private let apiKey: String?
 
+    /// Keyless unless `apiKey` is given: a default-constructed client never picks up the
+    /// machine's key, so a library default or a test cannot reach the network by accident.
+    /// The app and CLI take theirs from `configured(credentials:)`.
     public init(
         endpoint: URL = URL(string: "https://api.typesafe.ai/v1/systemone")!,
         apiKey: String? = nil
     ) {
         self.endpoint = endpoint
-        self.apiKey = apiKey ?? ProcessInfo.processInfo.environment["TYPESAFE_API_KEY"]
-            ?? SecretStore.shared.read(account: "typesafe")
+        self.apiKey = apiKey
+    }
+
+    /// The key from `CredentialStore`: `TYPESAFE_API_KEY` for a quick run, otherwise the
+    /// encrypted record `mca auth set typesafe` or Settings stored.
+    public static func configured(credentials: CredentialStore = CredentialStore()) -> TypeSafeClient {
+        TypeSafeClient(apiKey: credentials.key(for: "typesafe"))
     }
 
     /// Whether an API key is currently available for TypeSafe Jev.
