@@ -7,7 +7,7 @@ import Foundation
 /// test named `…Isolated`, and `Scripts/gate.sh` enforces them in its G2 isolated stage — those tests
 /// alone, one at a time, with `MCA_ISOLATED_TIMING=1`.
 ///
-/// Every test target that uses it keeps an identical copy (checked by IsolatedTimingConventionTests).
+/// Every test target that uses it keeps an identical copy (checked by IsolatedMeasurementConventionTests).
 enum IsolatedTiming {
     static let enabled = ProcessInfo.processInfo.environment["MCA_ISOLATED_TIMING"] == "1"
 }
