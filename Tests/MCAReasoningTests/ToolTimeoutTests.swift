@@ -72,8 +72,8 @@ struct ToolTimeoutTests {
         #expect(await session.terminalFailure?.contains("did not finish within") == true)
     }
 
-    @Test("Time spent waiting on the user's approval is not held against the tool")
-    func approvalWaitNotCounted() async throws {
+    @Test("Time spent waiting on the user's approval is not held against the tool", .isolatedMeasurement)
+    func approvalWaitNotCountedIsolated() async throws {
         // Wide margins: the working time before and after the pause must fit in
         // the limit on a loaded CI runner, while the pause alone exceeds it.
         let registry = ToolRegistry(tools: [ApprovalThenDoneTool()], timeout: .seconds(2))

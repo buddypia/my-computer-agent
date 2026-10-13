@@ -404,6 +404,8 @@ function runGate(wt) {
   const last = out.trim().split('\n').pop() ?? '';
   // The trust stage must have actually run, not merely the gate as a whole (INC-006).
   const ok = r.status === 0 && /GATE PASS  stages/.test(out) && /G2 trust\s+PASS/.test(out) && /G2 guards\s+PASS/.test(out) && !/cached/.test(out);
+  // The detail keeps one line; without the gate's own output a CI failure cannot be traced to a test.
+  if (!ok) process.stderr.write(`${out.trimEnd()}\n`);
   return { id: 'gate', ok, detail: ok ? last : `gate failed (exit ${r.status}) ${last}` };
 }
 

@@ -59,8 +59,8 @@ struct AccessibilityReaderAdversarialTests {
         }
     }
 
-    @Test("invalid and dead PIDs return nil or safe empty snapshot immediately without hanging")
-    func testInvalidPIDsFailFast() async {
+    @Test("invalid and dead PIDs return nil or safe empty snapshot immediately without hanging", .isolatedMeasurement)
+    func testInvalidPIDsFailFastIsolated() async {
         let reader = AccessibilityReader(traversalBudget: 0.2)
 
         let invalidPIDs: [pid_t] = [-1, -999, 999_999, 0]
@@ -71,12 +71,14 @@ struct AccessibilityReaderAdversarialTests {
 
             // If NSRunningApplication doesn't exist for the PID, readWindow returns nil
             #expect(snapshot == nil || snapshot?.elementCount == 0)
-            #expect(elapsedMs < 300, "Reading invalid PID \(pid) took too long: \(elapsedMs)ms")
+            if IsolatedTiming.enabled {
+                #expect(elapsedMs < 300, "Reading invalid PID \(pid) took too long: \(elapsedMs)ms")
+            }
         }
     }
 
-    @Test("traversalBudget halts tree walking promptly on active running apps")
-    func testTraversalBudgetHaltsPromptly() async {
+    @Test("traversalBudget halts tree walking promptly on active running apps", .isolatedMeasurement)
+    func testTraversalBudgetHaltsPromptlyIsolated() async {
         // Query running applications
         let runningApps = NSWorkspace.shared.runningApplications.filter {
             $0.processIdentifier != ProcessInfo.processInfo.processIdentifier &&
@@ -95,7 +97,9 @@ struct AccessibilityReaderAdversarialTests {
         let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
 
         // With 50ms budget + 500ms messaging timeout, total wall-clock time should be strictly bounded
-        #expect(elapsedMs < 1200, "Tight budget execution exceeded bound: \(elapsedMs)ms")
+        if IsolatedTiming.enabled {
+            #expect(elapsedMs < 1200, "Tight budget execution exceeded bound: \(elapsedMs)ms")
+        }
     }
 
     @Test("readFocusedWindowAsync retrieves snapshot asynchronously without deadlocking MainActor")
