@@ -285,5 +285,35 @@ struct ChatTests {
         #expect(turns[2].role == .user)
         #expect(turns[2].text == "スクロールして")
     }
+
+    @Test("cancelStreaming discards buffered tokens so delayed flush does not repopulate streamingText")
+    func cancelStreamingDiscardsBufferedTokens() async throws {
+        let state = HUDState()
+        state.tokenThrottleInterval = .milliseconds(40)
+        state.beginStreaming(question: "音声テスト")
+        state.appendToken("最初の")
+        state.appendToken("バッファされたトークン")
+
+        state.cancelStreaming()
+        #expect(!state.isStreaming)
+        #expect(state.streamingText.isEmpty)
+
+        try await Task.sleep(for: .milliseconds(70))
+        #expect(state.streamingText.isEmpty)
+        #expect(!state.isStreaming)
+    }
+
+    @Test("pruning all non-user messages zeroes unseenMessages even when user turns remain")
+    func pruningNonUserMessagesZeroesUnreadCount() {
+        let state = HUDState()
+        state.beginStreaming(question: "ユーザーの質問")
+        state.isStreaming = false
+        state.presentAdvice(title: "アドバイス", body: "本文")
+        #expect(state.unseenMessages == 1)
+
+        state.removeMessages(ofRole: [.watch, .notice, .failure])
+        #expect(state.messages.map(\.role) == [.user])
+        #expect(state.unseenMessages == 0)
+    }
 }
 

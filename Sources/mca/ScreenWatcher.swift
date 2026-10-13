@@ -114,6 +114,7 @@ final class ScreenWatcher {
     /// Notified when meeting session state (active role is meeting) changes, passing whether active and the target process ID if pinned.
     var onMeetingSessionChanged: ((Bool, pid_t?) -> Void)?
     private var lastReportedMeetingActive = false
+    private var lastReportedMeetingPID: pid_t?
 
     /// Whether a meeting assistant session is currently active in either single-target or multi-screen mode.
     var isMeetingSessionActive: Bool {
@@ -127,20 +128,23 @@ final class ScreenWatcher {
 
     /// The target process ID if a window is pinned for the active meeting session.
     var activeMeetingPID: pid_t? {
-        if case .pinned(let window) = target {
-            if state.selectedPreset?.id == "builtin.meeting" || state.selectedPreset?.triggerKind == .meetingFast {
-                return window.processID
-            }
+        guard case .pinned(let window) = target, isMeetingSessionActive else { return nil }
+        if !watchItems.isEmpty {
+            let key = WatchTarget.pinned(window).key
+            guard watchItems.contains(where: {
+                $0.isEnabled && $0.targetKey == key && ($0.role.id == "builtin.meeting" || $0.role.triggerKind == .meetingFast)
+            }) else { return nil }
         }
-        return nil
+        return window.processID
     }
 
     /// Evaluates meeting session status and triggers `onMeetingSessionChanged` on state transitions.
     func updateMeetingSessionState() {
         let active = isMeetingSessionActive
         let pid = active ? activeMeetingPID : nil
-        if active != lastReportedMeetingActive {
+        if active != lastReportedMeetingActive || pid != lastReportedMeetingPID {
             lastReportedMeetingActive = active
+            lastReportedMeetingPID = pid
             onMeetingSessionChanged?(active, pid)
         }
     }

@@ -400,6 +400,15 @@ public final class HUDState {
         tokenFlushTask = nil
     }
 
+    /// Aborts an in-flight stream without appending a turn, discarding any buffered tokens.
+    public func cancelStreaming() {
+        cancelTokenFlushTask()
+        tokenBuffer = ""
+        streamingText = ""
+        isStreaming = false
+        discardsAnswerInFlight = false
+    }
+
     /// Turns the in-flight answer into a card.
     ///
     /// `text` is the answer as the reasoning layer returned it, and it wins over
@@ -539,7 +548,10 @@ public final class HUDState {
     }
 
     private func clampUnread() {
-        unseenMessages = min(unseenMessages, messages.count)
+        let nonUserCount = messages.reduce(into: 0) { count, message in
+            if message.role != .user { count += 1 }
+        }
+        unseenMessages = min(unseenMessages, nonUserCount)
     }
 
     /// Drops this turn and everything older.

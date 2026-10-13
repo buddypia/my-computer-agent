@@ -350,6 +350,39 @@ struct ActCommandTests {
         await reporter.loopDidFail(error: .escalationFailed(reason: "No resolution"))
         await reporter.loopDidFail(error: .executionFailed(reason: "Failed"))
     }
+
+    @Test("Single-step decision execution allows typeText and keyPress without targetCenter")
+    func testSingleStepDecisionWithoutTargetCenter() throws {
+        let synth = DryRunEventSynthesizer()
+
+        let typeDecision = ComputerActionDecision(
+            action: .typeText,
+            confidence: 0.95,
+            coordinates: nil,
+            textInput: "hello"
+        )
+        #expect(ActCommand.canExecute(typeDecision))
+        try ActCommand.performDecision(typeDecision, using: synth)
+        #expect(synth.recordedActions == ["typeText(\"hello\")"])
+
+        synth.reset()
+        let keyDecision = ComputerActionDecision(
+            action: .keyPress,
+            confidence: 0.95,
+            coordinates: nil,
+            keyCombination: ["Return"]
+        )
+        #expect(ActCommand.canExecute(keyDecision))
+        try ActCommand.performDecision(keyDecision, using: synth)
+        #expect(synth.recordedActions == ["pressKey(\"Return\")"])
+
+        let clickWithoutCoords = ComputerActionDecision(
+            action: .click,
+            confidence: 0.95,
+            coordinates: nil
+        )
+        #expect(!ActCommand.canExecute(clickWithoutCoords))
+    }
 }
 
 private extension Result {
