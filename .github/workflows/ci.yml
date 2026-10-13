@@ -48,10 +48,15 @@ jobs:
       - name: Diagnose main-thread stall
         run: |
           swift build --build-tests
-          ( swift test --skip-build > test.log 2>&1 ) &
-          for i in $(seq 1 300); do P=$(pgrep -f 'PackageTests' | head -1); [ -n "$P" ] && break; sleep 0.1; done
-          echo "test pid=$P"
-          sample "$P" 40 1 -mayDie -file sample.txt > /dev/null 2>&1 || true
+          ( swift test --skip-build > test.log 2>&1; touch done.flag ) &
+          seen=""
+          while [ ! -f done.flag ]; do
+            for P in $(pgrep -f 'PackageTests|swiftpm-testing-helper'); do
+              case " $seen " in *" $P "*) ;; *) seen="$seen $P"; ps -o pid=,command= -p $P | cut -c1-200; ( sample "$P" 40 1 -mayDie -file "sample-$P.txt" > /dev/null 2>&1 & ) ;; esac
+            done
+            sleep 0.2
+          done
+          sleep 2
           wait || true
           grep -E "✘|Test run with" test.log | cut -c1-220 || true
       - name: Upload diagnostics
@@ -60,6 +65,6 @@ jobs:
         with:
           name: stall-diagnostics
           path: |
-            sample.txt
+            sample-*.txt
             test.log
           retention-days: 3
