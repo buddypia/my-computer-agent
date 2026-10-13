@@ -161,7 +161,7 @@ struct FrameFingerprintStressTests {
 
     // MARK: - 3. Memory Footprint Stability Under Repetitive Load
 
-    @Test("Repetitive computeAsync calls with 4K frames do not leak memory", .enabled(if: isolatedTiming, "process-wide memory"))
+    @Test("Repetitive computeAsync calls with 4K frames do not leak memory")
     func repetitiveExecutionMemoryStability() async throws {
         let image = createTestImage(width: 2560, height: 1600, pattern: .gradient)
 
@@ -191,7 +191,9 @@ struct FrameFingerprintStressTests {
         let memGrowth = finalMem - initialMem
 
         // Allow reasonable runtime growth but ensure no runaway buffer leak (< 150MB growth for 100 4K frames)
-        #expect(memGrowth < 150.0, "Memory grew excessively: \(memGrowth) MB (initial: \(initialMem), final: \(finalMem))")
+        if Self.isolatedTiming {
+            #expect(memGrowth < 150.0, "Memory grew excessively: \(memGrowth) MB (initial: \(initialMem), final: \(finalMem))")
+        }
     }
 
     // MARK: - 4. Extreme Dimensional and Masking Boundary Cases

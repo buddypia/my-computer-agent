@@ -203,6 +203,11 @@ run_stage() {
     echo ""
     echo "--- G$num $name: last $TAIL_LINES lines ($log) ---"
     tail -n "$TAIL_LINES" "$log"
+    # The tail of a parallel test run is mostly passing tests; the failures can sit anywhere above it.
+    if grep -qE '^✘ |error:' "$log"; then
+        echo "--- G$num $name: failures ---"
+        grep -E '^✘ |error:' "$log" | head -n "$TAIL_LINES"
+    fi
     echo "--- end G$num $name ---"
     rm -f "$STATE_DIR/pass"
     return 1
