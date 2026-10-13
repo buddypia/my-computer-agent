@@ -84,6 +84,53 @@ struct AccessibilityOutlineTests {
         let trimmed = AccessibilityOutline.trim(outline, options: BrowserSnapshotOptions(maxCharacters: 120))
         #expect(trimmed.count < 200)
         #expect(trimmed.contains("more lines omitted"))
+
+        let mixed = """
+            [0-1] RootWebArea: Shop
+              [0-2] heading: This is a very long section heading that exceeds the remaining budget
+                [0-3] button: OK
+            """
+        let prefixTrimmed = AccessibilityOutline.trim(mixed, options: BrowserSnapshotOptions(maxCharacters: 35))
+        #expect(prefixTrimmed.contains("[0-1] RootWebArea: Shop"))
+        #expect(!prefixTrimmed.contains("[0-3] button: OK"))
+        #expect(prefixTrimmed.contains("2 more lines omitted"))
+    }
+
+    @Test("DictationBuffer caps pending partial text and displayText to maximumCharacters")
+    func dictationBufferPendingCap() {
+        var buffer = DictationBuffer(silenceTimeout: 1.0, maximumCharacters: 10)
+        let now = Date()
+        buffer.append("0123456789abcdef", isFinal: false, now: now)
+        #expect(buffer.pending == "6789abcdef")
+        #expect(buffer.displayText == "6789abcdef")
+
+        var combined = DictationBuffer(silenceTimeout: 1.0, maximumCharacters: 10)
+        combined.append("012345", isFinal: true, now: now)
+        combined.append("0123456789abcd", isFinal: false, now: now.addingTimeInterval(0.2))
+        #expect(combined.displayText == "456789abcd")
+    }
+
+    @Test("UIStateSnapshot.candidatesHash reflects changes in isActionable and source")
+    func candidatesHashIncludesActionabilityAndSource() {
+        let disabled = UIElementCandidate(
+            id: "btn-1", role: "AXButton", label: "Submit",
+            bounds: CGRect(x: 10, y: 10, width: 80, height: 24),
+            isActionable: false, source: .accessibility
+        )
+        let enabled = UIElementCandidate(
+            id: "btn-1", role: "AXButton", label: "Submit",
+            bounds: CGRect(x: 10, y: 10, width: 80, height: 24),
+            isActionable: true, source: .accessibility
+        )
+        let ocr = UIElementCandidate(
+            id: "btn-1", role: "AXButton", label: "Submit",
+            bounds: CGRect(x: 10, y: 10, width: 80, height: 24),
+            isActionable: true, source: .ocr
+        )
+        #expect(UIStateSnapshot(visibleCandidates: [disabled]).candidatesHash
+            != UIStateSnapshot(visibleCandidates: [enabled]).candidatesHash)
+        #expect(UIStateSnapshot(visibleCandidates: [enabled]).candidatesHash
+            != UIStateSnapshot(visibleCandidates: [ocr]).candidatesHash)
     }
 
     @Test("diff returns only the lines a click revealed, re-based to column 0")

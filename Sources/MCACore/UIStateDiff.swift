@@ -62,6 +62,8 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
             hasher.combine(c.role)
             hasher.combine(c.label)
             hasher.combine(c.value)
+            hasher.combine(c.isActionable)
+            hasher.combine(c.source.rawValue)
             if c.bounds.origin.x.isFinite && c.bounds.origin.y.isFinite &&
                c.bounds.size.width.isFinite && c.bounds.size.height.isFinite {
                 hasher.combine(c.bounds.origin.x)

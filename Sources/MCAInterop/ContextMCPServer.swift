@@ -299,14 +299,14 @@ public actor ContextMCPServer {
                 name: "computer",
                 description: """
                     Interact with macOS desktop interface (mouse clicks, movement, \
-                    typing, key combinations, drags, cursor position). Anthropic Computer Use compatible.
+                    scrolling, typing, key combinations, drags, cursor position). Anthropic Computer Use compatible.
                     """,
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "action": .object([
                             "type": .string("string"),
-                            "description": .string("The action: 'mouse_move', 'left_click', 'right_click', 'double_click', 'triple_click', 'middle_click', 'left_click_drag', 'type', 'key', 'cursor_position'."),
+                            "description": .string("The action: 'mouse_move', 'left_click', 'right_click', 'double_click', 'triple_click', 'middle_click', 'left_click_drag', 'scroll', 'type', 'key', 'cursor_position'."),
                         ]),
                         "coordinate": .object([
                             "type": .string("array"),
@@ -315,6 +315,18 @@ public actor ContextMCPServer {
                         "start_coordinate": .object([
                             "type": .string("array"),
                             "description": .string("Start coordinate [x, y] for drag."),
+                        ]),
+                        "delta_y": .object([
+                            "type": .string("integer"),
+                            "description": .string("Vertical scroll delta (negative scrolls down, positive scrolls up)."),
+                        ]),
+                        "delta_x": .object([
+                            "type": .string("integer"),
+                            "description": .string("Horizontal scroll delta."),
+                        ]),
+                        "target_pid": .object([
+                            "type": .string("integer"),
+                            "description": .string("Optional process ID (PID) to target background scrolling without stealing focus."),
                         ]),
                         "text": .object([
                             "type": .string("string"),
@@ -731,7 +743,7 @@ public actor ContextMCPServer {
     static func mcpTool(from definition: ToolDefinition) -> MCP.Tool {
         let schema = (try? JSONSerialization.jsonObject(with: definition.parameters)).map(mcpValue)
             ?? .object(["type": .string("object")])
-        let readOnly = ["browser_snapshot", "browser_read", "browser_observe", "browser_extract"].contains(definition.name)
+        let readOnly = ["browser_snapshot", "browser_read", "browser_observe", "browser_extract", "browser_wait"].contains(definition.name)
         return MCP.Tool(
             name: definition.name,
             description: definition.description,
@@ -744,7 +756,9 @@ public actor ContextMCPServer {
         case let string as String: return .string(string)
         case let number as NSNumber:
             if CFGetTypeID(number) == CFBooleanGetTypeID() { return .bool(number.boolValue) }
-            return number.doubleValue.rounded() == number.doubleValue ? .int(number.intValue) : .double(number.doubleValue)
+            let d = number.doubleValue
+            if d.isFinite, let exact = Int(exactly: d) { return .int(exact) }
+            return .double(d)
         case let array as [Any]: return .array(array.map(mcpValue))
         case let object as [String: Any]: return .object(object.mapValues(mcpValue))
         default: return .null
@@ -769,10 +783,10 @@ public actor ContextMCPServer {
         return try JSONSerialization.data(withJSONObject: dict)
     }
 
-    private static func intValue(_ value: Value?) -> Int? {
+    static func intValue(_ value: Value?) -> Int? {
         switch value {
         case .int(let i): return i
-        case .double(let d): return Int(d)
+        case .double(let d) where d.isFinite: return Int(exactly: d)
         case .string(let s): return Int(s)
         default: return nil
         }

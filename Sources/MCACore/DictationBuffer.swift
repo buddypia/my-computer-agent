@@ -72,10 +72,19 @@ public struct DictationBuffer: Sendable, Equatable {
     /// goes on screen: a caption that only showed settled text would lag the
     /// speaker by a clause and look like it had stopped listening.
     public var displayText: String {
-        if pending.isEmpty { return settled }
-        if settled.isEmpty { return pending }
-        let cleanPending = Self.stripOverlap(settled: settled, from: pending)
-        return settled + cleanPending
+        let combined: String
+        if pending.isEmpty {
+            combined = settled
+        } else if settled.isEmpty {
+            combined = pending
+        } else {
+            let cleanPending = Self.stripOverlap(settled: settled, from: pending)
+            combined = settled + cleanPending
+        }
+        if combined.count > maximumCharacters {
+            return String(combined.suffix(maximumCharacters))
+        }
+        return combined
     }
 
     public var isEmpty: Bool { settled.isEmpty && pending.isEmpty }
@@ -96,6 +105,9 @@ public struct DictationBuffer: Sendable, Equatable {
             }
         } else {
             pending = Self.stripOverlap(settled: settled, from: text)
+            if pending.count > maximumCharacters {
+                pending.removeFirst(pending.count - maximumCharacters)
+            }
         }
         lastActivity = now
     }
