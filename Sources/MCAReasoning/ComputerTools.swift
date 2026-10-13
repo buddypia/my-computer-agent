@@ -146,14 +146,24 @@ public struct ComputerActionTool: AgentTool {
         }
 
         func extractPoint(_ key: String) -> CGPoint? {
+            func validPoint(_ x: Double, _ y: Double) -> CGPoint? {
+                guard x.isFinite, y.isFinite,
+                      x >= Double(Int32.min), x <= Double(Int32.max),
+                      y >= Double(Int32.min), y <= Double(Int32.max)
+                else { return nil }
+                return CGPoint(x: x, y: y)
+            }
             if let arr = parsed[key] as? [Double], arr.count >= 2 {
-                return CGPoint(x: arr[0], y: arr[1])
+                return validPoint(arr[0], arr[1])
             }
             if let arr = parsed[key] as? [Int], arr.count >= 2 {
-                return CGPoint(x: Double(arr[0]), y: Double(arr[1]))
+                return validPoint(Double(arr[0]), Double(arr[1]))
             }
             if let arr = parsed[key] as? [NSNumber], arr.count >= 2 {
-                return CGPoint(x: arr[0].doubleValue, y: arr[1].doubleValue)
+                guard CFGetTypeID(arr[0]) != CFBooleanGetTypeID(),
+                      CFGetTypeID(arr[1]) != CFBooleanGetTypeID()
+                else { return nil }
+                return validPoint(arr[0].doubleValue, arr[1].doubleValue)
             }
             return nil
         }
@@ -249,27 +259,8 @@ public struct ComputerActionTool: AgentTool {
 
             case "scroll":
                 let point = actionPoint
-                let deltaY: Int32
-                if let num = parsed["delta_y"] as? NSNumber {
-                    deltaY = num.int32Value
-                } else if let val = parsed["delta_y"] as? Int {
-                    deltaY = Int32(val)
-                } else if let val = parsed["delta_y"] as? Double {
-                    deltaY = Int32(val)
-                } else {
-                    deltaY = -5 // Default to scrolling down
-                }
-
-                let deltaX: Int32
-                if let num = parsed["delta_x"] as? NSNumber {
-                    deltaX = num.int32Value
-                } else if let val = parsed["delta_x"] as? Int {
-                    deltaX = Int32(val)
-                } else if let val = parsed["delta_x"] as? Double {
-                    deltaX = Int32(val)
-                } else {
-                    deltaX = 0
-                }
+                let deltaY = parsed.clampedInt32("delta_y") ?? -5 // Default to scrolling down
+                let deltaX = parsed.clampedInt32("delta_x") ?? 0
 
                 try synthesizer.scroll(deltaX: deltaX, deltaY: deltaY, at: point, targetPID: targetPID)
                 let direction = deltaY < 0 ? "down" : (deltaY > 0 ? "up" : "horizontally")
@@ -1079,16 +1070,7 @@ public struct ScrollPageContentTool: AgentTool {
         }
         let parsed = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
         let steps = min(max(parsed.int("steps") ?? 3, 1), 10)
-        let deltaY: Int32
-        if let num = parsed["delta_y"] as? NSNumber {
-            deltaY = num.int32Value
-        } else if let val = parsed["delta_y"] as? Int {
-            deltaY = Int32(val)
-        } else if let val = parsed["delta_y"] as? Double {
-            deltaY = Int32(val)
-        } else {
-            deltaY = -10
-        }
+        let deltaY = parsed.clampedInt32("delta_y") ?? -10
         let delayMs = min(max(parsed.int("delay_ms") ?? 350, 100), 2000)
         let appName = parsed.string("app_name")
 
@@ -1102,3 +1084,18 @@ public struct ScrollPageContentTool: AgentTool {
 
 /// Backwards compatibility alias for `ScrollPageContentTool`.
 public typealias ScrollPinnedWindowTool = ScrollPageContentTool
+
+extension Dictionary where Key == String, Value == Any {
+    func clampedInt32(_ key: String) -> Int32? {
+        if let value = self[key] as? NSNumber,
+           CFGetTypeID(value) == CFBooleanGetTypeID() { return nil }
+        if let value = self[key] as? Int { return Int32(clamping: value) }
+        if let value = self[key] as? Double, value.isFinite {
+            let rounded = value.rounded(.towardZero)
+            if rounded <= Double(Int32.min) { return Int32.min }
+            if rounded >= Double(Int32.max) { return Int32.max }
+            return Int32(rounded)
+        }
+        return nil
+    }
+}

@@ -84,6 +84,8 @@ public actor GeminiLiveSession {
     private var receiveLoop: Task<Void, Never>?
     private var setupWatchdog: Task<Void, Never>?
     private var continuation: AsyncStream<Event>.Continuation?
+    private var connectionID = UUID()
+    private var pendingContexts: [String] = []
     /// Whether the server has sent `setupComplete`. Until it has, nothing sent
     /// on this socket lands anywhere.
     private var isConnected = false
@@ -105,6 +107,13 @@ public actor GeminiLiveSession {
             throw LanguageModelError.missingCredentials(provider: "gemini")
         }
 
+        if continuation != nil {
+            finish(.endedByUser)
+        }
+        pendingContexts.removeAll()
+        let currentID = UUID()
+        connectionID = currentID
+
         var components = URLComponents(
             string: "wss://generativelanguage.googleapis.com/ws/"
                 + "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")!
@@ -124,7 +133,7 @@ public actor GeminiLiveSession {
         setupWatchdog = Task { await self.performSetup() }
 
         continuation.onTermination = { [weak self] _ in
-            Task { await self?.close() }
+            Task { await self?.closeIfCurrent(currentID) }
         }
         return stream
     }
@@ -200,6 +209,7 @@ public actor GeminiLiveSession {
 
     /// Streams captured microphone audio. Expects 16 kHz mono Int16.
     public func sendAudio(_ pcm: Data) async {
+        guard isConnected else { return }
         let message: [String: Any] = [
             "realtimeInput": [
                 "audio": [
@@ -213,6 +223,16 @@ public actor GeminiLiveSession {
 
     /// Seeds the conversation with desktop context before the user speaks.
     public func sendContext(_ text: String) async {
+        guard isConnected else {
+            if task != nil {
+                pendingContexts.append(text)
+            }
+            return
+        }
+        await sendContextPayload(text)
+    }
+
+    private func sendContextPayload(_ text: String) async {
         let message: [String: Any] = [
             "clientContent": [
                 "turns": [["role": "user", "parts": [["text": text]]]],
@@ -223,6 +243,11 @@ public actor GeminiLiveSession {
     }
 
     public func close() {
+        finish(.endedByUser)
+    }
+
+    private func closeIfCurrent(_ id: UUID) {
+        guard connectionID == id else { return }
         finish(.endedByUser)
     }
 
@@ -243,6 +268,7 @@ public actor GeminiLiveSession {
         }
         self.continuation = nil
         isConnected = false
+        pendingContexts.removeAll()
 
         setupWatchdog?.cancel()
         setupWatchdog = nil
@@ -299,6 +325,11 @@ public actor GeminiLiveSession {
                 isConnected = true
                 setupWatchdog?.cancel()
                 setupWatchdog = nil
+                let queued = pendingContexts
+                pendingContexts.removeAll()
+                for text in queued {
+                    await sendContextPayload(text)
+                }
                 continuation?.yield(.connected)
                 continue
             }
