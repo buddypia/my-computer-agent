@@ -163,6 +163,16 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         state.unseenMessages = 0
     }
 
+    /// A window in the Dock is not read, so turns that arrive meanwhile count
+    /// as unseen and the voice caption comes back.
+    public func windowDidMiniaturize(_ notification: Notification) {
+        state.isChatOpen = false
+    }
+
+    public func windowDidDeminiaturize(_ notification: Notification) {
+        state.isChatOpen = true
+    }
+
     // MARK: - Internals
 
     private func makeWindowIfNeeded() -> NSPanel {
@@ -173,7 +183,7 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
             // `.titled` for somewhere to drag from and a close button; an
             // `NSPanel` with one also closes on Escape, which is the half of
             // "modal" worth keeping.
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = localized("Copilot — Chat", "Copilot — チャット", "Copilot — 채팅")

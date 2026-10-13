@@ -25,7 +25,7 @@ final class SetupWindowController {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 660),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = localized("My Computer Agent — Setup", "My Computer Agent — セットアップ",
