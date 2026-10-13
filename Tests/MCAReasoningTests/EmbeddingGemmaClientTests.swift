@@ -94,13 +94,13 @@ struct EmbeddingGemmaClientTests {
 
     @Test("SystemOneBackend resolves EmbeddingGemmaClient when configured")
     func systemOneBackendResolvesGemma() {
-        let clientLocal = SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "local"])
+        let clientLocal = SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "local"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written"))
         #expect(clientLocal is EmbeddingGemmaClient)
 
-        let clientGemma = SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "gemma"])
+        let clientGemma = SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "gemma"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written"))
         #expect(clientGemma is EmbeddingGemmaClient)
 
-        let clientExplicitUrl = SystemOneBackend.resolve(environment: ["MCA_EMBEDDING_GEMMA_URL": "http://127.0.0.1:8765/v1/evaluate"])
+        let clientExplicitUrl = SystemOneBackend.resolve(environment: ["MCA_EMBEDDING_GEMMA_URL": "http://127.0.0.1:8765/v1/evaluate"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written"))
         #expect(clientExplicitUrl is EmbeddingGemmaClient)
     }
 

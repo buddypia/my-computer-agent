@@ -27,7 +27,7 @@ public enum SystemOneBackend {
     public static func resolve(
         model: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        secrets: SecretStore = .shared
+        secrets: SecretStore
     ) -> any TypeSafeEvaluating {
         let gemmaModel = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         switch environment["MCA_SYSTEM_ONE"]?.lowercased() {
@@ -124,7 +124,7 @@ extension TypeSafeDecisionEngine {
     /// whichever backend decides: ranking is on the machine and only reorders, so it
     /// is not an opt-in the way a decision backend is.
     public static func live(confidenceThreshold: Float = 0.80, model: String? = nil) -> TypeSafeDecisionEngine {
-        let client = SystemOneBackend.resolve(model: model)
+        let client = SystemOneBackend.resolve(model: model, secrets: .shared)
         if client is CloudflareClefClient { CloudflareCredentials.shared.prefetch() }
         return TypeSafeDecisionEngine(
             client: client,

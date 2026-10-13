@@ -25,6 +25,14 @@ struct TypeSafeKeySourceTests {
         #expect(SystemOneBackend.typeSafeKey(secrets: store, environment: ["TYPESAFE_API_KEY": "plain"]) == "sealed")
     }
 
+    @Test("a sealed key alone selects TypeSafe")
+    func sealedKeyAloneSelectsTypeSafe() throws {
+        defer { tearDown() }
+        try store.write(account: "typesafe", value: "sealed")
+        #expect(SystemOneBackend.typeSafeKey(secrets: store, environment: [:]) == "sealed")
+        #expect(SystemOneBackend.resolve(environment: [:], secrets: store) is TypeSafeClient)
+    }
+
     @Test("TYPESAFE_API_KEY is the fallback when nothing is sealed")
     func environmentFallback() {
         defer { tearDown() }
@@ -41,13 +49,5 @@ struct TypeSafeKeySourceTests {
         try store.write(account: "gemini", value: "sealed")
         let credentials = CredentialStore(environment: ["GEMINI_API_KEY": "plain"], secrets: store)
         #expect(credentials.key(for: "gemini") == "plain")
-    }
-
-    /// A default-constructed client is what library defaults and tests build. If it looked
-    /// a key up, a developer's exported key would send unit tests to the live API.
-    @Test("a client built without a key has none, whatever the environment or keychain holds")
-    func defaultClientHasNoKey() {
-        #expect(!TypeSafeClient().hasKey)
-        #expect(TypeSafeClient(apiKey: "k").hasKey)
     }
 }

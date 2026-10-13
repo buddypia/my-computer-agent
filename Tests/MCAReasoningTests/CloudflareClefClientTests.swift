@@ -138,16 +138,16 @@ struct CloudflareClefClientTests {
 
     @Test("MCA_SYSTEM_ONE forces the backend")
     func backendOverride() {
-        #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef-flash"]) as? CloudflareClefClient)?.model == .clefFlash)
-        #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef"]) as? CloudflareClefClient)?.model == .clef)
-        #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "offline"]) is SystemOneBackend.Offline)
+        #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef-flash"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) as? CloudflareClefClient)?.model == .clefFlash)
+        #expect((SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "clef"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) as? CloudflareClefClient)?.model == .clef)
+        #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "offline"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is SystemOneBackend.Offline)
         #expect(SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "typesafe"], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is TypeSafeClient)
     }
 
     @Test("Clef is opt-in: Cloudflare credentials alone never select it")
     func clefIsOptIn() {
-        #expect(!(SystemOneBackend.resolve(environment: env) is CloudflareClefClient))
-        #expect(!(SystemOneBackend.resolve(environment: [:]) is CloudflareClefClient))
+        #expect(!(SystemOneBackend.resolve(environment: env, secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is CloudflareClefClient))
+        #expect(!(SystemOneBackend.resolve(environment: [:], secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written")) is CloudflareClefClient))
     }
 }
 

@@ -78,7 +78,28 @@ public struct SecretStore: Sendable {
     /// A plaintext record written by an older build is returned *and* silently
     /// re-sealed, so upgrading does not ask the user to paste their keys again
     /// and does not leave the plaintext behind.
-    public func read(account: String) -> String? {
+    ///
+    /// With `interactive: false` an item this binary may not read yields `nil` at once
+    /// instead of a macOS "allow access" dialog the caller would wait on.
+    public func read(account: String, interactive: Bool = true) -> String? {
+        interactive ? readRecord(account: account) : Self.withoutUserInteraction { readRecord(account: account) }
+    }
+
+    /// The legacy keychain's interaction switch is process-wide, hence the lock and
+    /// the restore. An interactive read racing this one fails as "no key" instead of
+    /// prompting, which every caller already handles.
+    private static let interactionLock = NSLock()
+    private static func withoutUserInteraction<T>(_ body: () -> T) -> T {
+        interactionLock.lock()
+        defer { interactionLock.unlock() }
+        var allowed: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&allowed)
+        SecKeychainSetUserInteractionAllowed(false)
+        defer { SecKeychainSetUserInteractionAllowed(allowed.boolValue) }
+        return body()
+    }
+
+    private func readRecord(account: String) -> String? {
         guard let record = KeychainItem.read(account: account, service: credentialService)
         else { return nil }
 
