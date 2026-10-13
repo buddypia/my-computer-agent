@@ -348,4 +348,41 @@ struct ContextMCPServerApprovalTests {
         #expect(!result.contains("was NOT run"))
         #expect(approver.requests.isEmpty)
     }
+
+    @Test("MCP numeric helpers do not trap on out-of-range or non-finite doubles")
+    func mcpNumericBounds() async throws {
+        #expect(ContextMCPServer.intValue(.double(1e100)) == nil)
+        #expect(ContextMCPServer.intValue(.double(.nan)) == nil)
+        #expect(ContextMCPServer.intValue(.double(.infinity)) == nil)
+        #expect(ContextMCPServer.intValue(.double(42.0)) == 42)
+        #expect(ContextMCPServer.mcpValue(NSNumber(value: 1e100)) == .double(1e100))
+        #expect(ContextMCPServer.mcpValue(NSNumber(value: 42)) == .int(42))
+
+        let result = try await ContextMCPServer.dispatch(
+            name: "recent_activity",
+            arguments: ["minutes_ago": .double(1e100), "limit": .double(1e100)],
+            store: store,
+            approver: AutoApproveToolApprover())
+        #expect(!result.isEmpty)
+    }
+
+    @Test("MCP tool metadata marks browser_wait read-only and exposes computer scroll properties")
+    func mcpToolMetadata() {
+        let waitDef = ToolDefinition(name: "browser_wait", description: "wait", parameters: Data("{}".utf8))
+        let waitTool = ContextMCPServer.mcpTool(from: waitDef)
+        #expect(waitTool.annotations.readOnlyHint == true)
+
+        let computer = ContextMCPServer.toolDefinitions.first { $0.name == "computer" }
+        if case .object(let schema) = computer?.inputSchema,
+           case .object(let props) = schema["properties"],
+           case .object(let actionProp) = props["action"],
+           case .string(let actionDesc) = actionProp["description"] {
+            #expect(actionDesc.contains("scroll"))
+            #expect(props["delta_y"] != nil)
+            #expect(props["delta_x"] != nil)
+            #expect(props["target_pid"] != nil)
+        } else {
+            Issue.record("Expected computer tool schema properties")
+        }
+    }
 }
