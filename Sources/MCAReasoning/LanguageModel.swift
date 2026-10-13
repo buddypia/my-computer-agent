@@ -206,6 +206,9 @@ public enum LanguageModelError: Error, CustomStringConvertible {
     case transport(String)
     case http(status: Int, body: String)
     case decoding(String)
+    /// The provider refuses this request's content as such (the on-device model
+    /// detecting a language it does not cover); another provider may accept it.
+    case unsupportedInput(String)
     case cancelled
 
     public var description: String {
@@ -220,6 +223,8 @@ public enum LanguageModelError: Error, CustomStringConvertible {
             return "HTTP \(status): \(body.prefix(500))"
         case .decoding(let message):
             return "Could not decode provider response: \(message)"
+        case .unsupportedInput(let message):
+            return "Input not supported: \(message)"
         case .cancelled:
             return "Generation cancelled"
         }
@@ -229,7 +234,7 @@ public enum LanguageModelError: Error, CustomStringConvertible {
     /// worth retrying on the same key; a 503 is worth failing over.
     public var isRetryable: Bool {
         switch self {
-        case .transport: return true
+        case .transport, .unsupportedInput: return true
         case .http(let status, let body):
             if status >= 500 || status == 429 { return true }
             if status == 400 && (body.localizedCaseInsensitiveContains("thinking") || body.localizedCaseInsensitiveContains("reasoning")) {

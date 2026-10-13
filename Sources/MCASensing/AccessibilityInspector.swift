@@ -559,8 +559,10 @@ public typealias UIStateInspecting = UIStateProviding
 extension AccessibilityInspector: UIStateProviding {
     public func captureSnapshot() async throws -> UIStateSnapshot {
         try Task.checkCancellation()
-        if requiresWindowScope && targetWindow == nil { throw SnapshotError.selectedWindowUnavailable }
-        if let targetWindow { return try await captureSnapshot(of: targetWindow) }
+        if requiresWindowScope && targetWindow == nil { throw Self.unavailable("no window was selected for this request") }
+        if let targetWindow {
+            return try await Self.retryingSelectedWindow { try await captureSnapshot(of: targetWindow) }
+        }
         guard AXIsProcessTrusted() else {
             return UIStateSnapshot(visibleCandidates: [], timestamp: Date())
         }
@@ -611,6 +613,40 @@ extension AccessibilityInspector: UIStateProviding {
         return matches.count == 1 ? matches.first : nil
     }
 
+    /// An app redrawing in answer to the input just sent to it is not a missing
+    /// window: cmux retitles its only window on a workspace switch, and a busy app
+    /// answers AX queries past `messagingTimeout`, so one identity check taken
+    /// mid-change fails. The selected window is observed again; one that is really
+    /// gone fails every attempt and is reported as before. Nothing else retries.
+    static func retryingSelectedWindow<T>(attempts: Int = 3, delay: Duration = .milliseconds(300),
+                                          _ body: () async throws -> T) async throws -> T {
+        for attempt in 1..<max(attempts, 1) {
+            do { return try await body() }
+            catch SnapshotError.selectedWindowUnavailable {
+                diagnostics.info("Selected window unavailable; observing again (attempt \(attempt + 1, privacy: .public)/\(attempts, privacy: .public))")
+                try await Task.sleep(for: delay)
+            }
+        }
+        return try await body()
+    }
+
+    /// The user-facing error stays one sentence; the log names the check that failed,
+    /// because without it a halted run cannot be told apart from a closed window.
+    /// Only counts and check names are logged: window titles are screen content.
+    private static let diagnostics = Logger(subsystem: "com.buddypia.mca", category: "AccessibilityInspector")
+
+    static func unavailable(_ check: String) -> SnapshotError {
+        diagnostics.info("Selected window unavailable: \(check, privacy: .public)")
+        return .selectedWindowUnavailable
+    }
+
+    /// Which half of the title+frame identity the AX windows failed: zero windows is an
+    /// unanswered query, title-only misses a retitle, frame-only misses a move.
+    static func axIdentityMismatch(_ windows: [(title: String?, bounds: CGRect?)], title: String, bounds: CGRect) -> String {
+        "no unique AX window (windows=\(windows.count) titleMatches=\(windows.filter { $0.title == title }.count) "
+            + "frameMatches=\(windows.filter { $0.bounds == bounds }.count))"
+    }
+
     private func selectedWindowInfo(_ target: PinnedWindow, pid: pid_t) throws -> (title: String, bounds: CGRect) {
         guard let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
               let entry = entries.first(where: {
@@ -620,7 +656,7 @@ extension AccessibilityInspector: UIStateProviding {
               }),
               let dictionary = entry[kCGWindowBounds as String] as? [String: Any],
               let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary),
-              Self.isValidCoordinateRect(bounds) else { throw SnapshotError.selectedWindowUnavailable }
+              Self.isValidCoordinateRect(bounds) else { throw Self.unavailable("window number not on screen for this process") }
         let title = entry[kCGWindowName as String] as? String ?? target.windowTitle
         let owned = entries.filter {
             ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid
@@ -634,7 +670,7 @@ extension AccessibilityInspector: UIStateProviding {
         }
         guard let index = Self.uniqueWindowIndex(identities, title: title, bounds: bounds),
               (owned[index][kCGWindowNumber as String] as? NSNumber)?.uint32Value == target.id else {
-            throw SnapshotError.selectedWindowUnavailable
+            throw Self.unavailable("another window of this process has the same title and frame")
         }
         return (title, bounds)
     }
@@ -714,7 +750,7 @@ extension AccessibilityInspector: UIStateProviding {
               let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
               target.bundleID == nil || app.bundleIdentifier == target.bundleID,
               !privacyFilter.isApplicationBlocked(bundleID: app.bundleIdentifier) else {
-            throw SnapshotError.selectedWindowUnavailable
+            throw Self.unavailable("process is gone, blocked or no longer the pinned app")
         }
         let before = try selectedWindowInfo(target, pid: pid)
         guard !PrivacyFilter.isWindowExcluded(bundleID: app.bundleIdentifier, windowTitle: before.title) else {
@@ -731,7 +767,7 @@ extension AccessibilityInspector: UIStateProviding {
             windows.forEach(Self.boundQueries(on:))
             let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
             guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
-                throw SnapshotError.selectedWindowUnavailable
+                throw Self.unavailable(Self.axIdentityMismatch(identities, title: before.title, bounds: before.bounds))
             }
             let window = windows[index]
             AXAttributes.enableEnhancedAccessibility(app: axApp, window: window)
@@ -749,7 +785,9 @@ extension AccessibilityInspector: UIStateProviding {
         }
         try Task.checkCancellation()
         let after = try selectedWindowInfo(target, pid: pid)
-        guard !app.isTerminated, before.title == after.title, before.bounds == after.bounds else { throw SnapshotError.selectedWindowUnavailable }
+        guard !app.isTerminated, before.title == after.title, before.bounds == after.bounds else {
+            throw Self.unavailable("title or frame changed during observation")
+        }
         return UIStateSnapshot(windowTitle: before.title, appBundleId: app.bundleIdentifier, appName: app.localizedName,
             focusedElementId: focusedId, focusedElementRole: focusedRole, focusedElementBounds: focusedBounds,
             visibleCandidates: Array(observed.prefix(maxCandidates)), timestamp: Date(), candidateLimit: maxCandidates)
@@ -764,18 +802,18 @@ extension AccessibilityInspector: UIStateProviding {
               let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
               targetWindow.bundleID == nil || app.bundleIdentifier == targetWindow.bundleID,
               !privacyFilter.isApplicationBlocked(bundleID: app.bundleIdentifier) else {
-            throw SnapshotError.selectedWindowUnavailable
+            throw Self.unavailable("process is gone, blocked or no longer the pinned app")
         }
         let before = try selectedWindowInfo(targetWindow, pid: pid)
         let axApp = AXUIElementCreateApplication(pid)
         let windows = copyElementArray(axApp, kAXWindowsAttribute) ?? []
         let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
         guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
-            throw SnapshotError.selectedWindowUnavailable
+            throw Self.unavailable(Self.axIdentityMismatch(identities, title: before.title, bounds: before.bounds))
         }
         let after = try selectedWindowInfo(targetWindow, pid: pid)
         guard !app.isTerminated, before.title == after.title, before.bounds == after.bounds else {
-            throw SnapshotError.selectedWindowUnavailable
+            throw Self.unavailable("title or frame changed during observation")
         }
         try Task.checkCancellation()
         guard AXUIElementPerformAction(windows[index], kAXRaiseAction as CFString) == .success else {
