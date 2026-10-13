@@ -23,4 +23,19 @@ struct NumericToolArgumentsTests {
         #expect(result == "[\n\n]")
         #expect(AccessibilityInspector(maxCandidates: input).maxCandidates == (input < 0 ? 0 : 100))
     }
+
+    @Test("Out-of-range coordinates and scroll deltas in ComputerActionTool do not trap")
+    func computerActionNumericBounds() async throws {
+        let tool = ComputerActionTool()
+        let badMove = try await tool.invoke(arguments: Data(#"{"action":"mouse_move","coordinate":[1e100,100]}"#.utf8))
+        #expect(badMove.contains("Error: 'coordinate' [x, y] is required"))
+
+        let badDrag = try await tool.invoke(arguments: Data(#"{"action":"left_click_drag","start_coordinate":[0,0],"coordinate":[1e100,0]}"#.utf8))
+        #expect(badDrag.contains("Error: Both 'start_coordinate' and 'coordinate' are required"))
+
+        let parsed: [String: Any] = ["delta_y": 1e100, "delta_x": -1e100, "bool": true]
+        #expect(parsed.clampedInt32("delta_y") == Int32.max)
+        #expect(parsed.clampedInt32("delta_x") == Int32.min)
+        #expect(parsed.clampedInt32("bool") == nil)
+    }
 }

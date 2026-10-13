@@ -23,9 +23,12 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
     }()
 
     // Circuit breaker state to prevent cascading 5s write stalls when daemon is down
-    private static let consecutiveFailures = OSAllocatedUnfairLock(initialState: 0)
-    private static let lastFailureTimestamp = OSAllocatedUnfairLock(initialState: Date.distantPast)
     private static let cooldownSeconds: TimeInterval = 2.0
+    private struct CircuitState: Sendable {
+        var consecutiveFailures: Int = 0
+        var lastFailureTimestamp: Date = .distantPast
+    }
+    private let circuitState = OSAllocatedUnfairLock(initialState: CircuitState())
 
     private let log = Logger(subsystem: "com.buddypia.mca", category: "EmbeddingGemmaTextEmbedding")
     public let dimension: Int
@@ -88,10 +91,10 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
         }
 
         // Circuit Breaker: fast-fail if daemon is unreachable to preserve memory write throughput
-        let isCoolingDown = Self.lastFailureTimestamp.withLock { last -> Bool in
-            Date().timeIntervalSince(last) < Self.cooldownSeconds
+        let isOpen = circuitState.withLock { state -> Bool in
+            state.consecutiveFailures >= 3 && Date().timeIntervalSince(state.lastFailureTimestamp) < Self.cooldownSeconds
         }
-        if isCoolingDown && Self.consecutiveFailures.withLock({ $0 >= 3 }) {
+        if isOpen {
             return nil
         }
 
@@ -141,11 +144,20 @@ public struct EmbeddingGemmaTextEmbedding: TextEmbedding, Sendable {
     }
 
     private func recordSuccess() {
-        Self.consecutiveFailures.withLock { $0 = 0 }
+        circuitState.withLock { state in
+            state.consecutiveFailures = 0
+        }
     }
 
     private func recordFailure() {
-        Self.lastFailureTimestamp.withLock { $0 = Date() }
-        Self.consecutiveFailures.withLock { $0 += 1 }
+        let now = Date()
+        circuitState.withLock { state in
+            if now.timeIntervalSince(state.lastFailureTimestamp) >= Self.cooldownSeconds {
+                state.consecutiveFailures = 1
+            } else {
+                state.consecutiveFailures += 1
+            }
+            state.lastFailureTimestamp = now
+        }
     }
 }
