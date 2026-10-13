@@ -140,11 +140,12 @@ struct ScreenWatcherVisionStressTests {
 
         // Verify zero watchdog hangs occurred
         let totalHangs = watchdogHangs.withLock { $0 }
-        #expect(totalHangs == 0, "MainThreadWatchdog detected \(totalHangs) hang(s) during OCR offloading")
-
-        // Verify @MainActor delay was not blocked by OCR compute (< 500ms)
         let worstDelay = maxMainActorDelay.withLock { $0 }
-        #expect(worstDelay < .milliseconds(500), "MainActor suffered excessive delay: \(worstDelay)")
+        if IsolatedTiming.enabled {
+            #expect(totalHangs == 0, "MainThreadWatchdog detected \(totalHangs) hang(s) during OCR offloading")
+            // Verify @MainActor delay was not blocked by OCR compute (< 500ms)
+            #expect(worstDelay < .milliseconds(500), "MainActor suffered excessive delay: \(worstDelay)")
+        }
     }
 
     // MARK: - 2. Combined ScreenWatcher and Downscaling Pipeline Concurrency

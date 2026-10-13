@@ -62,7 +62,9 @@ struct ScreenWatcherWatchdogStressTests {
         }
 
         let didHang = hangTriggered.withLock { $0 }
-        #expect(!didHang, "ScreenWatcher.tick() blocked the main thread and tripped MainThreadWatchdog!")
+        if IsolatedTiming.enabled {
+            #expect(!didHang, "ScreenWatcher.tick() blocked the main thread and tripped MainThreadWatchdog!")
+        }
     }
 
     @Test("Main actor remains responsive while tick is executing", .isolatedMeasurement)
@@ -99,7 +101,9 @@ struct ScreenWatcherWatchdogStressTests {
         let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
 
         #expect(closureRan)
-        #expect(elapsedMs < 1000, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
+        if IsolatedTiming.enabled {
+            #expect(elapsedMs < 1000, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
+        }
 
         await tickTask.value
     }

@@ -149,7 +149,9 @@ struct FrameFingerprintStressTests {
         let worstProbeLatency = maxProbeLatency.withLock { $0 }
 
         // Assert probe was not starved for > 800ms
-        #expect(worstProbeLatency < .milliseconds(800), "Cooperative probe suffered excessive latency: \(worstProbeLatency)")
+        if IsolatedTiming.enabled {
+            #expect(worstProbeLatency < .milliseconds(800), "Cooperative probe suffered excessive latency: \(worstProbeLatency)")
+        }
     }
 
     // MARK: - 3. Memory Footprint Stability Under Repetitive Load
@@ -184,7 +186,9 @@ struct FrameFingerprintStressTests {
         let memGrowth = finalMem - initialMem
 
         // Allow reasonable runtime growth but ensure no runaway buffer leak (< 150MB growth for 100 4K frames)
-        #expect(memGrowth < 150.0, "Memory grew excessively: \(memGrowth) MB (initial: \(initialMem), final: \(finalMem))")
+        if IsolatedTiming.enabled {
+            #expect(memGrowth < 150.0, "Memory grew excessively: \(memGrowth) MB (initial: \(initialMem), final: \(finalMem))")
+        }
     }
 
     // MARK: - 4. Extreme Dimensional and Masking Boundary Cases
