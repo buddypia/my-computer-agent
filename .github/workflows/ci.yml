@@ -56,8 +56,8 @@ jobs:
             done
             sleep 0.2
           done
-          sleep 2
-          wait || true
+          for i in $(seq 1 60); do pgrep -x sample > /dev/null || break; sleep 1; done
+          ls -la sample-*.txt || true
           grep -E "✘|Test run with" test.log | cut -c1-220 || true
       - name: Upload diagnostics
         if: always()
