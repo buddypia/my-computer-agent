@@ -399,6 +399,8 @@ struct ErrorClassificationTests {
         #expect(LanguageModelError.http(status: 503, body: "").isRetryable)
         #expect(LanguageModelError.http(status: 429, body: "").isRetryable)
         #expect(LanguageModelError.transport("timeout").isRetryable)
+        #expect(LanguageModelError.unsupportedInput("language").isRetryable)
+        #expect(!LanguageModelError.unsupportedInput("language").description.contains("Network"))
         // A key this process does not have may exist for another provider.
         #expect(LanguageModelError.missingCredentials(provider: "gemini").isRetryable)
     }

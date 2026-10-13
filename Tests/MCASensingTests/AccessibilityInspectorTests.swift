@@ -24,6 +24,61 @@ struct AccessibilityInspectorTests {
         #expect(AccessibilityInspector.uniqueWindowIndex([("Meeting", .infinite)], title: "Meeting", bounds: .infinite) == nil)
     }
 
+    @Test("A selected window that is mid-change is observed again instead of halting the run")
+    func transientSelectedWindowIsRetried() async throws {
+        actor Counter { var value = 0; func next() -> Int { value += 1; return value } }
+        let calls = Counter()
+        let result = try await AccessibilityInspector.retryingSelectedWindow(delay: .zero) {
+            if await calls.next() < 3 { throw AccessibilityInspector.SnapshotError.selectedWindowUnavailable }
+            return "observed"
+        }
+        #expect(result == "observed")
+        #expect(await calls.value == 3)
+    }
+
+    @Test("A window that stays unavailable, and every other failure, still fails")
+    func persistentFailuresAreNotHidden() async {
+        actor Counter { var value = 0; func next() { value += 1 } }
+        let gone = Counter()
+        await #expect(throws: AccessibilityInspector.SnapshotError.selectedWindowUnavailable) {
+            try await AccessibilityInspector.retryingSelectedWindow(delay: .zero) { () async throws -> Int in
+                await gone.next()
+                throw AccessibilityInspector.SnapshotError.selectedWindowUnavailable
+            }
+        }
+        #expect(await gone.value == 3)
+
+        let excluded = Counter()
+        await #expect(throws: AccessibilityInspector.SnapshotError.selectedWindowExcluded) {
+            try await AccessibilityInspector.retryingSelectedWindow(delay: .zero) { () async throws -> Int in
+                await excluded.next()
+                throw AccessibilityInspector.SnapshotError.selectedWindowExcluded
+            }
+        }
+        #expect(await excluded.value == 1)
+    }
+
+    @Test("A selected-window snapshot goes through the re-observation, not a single check")
+    func selectedWindowSnapshotIsRetried() async {
+        // No process can match: every attempt fails, so the elapsed time shows the retries ran.
+        let gone = PinnedWindow(id: 0, appName: "Gone", windowTitle: "Gone", processID: nil)
+        let inspector = AccessibilityInspector(targetWindow: gone, requiresWindowScope: true)
+        let start = ContinuousClock.now
+        await #expect(throws: AccessibilityInspector.SnapshotError.selectedWindowUnavailable) {
+            _ = try await inspector.captureSnapshot()
+        }
+        #expect(ContinuousClock.now - start >= .milliseconds(550))
+    }
+
+    @Test("The identity diagnostic says which half failed and never logs a title")
+    func identityMismatchDiagnostic() {
+        let frame = CGRect(x: 10, y: 10, width: 200, height: 120)
+        let retitled = AccessibilityInspector.axIdentityMismatch([("design-lookbook", frame)], title: "operon", bounds: frame)
+        #expect(retitled.contains("windows=1 titleMatches=0 frameMatches=1"))
+        #expect(!retitled.contains("operon") && !retitled.contains("design-lookbook"))
+        #expect(AccessibilityInspector.axIdentityMismatch([], title: "operon", bounds: frame).contains("windows=0"))
+    }
+
     @Test("safely ignores own process PID and returns empty candidates")
     func testIgnoresOwnProcessPID() {
         let inspector = AccessibilityInspector(maxCandidates: 10)
