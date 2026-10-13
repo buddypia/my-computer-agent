@@ -273,10 +273,10 @@ public enum AccessibilityOutline {
         var budget = options.maxCharacters
         var kept: [String] = []
         var dropped = 0
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             if budget - line.count - 1 < 0 {
-                dropped += 1
-                continue
+                dropped = lines.count - index
+                break
             }
             budget -= line.count + 1
             kept.append(line)

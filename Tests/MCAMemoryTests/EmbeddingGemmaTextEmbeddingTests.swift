@@ -136,4 +136,26 @@ struct EmbeddingGemmaTextEmbeddingTests {
         #expect(await embedder.embed("...") == nil)
         #expect(sent.all.isEmpty)
     }
+
+    @Test("circuit breaker trips after 3 consecutive failures on the failing instance without blocking other instances")
+    func circuitBreakerIsolatedPerInstance() async {
+        let failingCalls = Calls<URLRequest>()
+        let failingEmbedder = EmbeddingGemmaTextEmbedding(dimension: 4) { req in
+            failingCalls.append(req)
+            return http(503, "Unavailable")
+        }
+        for _ in 0..<4 {
+            #expect(await failingEmbedder.embed("failing query") == nil)
+        }
+        #expect(failingCalls.all.count == 3)
+
+        let healthyCalls = Calls<URLRequest>()
+        let healthyEmbedder = EmbeddingGemmaTextEmbedding(dimension: 4) { req in
+            healthyCalls.append(req)
+            return http(200, #"{"dim":4,"vector":[1,0,0,0]}"#)
+        }
+        let result = await healthyEmbedder.embed("healthy query")
+        #expect(result?.count == 4)
+        #expect(healthyCalls.all.count == 1)
+    }
 }
