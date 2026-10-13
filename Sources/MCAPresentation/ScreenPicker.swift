@@ -708,6 +708,16 @@ public final class ScreenPickerWindow: NSObject, NSWindowDelegate {
         state.isScreenPickerOpen = false
     }
 
+    /// In the Dock the thumbnails are not visible, so the re-photographing
+    /// stops just as it does on close, and resumes with a reload on restore.
+    public func windowDidMiniaturize(_ notification: Notification) {
+        state.isScreenPickerOpen = false
+    }
+
+    public func windowDidDeminiaturize(_ notification: Notification) {
+        state.isScreenPickerOpen = true
+    }
+
     // MARK: - Internals
 
     private func makeWindowIfNeeded() -> NSPanel {
@@ -715,7 +725,7 @@ public final class ScreenPickerWindow: NSObject, NSWindowDelegate {
 
         let window = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.size),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = localized(
