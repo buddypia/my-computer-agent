@@ -99,8 +99,8 @@ struct FrameFingerprintStressTests {
 
     // MARK: - 2. High Concurrency Burst & Thread Pool Starvation Check
 
-    @Test("High-concurrency burst of 50 computeAsync tasks does not starve cooperative thread pool")
-    func concurrencyBurstNoStarvation() async throws {
+    @Test("High-concurrency burst of 50 computeAsync tasks does not starve cooperative thread pool", .isolatedMeasurement)
+    func concurrencyBurstNoStarvationIsolated() async throws {
         // High-resolution images simulating 2K Retina display screenshots
         let image = createTestImage(width: 2048, height: 1280, pattern: .checkerboard(16))
 
@@ -154,8 +154,8 @@ struct FrameFingerprintStressTests {
 
     // MARK: - 3. Memory Footprint Stability Under Repetitive Load
 
-    @Test("Repetitive computeAsync calls with 4K frames do not leak memory")
-    func repetitiveExecutionMemoryStability() async throws {
+    @Test("Repetitive computeAsync calls with 4K frames do not leak memory", .isolatedMeasurement)
+    func repetitiveExecutionMemoryStabilityIsolated() async throws {
         let image = createTestImage(width: 2560, height: 1600, pattern: .gradient)
 
         // Helper to query resident memory in MB

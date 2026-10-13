@@ -17,6 +17,7 @@
 #   G1  build      swift build          (~20s incremental)
 #   G2  trust      node --test Scripts/trust/tests/*.test.mjs  (~1s)
 #       test       swift test --xunit-output   (~12s)
+#       isolated   whole-process measurements, alone and serial (~25s)
 #       guards     trust.mjs incident check against this run's TAP + xUnit  (~0s)
 #   G3  bundle     Scripts/bundle.sh    (opt-in; minutes, and it codesigns)
 #
@@ -137,6 +138,26 @@ swift_tests() {
     swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT"
 }
 
+# Tests that measure the whole process (main-thread latency, the watchdog, resident memory) carry
+# `.isolatedMeasurement` and an `…Isolated` name. The parallel run above skips them: there they
+# measure their neighbours, which is what made CI red on a slow runner. Here they run alone, one at
+# a time. Fails closed, read from xUnit rather than console glyphs: fewer test cases than declared
+# `…Isolated(` functions (a filter or a target that matched nothing), or any skip, is not a pass.
+ISOLATED_XUNIT="$LOG_DIR/isolated-xunit.xml"
+ISOLATED_XUNIT_ST="$LOG_DIR/isolated-xunit-swift-testing.xml"
+
+isolated_tests() {
+    local declared ran skipped
+    rm -f "$ISOLATED_XUNIT" "$ISOLATED_XUNIT_ST"
+    MCA_ISOLATED_TESTS=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
+        --filter 'Isolated\(' --xunit-output "$ISOLATED_XUNIT" || return 1
+    declared="$(grep -rEho '\bfunc[[:space:]]+[A-Za-z0-9_]+Isolated[[:space:]]*\(' "$ROOT/Tests" | wc -l | tr -d ' ')"
+    ran="$(grep -o '<testcase ' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
+    skipped="$(grep -o '<skipped' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
+    echo "isolated: declared $declared, ran $ran, skipped $skipped"
+    [ "$declared" -gt 0 ] && [ "$ran" -ge "$declared" ] && [ "$skipped" -eq 0 ]
+}
+
 trust_guards() {
     local xunit=()
     [ -f "$SWIFT_XUNIT_ST" ] && xunit=(--xunit "$SWIFT_XUNIT_ST")
@@ -211,6 +232,7 @@ run_stage() {
 run_stage 1 build  swift build --package-path "$ROOT" || exit 1
 run_stage 2 trust  trust_tests                         || exit 1
 run_stage 2 test   swift_tests                         || exit 1
+run_stage 2 isolated isolated_tests                    || exit 1
 run_stage 2 guards trust_guards                        || exit 1
 run_stage 3 bundle "$ROOT/Scripts/bundle.sh"          || exit 1
 
