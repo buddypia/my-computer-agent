@@ -69,7 +69,7 @@ struct ScreenWatcherVisionStressTests {
 
     // MARK: - 1. Vision OCR Offloading Responsiveness on @MainActor
 
-    @Test("Vision OCR executes off @MainActor without inducing main thread latency")
+    @Test("Vision OCR executes off @MainActor without inducing main thread latency", .enabled(if: IsolatedTiming.enabled, "process-wide timing; see IsolatedTiming"))
     @MainActor
     func visionOCROffloadingMainActorResponsiveness() async throws {
         let sampleLines = [

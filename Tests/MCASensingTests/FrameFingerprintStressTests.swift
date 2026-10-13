@@ -8,6 +8,11 @@ import Testing
 @Suite("FrameFingerprint Stress and Empirical Adversarial Suite")
 struct FrameFingerprintStressTests {
 
+    /// Pool latency and resident memory belong to the whole test process, so a parallel run mixes in every
+    /// other test's work. Asserted only in an isolated run (see `IsolatedTiming` in mcaTests):
+    /// `MCA_ISOLATED_TIMING=1 swift test --no-parallel --filter StressTests`
+    static let isolatedTiming = ProcessInfo.processInfo.environment["MCA_ISOLATED_TIMING"] == "1"
+
     /// Generates synthetic RGB test image with configurable dimensions and content.
     private func createTestImage(
         width: Int,
@@ -149,12 +154,14 @@ struct FrameFingerprintStressTests {
         let worstProbeLatency = maxProbeLatency.withLock { $0 }
 
         // Assert probe was not starved for > 800ms
-        #expect(worstProbeLatency < .milliseconds(800), "Cooperative probe suffered excessive latency: \(worstProbeLatency)")
+        if Self.isolatedTiming {
+            #expect(worstProbeLatency < .milliseconds(800), "Cooperative probe suffered excessive latency: \(worstProbeLatency)")
+        }
     }
 
     // MARK: - 3. Memory Footprint Stability Under Repetitive Load
 
-    @Test("Repetitive computeAsync calls with 4K frames do not leak memory")
+    @Test("Repetitive computeAsync calls with 4K frames do not leak memory", .enabled(if: isolatedTiming, "process-wide memory"))
     func repetitiveExecutionMemoryStability() async throws {
         let image = createTestImage(width: 2560, height: 1600, pattern: .gradient)
 

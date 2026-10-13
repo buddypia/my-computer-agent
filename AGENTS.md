@@ -106,3 +106,5 @@ triage・routing・offline fallback（`TypeSafeDecisionEngine` / `RequestRoute`�
 - 依存の追加は `Package.swift` のレイヤ順（Core → Sensing → Perception → Memory
   → Reasoning → Realtime → Interop → Presentation）を壊さないこと。
 - 秘密情報をリポジトリに書かない。`SecretStore` 経由で Keychain に置く。
+- 並列の `swift test` ではプロセス全体の量（メインスレッドの遅延・watchdog の hang・常駐メモリ）をアサートしない。
+  他のテストの負荷が混ざり、対象コードについて何も言えないまま CI だけが落ちる。測るなら `IsolatedTiming` で隔離実行に限る。

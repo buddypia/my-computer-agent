@@ -72,7 +72,9 @@ struct ToolApprovalWatchdogStressTests {
         }
 
         let hangs = hangCount.withLock { $0 }
-        #expect(hangs == 0, "MainThreadWatchdog reported \(hangs) hangs during consecutive approval cycles!")
+        if IsolatedTiming.enabled {
+            #expect(hangs == 0, "MainThreadWatchdog reported \(hangs) hangs during consecutive approval cycles!")
+        }
     }
 
     @Test("Copilot-style ChatToolApprover executes 4 consecutive rounds without focus trap or lingering surface")
@@ -182,6 +184,8 @@ struct ToolApprovalWatchdogStressTests {
         #expect(interleavingPassed > 0, "MainActor cooperative closures were able to interleave during approval lifecycle")
 
         let hangs = hangCount.withLock { $0 }
-        #expect(hangs == 0, "restoreFocus triggered watchdog hang!")
+        if IsolatedTiming.enabled {
+            #expect(hangs == 0, "restoreFocus triggered watchdog hang!")
+        }
     }
 }
