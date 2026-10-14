@@ -104,7 +104,9 @@ struct CDPBrowserExclusionTests {
             #"[{"id":"tab-secret","type":"page","title":"Secret inbox","url":"https://secret.example/"}]"#)
         defer { server.stop() }
         let driver = await excludedDriver(
-            client: client, endpoint: ChromeDevToolsEndpoint(host: "127.0.0.1", port: server.port), activeTab: nil)
+            client: client,
+            endpoint: ChromeDevToolsEndpoint(host: "127.0.0.1", port: server.port, requestTimeout: 10),
+            activeTab: nil)
         await #expect(throws: BrowserError.self) {
             try await driver.switchTab(id: "tab-secret")
         }
@@ -125,20 +127,34 @@ private final class TabListServer: @unchecked Sendable {
     }
 
     static func start(_ body: String) async throws -> TabListServer {
+        let queue = DispatchQueue(label: "test.TabListServer", qos: .userInteractive)
         let listener = try NWListener(using: .tcp, on: .any)
+        let ready = ReadyFlag()
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { ready.markReady() }
+        }
         listener.newConnectionHandler = { connection in
-            connection.start(queue: .global())
+            connection.start(queue: queue)
             connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { _, _, _, _ in
                 let payload = Data(body.utf8)
                 let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(payload.count)\r\nConnection: close\r\n\r\n"
                 connection.send(content: Data(head.utf8) + payload, completion: .contentProcessed { _ in connection.cancel() })
             }
         }
-        listener.start(queue: .global())
-        for _ in 0..<100 where (listener.port?.rawValue ?? 0) == 0 { try await Task.sleep(nanoseconds: 50_000_000) }
+        listener.start(queue: queue)
+        for _ in 0..<200 where !ready.isReady || (listener.port?.rawValue ?? 0) == 0 {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
         let port = try #require(listener.port?.rawValue)
         return TabListServer(listener: listener, port: Int(port))
     }
 
     func stop() { listener.cancel() }
+
+    private final class ReadyFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        func markReady() { lock.lock(); value = true; lock.unlock() }
+        var isReady: Bool { lock.lock(); defer { lock.unlock() }; return value }
+    }
 }
