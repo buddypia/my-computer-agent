@@ -57,7 +57,7 @@ struct ToolTimeoutTests {
         let begin = ContinuousClock.now
         let output = await registry.invoke(ToolCall(id: "1", name: "stuck", arguments: Data("{}".utf8)))
         #expect(output.content.contains("did not finish within"))
-        #expect(ContinuousClock.now - begin < .seconds(3))
+        #expect(ContinuousClock.now - begin < .seconds(15))
     }
 
     @Test("A timed-out tool ends the action session")
@@ -110,7 +110,34 @@ struct ToolTimeoutTests {
             await registry.invoke(ToolCall(id: "1", name: "approve_then_done", arguments: Data("{}".utf8)))
         }
         #expect(output.content.contains("did not finish within"))
-        #expect(ContinuousClock.now - begin < .seconds(3))
+        #expect(ContinuousClock.now - begin < .seconds(15))
+    }
+
+    @Test("Tool and approval timeouts fire within their wall-clock budget")
+    func timeoutPromptnessIsolated() async throws {
+        let tool = StuckTool()
+        defer { tool.release() }
+        let stuckBegin = ContinuousClock.now
+        let stuckOut = await ToolRegistry(tools: [tool], timeout: .milliseconds(200))
+            .invoke(ToolCall(id: "1", name: "stuck", arguments: Data("{}".utf8)))
+        let stuckElapsed = ContinuousClock.now - stuckBegin
+        #expect(stuckOut.content.contains("did not finish within"))
+
+        let registry = ToolRegistry(tools: [ApprovalThenDoneTool()], timeout: .milliseconds(100),
+                                    approvalAllowance: .milliseconds(200))
+        let session = ActionAuthorization(goal: "Scroll", requestApproval: { _ in
+            try await Task.sleep(for: .seconds(30))
+            return .approved
+        })
+        let ceilingBegin = ContinuousClock.now
+        let ceilingOut = await ActionAuthorization.withSession(session) {
+            await registry.invoke(ToolCall(id: "1", name: "approve_then_done", arguments: Data("{}".utf8)))
+        }
+        let ceilingElapsed = ContinuousClock.now - ceilingBegin
+        #expect(ceilingOut.content.contains("did not finish within"))
+        let budget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(15)
+        #expect(stuckElapsed < budget)
+        #expect(ceilingElapsed < budget)
     }
 
     @Test("Once enough calls are stuck, further calls are refused without running")
