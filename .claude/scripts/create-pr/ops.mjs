@@ -1946,7 +1946,7 @@ export function assertQualityGateNotNoGo(absWtPath, force = false, staleReason =
  *
  * No-op when the merge changed nothing (`Already up to date`), which is the common case.
  */
-export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}) {
+export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}, staleReason = BASE_MERGE_STALE_REASON) {
   if (force) return;
   const { record } = readQualityGateRecord(absWtPath);
   if (record && record.verdict !== 'no_go') {
@@ -1973,7 +1973,7 @@ export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}
       return;
     }
   }
-  assertQualityGateNotNoGo(absWtPath, force, BASE_MERGE_STALE_REASON);
+  assertQualityGateNotNoGo(absWtPath, force, staleReason);
 }
 
 /**
@@ -2152,7 +2152,9 @@ function cmdShipWorktree(args) {
     }
   }
 
-  assertQualityGateNotNoGo(absWtPath, args['force-quality-gate'] === true);
+  // Same rule as after the merge below: a merge commit left by an earlier attempt that stopped later
+  // moved HEAD past the PROOF without touching the approved diff.
+  assertQualityGateFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true, {}, null);
 
   const status = git(['status', '--porcelain', '--untracked-files=all'], { cwd: absWtPath }).trim();
   if (status.length > 0) {
