@@ -593,9 +593,10 @@ public struct ScreenPickerView: View {
         targets = list
         hasLoaded = true
         // Synchronize selectedItems with active watchItems from state
-        for item in state.watchItems {
-            selectedItems[item.targetKey] = item
-        }
+        selectedItems = Dictionary(
+            state.watchItems.map { ($0.targetKey, $0) },
+            uniquingKeysWith: { _, last in last }
+        )
         // Open on the tab the current subject is in, and fall back to whichever
         // one has anything in it. A picker that opens on an empty "Windows" tab
         // while two displays sit in the other one reads as broken.

@@ -331,7 +331,7 @@ public final class HUDPanel: NSObject, NSWindowDelegate {
         guard let panel else { return }
         let old = panel.frame
         let x = state.corner.isRight ? old.maxX - size.width : old.minX
-        let y = old.maxY - size.height
+        let y = (preferences.origin != nil || state.corner.isTop) ? old.maxY - size.height : old.minY
 
         isRepositioning = true
         panel.setFrame(
