@@ -142,6 +142,8 @@ const CHECK_LOCAL_BRANCH_SUPERSET = localBranchSupersetCheckEnabled(CFG);
 // Active flag stale threshold (30 minutes)
 export const ACTIVE_FLAG_STALE_MS = 30 * 60 * 1000;
 const MERGEABLE_TIMEOUT_MS = 300_000;
+/** CI on a fresh head takes 5–10 min here; the mergeability budget would give up before it ends. */
+const CHECKS_TIMEOUT_MS = 1_800_000;
 const MERGEABLE_POLL_MS = 5_000;
 
 // ═ Shell ═
@@ -805,7 +807,7 @@ const PASSING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
  * No checks at all is pending, not passed: right after the push they are not registered yet.
  * A queued run has no startedAt yet and is the newest of its check.
  */
-export function checksVerdict(rollup) {
+export function checksVerdict(rollup, required = []) {
   const latest = new Map();
   const started = (c) => c.startedAt || '\uffff';
   for (const c of rollup ?? []) {
@@ -815,7 +817,10 @@ export function checksVerdict(rollup) {
   }
   if (latest.size === 0) return { state: 'pending', failed: [] };
   const failed = [];
-  let pending = false;
+  // A required check that has not reported yet is pending, not absent: a fast workflow (gitleaks)
+  // going green first must not read as "all checks passed" while the gate is still queued.
+  const names = new Set([...latest.values()].map((c) => c.name ?? c.context));
+  let pending = required.some((name) => !names.has(name));
   for (const [key, c] of latest) {
     const done = c.__typename === 'StatusContext' ? c.state !== 'PENDING' && c.state !== 'EXPECTED' : c.status === 'COMPLETED';
     if (!done) pending = true;
@@ -834,16 +839,16 @@ export function checksVerdict(rollup) {
  * The rollup only counts while GitHub's PR head is `headSha`: right after a push it can still
  * describe the previous head, whose green checks say nothing about the tree being merged.
  */
-export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null } = {}) {
+export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null, required = [] } = {}) {
   let waited = 0;
   for (;;) {
     const pr = JSON.parse(ghFn([
       'pr', 'view', String(prNumber), '--repo', repo, '--json', 'headRefOid,statusCheckRollup',
     ]) || '{}');
-    const verdict = pr.headRefOid === headSha ? checksVerdict(pr.statusCheckRollup) : { state: 'pending' };
+    const verdict = pr.headRefOid === headSha ? checksVerdict(pr.statusCheckRollup, required) : { state: 'pending' };
     if (verdict.state === 'passed') return { passed: true, state: 'CHECKS_PASSED' };
     if (verdict.state === 'failed') return { passed: false, state: `CHECKS_FAILED: ${verdict.failed.join(', ')}` };
-    if (waited >= MERGEABLE_TIMEOUT_MS) return { passed: false, state: 'CHECKS_TIMEOUT' };
+    if (waited >= CHECKS_TIMEOUT_MS) return { passed: false, state: 'CHECKS_TIMEOUT' };
     if (sleepFn) sleepFn(MERGEABLE_POLL_MS);
     else execFileSync('sleep', [String(MERGEABLE_POLL_MS / 1000)]);
     waited += MERGEABLE_POLL_MS;
@@ -854,6 +859,35 @@ export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null 
 function hasWorkflows(dir) {
   const wf = join(dir, '.github', 'workflows');
   return existsSync(wf) && readdirSync(wf).some((f) => /\.ya?ml$/.test(f));
+}
+
+/**
+ * The base branch's required status checks, so a merge waits for those by name. [] only when GitHub
+ * says there are none (404: no protection or no status-check rule). Any other failure throws: reading
+ * it as "nothing required" would merge on whatever checks happened to be green.
+ */
+export function requiredChecks(repo, base, { ghFn = gh } = {}) {
+  let out;
+  try {
+    out = ghFn(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts[]']);
+  } catch (e) {
+    if (/HTTP 404/.test(`${e.stderr ?? ''} ${e.message ?? ''}`)) return [];
+    throw e;
+  }
+  return String(out || '').split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+/**
+ * Waits for this head's checks, then reads mergeability. A required check keeps the PR BLOCKED until
+ * it finishes, and waitMergeable returns on BLOCKED at once — so a head whose CI was still running
+ * (always the case right after ship merged the base) was deferred instead of merged.
+ */
+export function settleMergeable({ prNumber, repo, headSha, ciGated, required = [], ghFn = gh, sleepFn = null }) {
+  if (ciGated) {
+    const checks = waitChecks(prNumber, repo, headSha, { ghFn, sleepFn, required });
+    if (!checks.passed) return { mergeable: false, state: checks.state };
+  }
+  return waitMergeable(prNumber, repo, { ghFn, sleepFn });
 }
 
 function createAndMergePr({
@@ -867,7 +901,15 @@ function createAndMergePr({
     return { prNumber, prUrl, merged: false, pending: true, existing };
   }
 
-  let { mergeable, state } = waitMergeable(prNumber, repo);
+  const ciGated = Boolean(worktreeDir) && hasWorkflows(worktreeDir);
+  const required = ciGated ? requiredChecks(repo, base) : [];
+  const settle = () => settleMergeable({
+    prNumber, repo, ciGated, required,
+    headSha: worktreeDir ? git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim() : null,
+  });
+
+  let { mergeable, state } = settle();
+  let synced = false;
   if (!mergeable && worktreeDir && (state === 'BEHIND' || state === 'DIRTY' || state === 'BLOCKED')) {
     console.log(`[create-pr] PR #${prNumber} is not mergeable (${state}). Attempting automatic sync and retry.`);
     try {
@@ -909,10 +951,7 @@ function createAndMergePr({
 
       if (syncSuccess) {
         git(['push', 'origin', head], { cwd: worktreeDir, timeout: PUSH_TIMEOUT_MS, retry: 3 });
-        console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
-        const retryResult = waitMergeable(prNumber, repo);
-        mergeable = retryResult.mergeable;
-        state = retryResult.state;
+        synced = true;
       }
     } catch (syncErr) {
       console.error(`[create-pr] Error during automatic sync attempt: ${syncErr.message}`);
@@ -927,12 +966,17 @@ function createAndMergePr({
   // uncertified tree to the feature branch is harmless — nothing consumes it — whereas landing it on
   // the trunk is not, and this throws before the merge call below.
   if (worktreeDir) assertQualityGateFreshAfterBaseMerge(worktreeDir, forceQualityGate);
+  // After the assert, so a merge that rewrote this branch's diff fails now rather than after a CI wait.
+  if (synced) {
+    console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
+    ({ mergeable, state } = settle());
+  }
 
   // After the sync above, so a re-pushed head is judged by its own checks. The merge below names
   // the same sha, so GitHub refuses it if the head moved after the checks were read.
   const headSha = worktreeDir ? git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim() : null;
-  if (mergeable && worktreeDir && hasWorkflows(worktreeDir)) {
-    ({ passed: mergeable, state } = waitChecks(prNumber, repo, headSha));
+  if (mergeable && ciGated) {
+    ({ passed: mergeable, state } = waitChecks(prNumber, repo, headSha, { required }));
   }
 
   if (!mergeable) {
@@ -1915,6 +1959,15 @@ export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}
     // runner there is nothing to measure, so they keep the original strict block rather than
     // silently shipping an unverified merged tree.
     const runnerPresent = deps.runCiMirror ? true : existsSync(join(absWtPath, CI_MIRROR_SCRIPT));
+    const ciGated = deps.ciGated ?? hasWorkflows(absWtPath);
+    if (staleness.checked && staleness.stale && diffStatus === 'same' && ciGated) {
+      // Only the base moved, and createAndMergePr merges this exact head only after its CI passed
+      // (waitChecks under the same hasWorkflows predicate, merge pinned to the sha). That run is the
+      // gate on the merged tree, from a clean machine — re-running it here only added minutes, and
+      // without the CI mirror script it demanded a hand-written record for a tree nobody had seen.
+      console.log('[ship-worktree] Base merge moved HEAD; the merged tree is certified by its CI before merge.');
+      return;
+    }
     if (staleness.checked && staleness.stale && diffStatus === 'same' && runnerPresent) {
       reverifyMergedTree(absWtPath, record, deps);
       return;
