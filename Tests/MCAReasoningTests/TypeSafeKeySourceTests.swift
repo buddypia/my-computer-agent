@@ -66,19 +66,17 @@ struct KeychainInteractionTests {
     }
 
     /// The item is made by `/usr/bin/security`, so its access list names that tool and
-    /// not this test — what an app-saved key looks like to the CLI. Skipped if
-    /// `interactionPolicy` stops turning dialogs off (`noDialogsOutsideTheApp` fails
-    /// then): this read would be the dialog that hangs every process.
-    @Test(
-        "an item another binary owns fails at once and is not reported removed",
-        .enabled(if: {
-            _ = SecretStore.interactionPolicy
-            var allowed: DarwinBoolean = true
-            SecKeychainGetUserInteractionAllowed(&allowed)
-            return !allowed.boolValue
-        }()))
+    /// not this test — what an app-saved key looks like to the CLI.
+    @Test("an item another binary owns fails at once and is not reported removed")
     func foreignItemIsHonest() throws {
         let store = SecretStore(namespace: "com.buddypia.mca.tests.\(UUID().uuidString)")
+        // Fails rather than reads if dialogs are on: then the read below would be the
+        // dialog that hangs every process using the keychain.
+        _ = SecretStore.interactionPolicy
+        var allowed: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&allowed)
+        try #require(!allowed.boolValue)
+
         try security("add-generic-password", "-s", store.credentialService, "-a", "gemini", "-w", "foreign")
         defer { try? security("delete-generic-password", "-s", store.credentialService, "-a", "gemini") }
 
