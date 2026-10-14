@@ -1945,6 +1945,9 @@ export function assertQualityGateNotNoGo(absWtPath, force = false, staleReason =
  * point is the only place the rule can live (same reasoning as `.husky/pre-push`).
  *
  * No-op when the merge changed nothing (`Already up to date`), which is the common case.
+ *
+ * Also run before ship's own merge, with `staleReason` null: a retry starts from the merge commit
+ * the stopped attempt left, and the stale error must not claim this run merged the base.
  */
 export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}, staleReason = BASE_MERGE_STALE_REASON) {
   if (force) return;
@@ -1965,7 +1968,7 @@ export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}
       // (waitChecks under the same hasWorkflows predicate, merge pinned to the sha). That run is the
       // gate on the merged tree, from a clean machine — re-running it here only added minutes, and
       // without the CI mirror script it demanded a hand-written record for a tree nobody had seen.
-      console.log('[ship-worktree] Base merge moved HEAD; the merged tree is certified by its CI before merge.');
+      console.log('[ship-worktree] Only the base moved past the PROOF; CI certifies the merged tree before merge.');
       return;
     }
     if (staleness.checked && staleness.stale && diffStatus === 'same' && runnerPresent) {
@@ -2152,10 +2155,6 @@ function cmdShipWorktree(args) {
     }
   }
 
-  // Same rule as after the merge below: a merge commit left by an earlier attempt that stopped later
-  // moved HEAD past the PROOF without touching the approved diff.
-  assertQualityGateFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true, {}, null);
-
   const status = git(['status', '--porcelain', '--untracked-files=all'], { cwd: absWtPath }).trim();
   if (status.length > 0) {
     const err = new Error(
@@ -2168,6 +2167,11 @@ function cmdShipWorktree(args) {
     };
     throw err;
   }
+
+  // Same rule as after the merge below: a merge commit left by an earlier attempt that stopped later
+  // moved HEAD past the PROOF without touching the approved diff. After the dirty check, so any
+  // re-verification it runs measures committed content only.
+  assertQualityGateFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true, {}, null);
 
   const supersetWarnings = [];
   try {
