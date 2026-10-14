@@ -478,7 +478,7 @@ public enum ActCommand {
                 return 0
             }
 
-            guard let targetCenter = decision.targetCenter, decision.action != .none else {
+            guard Self.canExecute(decision) else {
                 print("No action executed (action is none or target center not found).")
                 return 0
             }
@@ -505,37 +505,57 @@ public enum ActCommand {
                 return 1
             }
             let synth = EventSynthesizer()
-            switch decision.action {
-            case .click:
-                print("Executing click at \(targetCenter)...")
-                try synth.click(at: targetCenter)
-            case .doubleClick:
-                print("Executing double-click at \(targetCenter)...")
-                try synth.click(at: targetCenter, clickCount: 2)
-            case .typeText:
-                if let text = decision.textInput {
-                    print("Executing typing: '\(text)'...")
-                    try synth.typeText(text)
-                }
-            case .scroll:
-                let delta = decision.scrollDelta ?? CGVector(dx: 0, dy: -5)
-                print("Executing scroll delta=(\(delta.dx), \(delta.dy))...")
-                try synth.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: targetCenter)
-            case .keyPress:
-                if let keys = decision.keyCombination {
-                    for key in keys {
-                        print("Executing keyPress '\(key)'...")
-                        try synth.pressKey(key)
-                    }
-                }
-            default:
-                break
-            }
+            try Self.performDecision(decision, using: synth)
             print("Action executed successfully.")
             return 0
         } catch {
             FileHandle.standardError.write(Data("Failed to execute action: \(error)\n".utf8))
             return 1
+        }
+    }
+
+    static func canExecute(_ decision: ComputerActionDecision) -> Bool {
+        switch decision.action {
+        case .typeText:
+            return decision.textInput != nil
+        case .keyPress:
+            return !(decision.keyCombination ?? []).isEmpty
+        case .click, .doubleClick, .scroll:
+            return decision.targetCenter != nil
+        default:
+            return false
+        }
+    }
+
+    static func performDecision(_ decision: ComputerActionDecision, using synth: any EventSynthesizing) throws {
+        switch decision.action {
+        case .click:
+            guard let targetCenter = decision.targetCenter else { return }
+            print("Executing click at \(targetCenter)...")
+            try synth.click(at: targetCenter, button: .left, clickCount: 1)
+        case .doubleClick:
+            guard let targetCenter = decision.targetCenter else { return }
+            print("Executing double-click at \(targetCenter)...")
+            try synth.click(at: targetCenter, button: .left, clickCount: 2)
+        case .typeText:
+            if let text = decision.textInput {
+                print("Executing typing: '\(text)'...")
+                try synth.typeText(text)
+            }
+        case .scroll:
+            guard let targetCenter = decision.targetCenter else { return }
+            let delta = decision.scrollDelta ?? CGVector(dx: 0, dy: -5)
+            print("Executing scroll delta=(\(delta.dx), \(delta.dy))...")
+            try synth.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: targetCenter, targetPID: nil)
+        case .keyPress:
+            if let keys = decision.keyCombination {
+                for key in keys {
+                    print("Executing keyPress '\(key)'...")
+                    try synth.pressKey(key)
+                }
+            }
+        default:
+            break
         }
     }
 }

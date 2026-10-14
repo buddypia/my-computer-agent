@@ -919,7 +919,9 @@ public struct HUDView: View {
     /// controls — the opposite of the point. The chat window, which is read
     /// rather than glanced at, keeps its always-visible one.
     private func row(_ message: ChatMessage) -> some View {
-        MessageBubble(message, textSize: 12, onApproval: { id, approved in
+        MessageBubble(message, textSize: 12, onAction: { payload, _ in
+            state.onExecuteAction?(payload, message.originTarget)
+        }, onApproval: { id, approved in
             state.resolveApproval(id, status: approved ? .approved : .rejected)
         })
             .overlay(alignment: .topTrailing) {

@@ -645,7 +645,7 @@ final class Copilot {
                 hudState.isStreaming = false
                 // The shared answer path owns authorization, cancellation and token identity.
                 ask(question, target: .display(PinnedDisplay(id: displayID, name: localized("Selected Region", "選択領域", "선택 영역"),
-                    width: Int(result.rect.width), height: Int(result.rect.height))), suppliedImages: [ImageAttachment(data: jpeg, mimeType: "image/jpeg")])
+                    width: Int(result.rect.width), height: Int(result.rect.height))), suppliedImages: [ImageAttachment(data: jpeg, mimeType: "image/jpeg")], recordsQuestion: false)
             } catch {
                 guard !Task.isCancelled, activeAnswerID == answerID else { return }
                 hudState.endStreaming(text: error.localizedDescription)
@@ -1656,10 +1656,10 @@ final class Copilot {
     /// `capturingScreen` attaches a photograph of the display. It is off by
     /// default because most questions are answered from the text the agent
     /// already has, and an image is the most expensive thing in a request.
-    func ask(_ question: String, capturingScreen: Bool = false, target: WatchTarget? = nil, suppliedImages: [ImageAttachment]? = nil) {
+    func ask(_ question: String, capturingScreen: Bool = false, target: WatchTarget? = nil, suppliedImages: [ImageAttachment]? = nil, recordsQuestion: Bool = true) {
         guard !hudState.isStreaming else { return }
         let hudTarget = hudState.watchTarget
-        hudState.beginStreaming(question: question)
+        hudState.beginStreaming(question: recordsQuestion ? question : nil)
         let answerID = UUID()
         activeAnswerID = answerID
         activeAnswerTask = Task { [weak self] in
@@ -1770,7 +1770,7 @@ final class Copilot {
                 // is genuinely unexpected and is shown verbatim.
                 let blocked = self.router.blockedReason(for: .answer)
                 await MainActor.run {
-                    self.hudState.isStreaming = false
+                    self.hudState.cancelStreaming()
                     // Once, under the question that failed. It used to be said
                     // twice — a bare failure in the thread and a card saying the
                     // same thing — because the two surfaces were two lists.
@@ -2366,17 +2366,17 @@ final class Copilot {
             if !hudState.isStreaming { hudState.beginStreaming() }
             hudState.appendToken(text)
         case .interrupted:
-            hudState.streamingText = ""
-            hudState.isStreaming = false
+            hudState.cancelStreaming()
         case .turnComplete:
             hudState.endVoiceTurn()
+            hudState.flushTokens()
             // Interrupted or silent turns carry no text; `endStreaming`
             // reports those as a failure, which would spam one "empty answer"
             // line per non-turn.
             guard !hudState.streamingText
                 .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else {
-                hudState.isStreaming = false
+                hudState.cancelStreaming()
                 break
             }
             hudState.endStreaming()

@@ -23,14 +23,14 @@ struct TypeSafeKeySourceTests {
         let credentials = CredentialStore(environment: ["TYPESAFE_API_KEY": "plain"], secrets: store)
         #expect(credentials.key(for: "typesafe") == "sealed")
         #expect(credentials.source(for: "typesafe") == .keychain)
-        #expect(SystemOneBackend.typeSafeKey(secrets: store, environment: ["TYPESAFE_API_KEY": "plain"]) == "sealed")
+        #expect(CredentialStore(environment: ["TYPESAFE_API_KEY": "plain"], secrets: store).key(for: "typesafe") == "sealed")
     }
 
     @Test("a sealed key alone selects TypeSafe")
     func sealedKeyAloneSelectsTypeSafe() throws {
         defer { tearDown() }
         try store.write(account: "typesafe", value: "sealed")
-        #expect(SystemOneBackend.typeSafeKey(secrets: store, environment: [:]) == "sealed")
+        #expect(CredentialStore(environment: [:], secrets: store).key(for: "typesafe") == "sealed")
         #expect(SystemOneBackend.resolve(environment: [:], secrets: store) is TypeSafeClient)
     }
 

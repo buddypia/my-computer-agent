@@ -52,6 +52,7 @@ struct WAVEncoderTests {
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var responseDelaySeconds: TimeInterval = 0
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -61,21 +62,32 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.badURL))
             return
         }
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+        let delay = Self.responseDelaySeconds
+        let work = { [weak self] in
+            guard let self else { return }
+            do {
+                let (response, data) = try handler(self.request)
+                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                self.client?.urlProtocol(self, didLoad: data)
+                self.client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                self.client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+        if delay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: work)
+        } else {
+            work()
         }
     }
 
     override func stopLoading() {}
 }
 
+@Suite(.serialized)
 struct GeminiTranscriberTests {
     @Test func transcribeParsesSuccessfulResponse() async throws {
+        MockURLProtocol.responseDelaySeconds = 0
         let expectedText = "明日の天気を教えてください"
         let jsonResponse = """
         {
@@ -139,6 +151,32 @@ struct GeminiTranscriberTests {
         #expect(!results.isEmpty)
         #expect(results.first?.text == expectedText)
         #expect(results.first?.isFinal == true)
+    }
+
+    @Test func finishWaitsForSpeechEndedUtteranceAndBuffersSubFrameChunks() async throws {
+        defer { MockURLProtocol.responseDelaySeconds = 0 }
+        MockURLProtocol.responseDelaySeconds = 0.04
+        let expectedText = "サブフレームと発話終了テスト"
+        let body = Data(#"{"candidates":[{"content":{"parts":[{"text":"\#(expectedText)"}]}}]}"#.utf8)
+        MockURLProtocol.requestHandler = { req in
+            (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, body)
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let transcriber = GeminiTranscriber(apiKey: "test-api-key", locale: Locale(identifier: "ja_JP"), session: URLSession(configuration: config))
+        try await transcriber.start()
+
+        let rate = 16_000.0
+        let allSamples = (0..<9_600).map { Float(sin(2.0 * .pi * 440.0 * Double($0) / rate) * 0.5) }
+            + Array(repeating: Float(0), count: 12_800)
+        for start in stride(from: 0, to: allSamples.count, by: 200) {
+            await transcriber.append(samples: Array(allSamples[start..<min(start + 200, allSamples.count)]), sampleRate: rate)
+        }
+        await transcriber.finish()
+
+        var results: [TranscriptChunk] = []
+        for await chunk in transcriber.results { results.append(chunk) }
+        #expect(results.map(\.text) == [expectedText])
     }
 
     @Test func missingApiKeyThrowsOnStart() async {

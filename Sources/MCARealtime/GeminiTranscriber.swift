@@ -43,10 +43,12 @@ public actor GeminiTranscriber: Transcribing {
     private var isCapturing = false
     private var speechSamples: [Float] = []
     private var preRollBuffer: [Float] = []
+    private var residualSamples: [Float] = []
     private var preRollMaxSamples: Int = 4800 // ~300ms at 16kHz default, updated on sample rate
     private var currentUtteranceStartTime: TimeInterval = 0
     private var currentSampleRate: Double = 16_000
     private var elapsedSamples: Int = 0
+    private var pendingTranscriptionTask: Task<Void, Never>?
 
     public nonisolated var results: AsyncStream<TranscriptChunk> { stream }
 
@@ -75,6 +77,10 @@ public actor GeminiTranscriber: Transcribing {
         }
         speechSamples.removeAll()
         preRollBuffer.removeAll()
+        residualSamples.removeAll()
+        isCapturing = false
+        vad = VoiceActivityDetector(sampleRate: currentSampleRate)
+        currentUtteranceStartTime = 0
         elapsedSamples = 0
         log.info("GeminiTranscriber started using model: \(self.model, privacy: .public)")
     }
@@ -86,13 +92,22 @@ public actor GeminiTranscriber: Transcribing {
             currentSampleRate = sampleRate
             vad = VoiceActivityDetector(sampleRate: sampleRate)
             preRollMaxSamples = Int(sampleRate * 0.3) // 300ms pre-roll
+            residualSamples.removeAll()
+        }
+
+        let combined: [Float]
+        if residualSamples.isEmpty {
+            combined = samples
+        } else {
+            combined = residualSamples + samples
+            residualSamples.removeAll(keepingCapacity: true)
         }
 
         let frameSize = vad.frameSampleCount
         var offset = 0
 
-        while offset + frameSize <= samples.count {
-            let frame = samples[offset..<(offset + frameSize)]
+        while offset + frameSize <= combined.count {
+            let frame = combined[offset..<(offset + frameSize)]
             let event = vad.process(frame: frame)
             let frameTime = Double(elapsedSamples + offset) / sampleRate
 
@@ -112,9 +127,7 @@ public actor GeminiTranscriber: Transcribing {
                     if duration >= 0.3 {
                         let utterance = speechSamples
                         let start = currentUtteranceStartTime
-                        Task { [weak self] in
-                            await self?.processUtterance(samples: utterance, sampleRate: sampleRate, start: start, duration: duration)
-                        }
+                        enqueueUtterance(samples: utterance, sampleRate: sampleRate, start: start, duration: duration)
                     }
                     speechSamples.removeAll(keepingCapacity: true)
                     isCapturing = false
@@ -128,9 +141,7 @@ public actor GeminiTranscriber: Transcribing {
                     if currentDuration >= 30.0 {
                         let utterance = speechSamples
                         let start = currentUtteranceStartTime
-                        Task { [weak self] in
-                            await self?.processUtterance(samples: utterance, sampleRate: sampleRate, start: start, duration: currentDuration)
-                        }
+                        enqueueUtterance(samples: utterance, sampleRate: sampleRate, start: start, duration: currentDuration)
                         speechSamples.removeAll(keepingCapacity: true)
                         currentUtteranceStartTime = frameTime
                     }
@@ -146,10 +157,21 @@ public actor GeminiTranscriber: Transcribing {
             offset += frameSize
         }
 
-        elapsedSamples += samples.count
+        if offset < combined.count {
+            residualSamples.append(contentsOf: combined[offset..<combined.count])
+        }
+        elapsedSamples += offset
     }
 
     public func finish() async {
+        if isCapturing && !residualSamples.isEmpty {
+            speechSamples.append(contentsOf: residualSamples)
+            residualSamples.removeAll()
+        }
+        if let pending = pendingTranscriptionTask {
+            await pending.value
+            pendingTranscriptionTask = nil
+        }
         if isCapturing && !speechSamples.isEmpty {
             let duration = Double(speechSamples.count) / currentSampleRate
             if duration >= 0.3 {
@@ -159,10 +181,30 @@ public actor GeminiTranscriber: Transcribing {
                 await processUtterance(samples: utterance, sampleRate: rate, start: start, duration: duration)
             }
         }
+        isCapturing = false
         speechSamples.removeAll()
         preRollBuffer.removeAll()
+        residualSamples.removeAll()
         continuation.finish()
         log.info("GeminiTranscriber finished")
+    }
+
+    private func enqueueUtterance(
+        samples: [Float],
+        sampleRate: Double,
+        start: TimeInterval,
+        duration: TimeInterval
+    ) {
+        let previous = pendingTranscriptionTask
+        pendingTranscriptionTask = Task { [weak self] in
+            _ = await previous?.value
+            await self?.processUtterance(
+                samples: samples,
+                sampleRate: sampleRate,
+                start: start,
+                duration: duration
+            )
+        }
     }
 
     // MARK: - API Transmission
