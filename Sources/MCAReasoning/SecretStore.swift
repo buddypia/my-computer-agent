@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import OSLog
 import Security
+import Synchronization
 
 /// Encrypted storage for provider API keys.
 ///
@@ -101,7 +102,9 @@ public struct SecretStore: Sendable {
     public func read(account: String) -> String? {
         let (stored, status) = KeychainItem.load(account: account, service: credentialService)
         guard let record = stored else {
-            if status != errSecItemNotFound, status != errSecSuccess {
+            if status != errSecItemNotFound, status != errSecSuccess,
+                Self.reportedUnreadable.withLock({ $0.insert("\(credentialService)/\(account)/\(status)").inserted })
+            {
                 Self.log.notice("""
                     Stored key for \(account, privacy: .public) is not readable here \
                     (\(status)); this process does not own it or may not ask.
@@ -159,10 +162,21 @@ public struct SecretStore: Sendable {
             account: account, data: record.encoded(), service: credentialService)
     }
 
-    @discardableResult
-    public func delete(account: String) -> Bool {
-        KeychainItem.delete(account: account, service: credentialService)
+    /// Throws for the reason `write` does: a key the user believes removed but that is
+    /// still in use is worse than an error. Removing a key that is not there succeeds.
+    public func delete(account: String) throws {
+        try KeychainItem.delete(account: account, service: credentialService)
     }
+
+    /// Whether a key is stored for `provider`, readable by this process or not — so a
+    /// caller can say "stored, but not readable here" instead of "no key".
+    public func contains(account: String) -> Bool {
+        KeychainItem.exists(account: account, service: credentialService)
+    }
+
+    /// Accounts already reported unreadable. The router reads credentials every five
+    /// seconds, and the same refusal logged on each read buries everything else.
+    private static let reportedUnreadable = Mutex<Set<String>>([])
 
     /// How the stored keys are protected, for display in Settings.
     ///
@@ -245,7 +259,7 @@ public struct SecretStore: Sendable {
     /// Throws away this namespace's wrapping key, standing in for an erased
     /// Secure Enclave.
     func destroyWrappingKeyForTesting() {
-        KeychainItem.delete(account: wrappingAccount, service: wrappingService)
+        try? KeychainItem.delete(account: wrappingAccount, service: wrappingService)
         Self.cache.forget(wrappingService)
     }
 }
@@ -441,12 +455,16 @@ public enum SecretStoreError: Error, CustomStringConvertible {
         switch self {
         case .keychain(let status):
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
-            guard status == errSecAuthFailed || status == errSecInteractionNotAllowed else {
+            guard [errSecAuthFailed, errSecInteractionNotAllowed, errSecInvalidOwnerEdit].contains(status) else {
                 return "Keychain error \(status): \(message)"
             }
-            // Outside the app the keychain may not ask (see `interactionPolicy`), so an
-            // item the app wrote cannot be changed from here.
-            return "Keychain error \(status): \(message). The app owns this item; change it in Settings ▸ Models & Keys."
+            // The item belongs to another build of mca (the app vs. the CLI), and outside
+            // the app the keychain may not ask (see `interactionPolicy`).
+            return """
+                Keychain error \(status): \(message). Another build of mca saved this item and \
+                only it may change it: use the app's Settings ▸ Models & Keys, or delete the \
+                item in Keychain Access.
+                """
         case .corruptRecord:
             return "The stored record is not in a format this build understands."
         }
@@ -511,11 +529,20 @@ private enum KeychainItem {
         guard addStatus == errSecSuccess else { throw SecretStoreError.keychain(addStatus) }
     }
 
-    @discardableResult
-    static func delete(account: String, service: String) -> Bool {
+    static func delete(account: String, service: String) throws {
         let query = base(account: account, service: service)
         let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw SecretStoreError.keychain(status)
+        }
+    }
+
+    /// Attributes only: the keychain answers that without consulting the item's access
+    /// list, so it neither fails nor asks for an item another binary owns.
+    static func exists(account: String, service: String) -> Bool {
+        var query = base(account: account, service: service)
+        query[kSecReturnAttributes as String] = true
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
     private static func base(account: String, service: String) -> [String: Any] {

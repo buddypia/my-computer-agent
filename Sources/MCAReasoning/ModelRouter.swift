@@ -52,7 +52,7 @@ public struct CredentialStore: Sendable {
     /// Providers whose key sealed in the keychain wins over the environment. A shell
     /// profile may export `TYPESAFE_API_KEY` in plaintext for other tools; that must not
     /// override the encrypted copy. The variable stays the fallback, as for CI.
-    static let sealedKeyFirst: Set<String> = ["typesafe"]
+    public static let sealedKeyFirst: Set<String> = ["typesafe"]
 
     public func key(for provider: String) -> String? {
         if let value = overrides[provider], !value.isEmpty { return value }
@@ -80,8 +80,10 @@ public struct CredentialStore: Sendable {
         }
     }
 
+    public static let providers = ["gemini", "anthropic", "openai-compatible", "typesafe"]
+
     public func availableProviders() -> [String] {
-        ["gemini", "anthropic", "openai-compatible", "typesafe"].filter { key(for: $0) != nil }
+        Self.providers.filter { key(for: $0) != nil }
     }
 }
 

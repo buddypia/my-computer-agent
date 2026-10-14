@@ -25,7 +25,7 @@ struct SecretStoreTests {
     /// teardown. Leaving items behind would not just be untidy: every run would
     /// add three more orphans to the developer's login keychain, for ever.
     private func tearDown() {
-        for account in accounts { store.delete(account: account) }
+        for account in accounts { try? store.delete(account: account) }
         store.destroyWrappingKeyForTesting()
     }
 
@@ -111,8 +111,12 @@ struct SecretStoreTests {
     func deletion() throws {
         defer { tearDown() }
         try store.write(account: "gemini", value: "temporary")
-        #expect(store.delete(account: "gemini"))
+        #expect(store.contains(account: "gemini"))
+        try store.delete(account: "gemini")
         #expect(store.read(account: "gemini") == nil)
+        #expect(!store.contains(account: "gemini"))
+        // Already gone is not a failure: the user asked for no key and has none.
+        try store.delete(account: "gemini")
     }
 
     /// Not an assertion about the machine — an Intel Mac legitimately has no

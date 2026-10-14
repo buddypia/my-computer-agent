@@ -138,11 +138,27 @@ func runDoctor() async {
     }
     let credentials = CredentialStore()
     let providers = credentials.availableProviders()
-    if providers.isEmpty {
+    // Stored but unusable here: saved by another build (the app vs. the CLI) or no longer
+    // decryptable. Reporting it as "no key" would send the user to `mca auth set`, which
+    // cannot replace an item another build owns.
+    let unreadable = CredentialStore.providers.filter {
+        !providers.contains($0) && SecretStore.shared.contains(account: $0)
+    }
+    if providers.isEmpty, unreadable.isEmpty {
         print("  ✗ no cloud provider keys found")
         print("    Set one with: mca auth set gemini")
-    } else {
-        for provider in providers { print("  ✓ \(provider) key present") }
+    }
+    for provider in providers {
+        let from = switch credentials.source(for: provider) {
+        case .environment(let variable): "$\(variable)"
+        case .override: "override"
+        case .keychain, nil: "keychain"
+        }
+        print("  ✓ \(provider) key present (\(from))")
+    }
+    for provider in unreadable {
+        print("  ✗ \(provider) key is stored but not usable here (saved by another build of mca, or no longer decryptable)")
+        print("    Replace it in the app's Settings ▸ Models & Keys; for the CLI, set $\(CredentialStore.environmentVariables(for: provider)[0]).")
     }
     print("")
 
@@ -319,8 +335,10 @@ func runAuth(_ arguments: [String]) {
 
     let provider = arguments[1]
     if arguments[0] == "delete" {
-        guard SecretStore.shared.delete(account: provider) else {
-            FileHandle.standardError.write(Data("Could not remove the key for \(provider).\n".utf8))
+        do {
+            try SecretStore.shared.delete(account: provider)
+        } catch {
+            FileHandle.standardError.write(Data("Could not remove the key for \(provider): \(error)\n".utf8))
             exit(1)
         }
         print("Removed key for \(provider).")

@@ -16,7 +16,7 @@ struct TypeSafeClientCredentialTests {
     func configuredUsesCredentials() throws {
         let secrets = SecretStore(namespace: "com.buddypia.mca.tests.\(UUID().uuidString)")
         defer {
-            secrets.delete(account: "typesafe")
+            try? secrets.delete(account: "typesafe")
             secrets.destroyWrappingKeyForTesting()
         }
 

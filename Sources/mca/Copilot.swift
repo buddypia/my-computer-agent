@@ -413,8 +413,10 @@ final class Copilot {
     /// Without this, adding an API key in Settings would do nothing until the
     /// next launch — `ModelRouter` reads the keychain when it is constructed,
     /// and the proactive loop backs off for a minute at a time on a route it
-    /// believes is permanently blocked.
+    /// believes is permanently blocked. The decision engine holds the TypeSafe key it
+    /// was built with, so it is rebuilt too.
     func reloadReasoning() {
+        decisionEngine = TypeSafeDecisionEngine.live(model: configuration.embeddingGemmaModel)
         startReasoning()
         log.info("Reasoning reloaded after a credential change")
     }
