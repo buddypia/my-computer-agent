@@ -47,6 +47,12 @@ struct ApprovalPresentationAdversarialTests {
         #expect(window.firstResponder === window.contentView || window.firstResponder === window, "firstResponder must be contentView or window itself, never a text input")
     }
 
+    private func waitUntilAwaitingApproval(_ state: HUDState) async {
+        for _ in 0..<250 where !state.isAwaitingApproval {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     @Test("present() called while approval is awaiting keeps focus suppressed")
     func presentDuringApprovalKeepsFocusSuppressed() async throws {
         _ = NSApplication.shared
@@ -62,7 +68,7 @@ struct ApprovalPresentationAdversarialTests {
             await state.requestApproval(request)
         }
 
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntilAwaitingApproval(state)
         #expect(state.isAwaitingApproval, "State must be awaiting approval")
         #expect(state.chatInputFocusSuppressed, "chatInputFocusSuppressed must be true")
 
@@ -96,7 +102,7 @@ struct ApprovalPresentationAdversarialTests {
             let approval = Task {
                 await state.requestApproval(request)
             }
-            try await Task.sleep(for: .milliseconds(50))
+            await waitUntilAwaitingApproval(state)
             #expect(state.isAwaitingApproval, "Round \(round): must be awaiting approval")
 
             let window = try #require(NSApp.windows.first { $0.delegate === chat })
@@ -142,7 +148,7 @@ struct ApprovalPresentationAdversarialTests {
         let task = Task {
             await state.requestApproval(request)
         }
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntilAwaitingApproval(state)
 
         #expect(state.isAwaitingApproval)
         #expect(state.chatInputFocusSuppressed)
@@ -231,7 +237,7 @@ struct ApprovalPresentationAdversarialTests {
         chat.presentForApproval()
         let request = ActionApprovalRequest(goal: "g", operation: "o", target: "t", details: "d", consequence: "c")
         let approval = Task { await state.requestApproval(request) }
-        try await Task.sleep(for: .milliseconds(50))
+        await waitUntilAwaitingApproval(state)
 
         let window = try #require(NSApp.windows.first { $0.delegate === chat })
 
@@ -266,7 +272,7 @@ struct ApprovalPresentationAdversarialTests {
         state.chatInputFocusSuppressed = true
         let req1 = ActionApprovalRequest(goal: "g1", operation: "o1", target: "t1", details: "d1", consequence: "c1")
         let task1 = Task { await state.requestApproval(req1) }
-        try? await Task.sleep(for: .milliseconds(30))
+        await waitUntilAwaitingApproval(state)
         #expect(state.isAwaitingApproval)
         #expect(state.chatInputFocusSuppressed)
 
@@ -279,7 +285,7 @@ struct ApprovalPresentationAdversarialTests {
         state.chatInputFocusSuppressed = true
         let req2 = ActionApprovalRequest(goal: "g2", operation: "o2", target: "t2", details: "d2", consequence: "c2")
         let task2 = Task { await state.requestApproval(req2) }
-        try? await Task.sleep(for: .milliseconds(30))
+        await waitUntilAwaitingApproval(state)
         #expect(state.isAwaitingApproval)
         #expect(state.chatInputFocusSuppressed)
 

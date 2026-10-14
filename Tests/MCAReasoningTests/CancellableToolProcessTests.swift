@@ -7,22 +7,37 @@ struct CancellableToolProcessTests {
     @Test("Timeout stops descendants holding output pipes")
     func descendantTimeout() async throws {
         let output = try await CancellableToolProcess.run(executable: "/bin/sh",
-            arguments: ["-c", "sleep 1; printf late"], timeout: 0.1)
+            arguments: ["-c", "sleep 20; printf late"], timeout: 0.1)
         #expect(output.timedOut)
-        // Measure the supervised process operation, not unrelated executor delay
-        // before this awaiting test task is scheduled again under host load.
-        #expect(output.supervisorElapsed < .milliseconds(700))
+        #expect(output.supervisorElapsed < .seconds(10))
         #expect(!output.stdout.contains("late"))
     }
     @Test("Timeout escalates when the direct child ignores TERM")
     func resistantTimeout() async throws {
         let output = try await CancellableToolProcess.run(executable: "/bin/sh",
-            arguments: ["-c", "trap '' TERM; sleep 1"], timeout: 0.1)
+            arguments: ["-c", "trap '' TERM; sleep 20"], timeout: 0.1)
         #expect(output.timedOut)
-        #expect(output.supervisorElapsed < .milliseconds(700))
+        #expect(output.supervisorElapsed < .seconds(10))
     }
     @Test("Cancellation terminates the child that was actually started")
     func cancellation() async throws {
+        let started = AsyncStream<Void>.makeStream()
+        let clock = ContinuousClock(), begin = ContinuousClock.now
+        let task = Task {
+            try await CancellableToolProcess.run(executable: "/bin/sleep", arguments: ["20"], timeout: 25,
+                onStart: { started.continuation.yield(()); started.continuation.finish() })
+        }
+        for await _ in started.stream { break }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(clock.now - begin < .seconds(10))
+    }
+    @Test("Timeout and cancellation finish within their wall-clock budget")
+    func processTerminationPromptnessIsolated() async throws {
+        let descendant = try await CancellableToolProcess.run(executable: "/bin/sh",
+            arguments: ["-c", "sleep 1; printf late"], timeout: 0.1)
+        let resistant = try await CancellableToolProcess.run(executable: "/bin/sh",
+            arguments: ["-c", "trap '' TERM; sleep 1"], timeout: 0.1)
         let started = AsyncStream<Void>.makeStream()
         let clock = ContinuousClock(), begin = ContinuousClock.now
         let task = Task {
@@ -32,7 +47,13 @@ struct CancellableToolProcessTests {
         for await _ in started.stream { break }
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
-        #expect(clock.now - begin < .seconds(3))
+        let cancelElapsed = clock.now - begin
+        #expect(descendant.timedOut && resistant.timedOut)
+        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(700) : .seconds(10)
+        let cancelBudget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(10)
+        #expect(descendant.supervisorElapsed < supervisorBudget)
+        #expect(resistant.supervisorElapsed < supervisorBudget)
+        #expect(cancelElapsed < cancelBudget)
     }
     @Test("Output pipes are drained while the child runs")
     func output() async throws {

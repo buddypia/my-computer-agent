@@ -23,6 +23,9 @@ struct IsolatedMeasurementConventionTests {
         // A test's text runs from its `@Test` to the next one: the attribute, however many lines, any
         // modifiers before `func`, and the body where the switch is read. Same name pattern as the gate.
         let function = try Regex(#"\bfunc\s+(\w+)\s*\("#)
+        let tightWallBound = try Regex(
+            #"(?:<\s*\.(?:milliseconds\(|seconds\([1-9]\))|timeIntervalSince\([^)]*\)\s*<\s*[1-9](?:\.\d+)?\b)"#
+        )
         var isolated = 0
         for file in try Self.swiftFiles()
         where !["IsolatedTiming.swift", "IsolatedMeasurementConventionTests.swift"].contains(file.lastPathComponent) {
@@ -34,17 +37,28 @@ struct IsolatedMeasurementConventionTests {
                 let readsSwitch = chunk.contains("IsolatedTiming.enabled")
                 let hasSuffix = name.hasSuffix("Isolated")
                 #expect(readsSwitch == hasSuffix, "\(file.lastPathComponent): \(name)")
-                if readsSwitch { isolated += 1 }
+                if readsSwitch {
+                    isolated += 1
+                } else {
+                    #expect(
+                        !chunk.contains("closeAndWaitForSurfaceRemoval()"),
+                        "\(file.lastPathComponent): \(name) must pass a parallel-safe timeout or gate default 2s wait behind IsolatedTiming.enabled"
+                    )
+                    #expect(
+                        chunk.firstMatch(of: tightWallBound) == nil,
+                        "\(file.lastPathComponent): \(name) must gate tight wall-clock upper bounds behind IsolatedTiming.enabled"
+                    )
+                }
             }
         }
         // The scan has to see the tests it guards, or a moved Tests/ passes it vacuously.
-        #expect(isolated >= 11)
+        #expect(isolated >= 14)
     }
 
     @Test("every copy of the switch reads the variable the gate's isolated stage sets")
     func traitCopiesMatch() throws {
         let copies = try Self.swiftFiles().filter { $0.lastPathComponent == "IsolatedTiming.swift" }
-        #expect(copies.count >= 3)
+        #expect(copies.count >= 4)
         let texts = Set(try copies.map { try String(contentsOf: $0, encoding: .utf8) })
         #expect(texts.count == 1, "\(copies.map(\.path))")
         #expect(texts.allSatisfy { $0.contains(#"environment["MCA_ISOLATED_TIMING"] == "1""#) })
