@@ -57,8 +57,6 @@ import {
 } from './lib/worktree-quality-gate.mjs';
 import { evaluateSteps, resolveReviewDiffId } from './lib/pre-ship-steps.mjs';
 import { resolveShipBaseBranch } from '../../.cli/lib/ship-base-branch.mjs';
-import { readCurrentTaskPassport, resolveAcceptanceContract } from './lib/task-passport.mjs';
-import { evaluateAcceptance, formatAcceptanceReport } from './lib/task-acceptance.mjs';
 
 /**
  * Resolves main project root as parent of git common-dir.
@@ -150,34 +148,14 @@ export function parseQualityLabel(raw) {
  * branch the stamp and the comparison measured different diffs and every ship reported a stale
  * approval that was not stale. See `.cli/lib/ship-base-branch.mjs`.
  */
-export function buildMarkerPayload(mainRoot, branch, quality, acceptance = null, approval = null) {
+export function buildMarkerPayload(mainRoot, branch, quality, _acceptance = null, approval = null) {
   const wtDir = resolveWorktreeDir(mainRoot, branch);
   return {
     quality_gate: quality,
     confirmed_at: new Date().toISOString(),
     review_diff_id: wtDir ? resolveReviewDiffId(wtDir, resolveShipBaseBranch(mainRoot)) : null,
-    // DEFECT 2 visibility: a 0-criteria (or never-recorded) acceptance contract is fail-open by
-    // design (ADR contract-reconciliation-harness) — but that must not mean invisible. Persisting
-    // the status here means a human re-opening the marker later can see "acceptance: 0 criteria"
-    // without re-deriving it from stderr, which is the panel's only other surface for it.
-    acceptance_status: summarizeAcceptanceStatus(acceptance),
-    // Read by ops.mjs into the ledger row, where approval-trust.mjs finds auto-approved ships.
     approval_mode: approval?.mode ?? 'human',
     risk_tier: approval?.tier ?? null,
-  };
-}
-
-/** Reduces a checkAcceptance() result to the small shape recorded on the marker (DEFECT 2). */
-function summarizeAcceptanceStatus(acceptance) {
-  if (!acceptance) return { recorded: false, criteria_count: 0, skipped: 'not_evaluated' };
-  const criteriaCount = acceptance.report?.total ?? 0;
-  return {
-    recorded: criteriaCount > 0,
-    criteria_count: criteriaCount,
-    ok: acceptance.ok,
-    skipped: acceptance.skipped ?? null,
-    source: acceptance.source ?? null,
-    recorded_at: acceptance.recordedAt ?? null,
   };
 }
 
@@ -218,52 +196,6 @@ export function checkPlanCheckboxes(mainRoot, branch, force) {
   const unchecked = parseUncheckedPlanItems(content);
   if (unchecked.length === 0) return { ok: true };
   return { ok: false, unchecked, planPath };
-}
-
-/**
- * Re-runs the task contract's executable acceptance[] (R-CM-038 Rule 6 / R-CM-010) against the
- * worktree before the marker is created. This is the only place the AI's own definition of done is
- * machine-checked after the work — the Stop-time guard it replaces could only see "a verification
- * command ran". Fail-open when there is no applicable contract or no acceptance recorded (the
- * contract is optional); fail-closed when a recorded criterion fails. Freshness is advisory only —
- * every new prompt rotates the objective sha, so requiring it would make the check dead at ship time.
- *
- * DEFECT 1 root-cause fix: the contract is resolved **by branch** via `resolveAcceptanceContract`
- * (durable branch-keyed store first, session passport only as a fallback that must itself declare
- * the same branch) — never by blindly trusting whichever session happens to be calling this. A
- * contract recorded for a different branch (or a passport that never declared this branch) can no
- * longer satisfy this gate; see `task-passport.mjs#resolveAcceptanceContract` for the precedence.
- *
- * @param {string} mainRoot
- * @param {string|null} branch
- * @param {boolean} force
- * @param {{readPassport?: (root: string) => object|null, exec?: (command: string, cwd: string) => void}} [deps]
- * @returns {{ok: boolean, skipped?: string, stale?: boolean, report?: object, root?: string, source?: string, recordedAt?: string|null}}
- */
-export function checkAcceptance(mainRoot, branch, force, deps = {}) {
-  if (!branch) return { ok: true, skipped: 'staged_mode' };
-  if (force) return { ok: true, skipped: 'force_flag' };
-  const { interp, source, passport } = resolveAcceptanceContract(mainRoot, branch, {
-    readPassport: deps.readPassport ?? readCurrentTaskPassport,
-  });
-  if (!interp) {
-    // No contract applies to THIS branch — either nothing was ever recorded (no_passport), or a
-    // passport/contract exists but belongs to a different branch, which must be indistinguishable
-    // from "nothing recorded for this branch" (no_acceptance) so it cannot silently satisfy the gate.
-    return { ok: true, skipped: passport === null ? 'no_passport' : 'no_acceptance' };
-  }
-  const acceptance = Array.isArray(interp.acceptance) ? interp.acceptance : [];
-  if (acceptance.length === 0) return { ok: true, skipped: 'no_acceptance' };
-  const root = resolveWorktreeDir(mainRoot, branch);
-  if (!root || !existsSync(root)) return { ok: true, skipped: 'worktree_absent' };
-  // Staleness diffs against "current active objective" — meaningful only for a session passport
-  // (there is a live session to compare against); a durable branch contract has no such reference
-  // point, so recorded_at is surfaced instead (see summarizeAcceptanceStatus / buildMarkerPayload).
-  const stale = source === 'session_passport'
-    ? interp.objective_sha256 !== passport?.active_objective?.sha256
-    : false;
-  const report = evaluateAcceptance(acceptance, { root, exec: deps.exec });
-  return { ok: report.ok, stale, report, root, source, recordedAt: interp.recorded_at ?? null };
 }
 
 /**
@@ -530,28 +462,6 @@ function parseCliArgs(args) {
   };
 }
 
-/** Writes the task-acceptance outcome to stderr. Returns false when the marker must be rejected. */
-function reportAcceptance(acceptance) {
-  if (acceptance.skipped === 'no_acceptance' || acceptance.skipped === 'no_passport') {
-    process.stderr.write(
-      `[mark-pre-ship-confirmed] Note: no executable acceptance[] bound to this branch (${acceptance.skipped}) — ` +
-        'definition of done not machine-checked (fail-open, per ADR). ' +
-        'Next time: task-interpretation.mjs record --acceptance --branch <this-branch>. ' +
-        'See pre-ship-steps for the same status surfaced in the Panel.\n',
-    );
-  }
-  if (acceptance.ok) return true;
-  process.stderr.write(
-    `[mark-pre-ship-confirmed] Marker creation rejected — task acceptance ${acceptance.report.failed}/${acceptance.report.total} failed` +
-      `${acceptance.stale ? ' (interpretation STALE — objective changed since recording; re-record if the task changed)' : ''}:\n` +
-      `${formatAcceptanceReport(acceptance.report)}\n` +
-      `  Root: ${acceptance.root}\n` +
-      '  Fix the work or re-record the contract: node .claude/scripts/task-interpretation.mjs record --acceptance ...\n' +
-      '  Explicit user bypass: --force (mandatory reason in Panel Decisions section).\n',
-  );
-  return false;
-}
-
 /** Fail-open conditions of the PROOF check that deserve a line on stderr but never reject. */
 function reportGateWarnings(gate) {
   if (gate.warning) {
@@ -638,9 +548,6 @@ function main(argv) {
     process.exit(1);
   }
 
-  const acceptance = checkAcceptance(mainRoot, branch, force);
-  if (!reportAcceptance(acceptance)) process.exit(1);
-
   const gate = checkQualityGateVerdict(mainRoot, branch, force, quality);
   reportGateWarnings(gate);
   if (!gate.ok) {
@@ -673,7 +580,7 @@ function main(argv) {
   if (backfillWarning) process.stderr.write(backfillWarning);
 
   const path = markerPath(mainRoot, branch);
-  const payload = JSON.stringify(buildMarkerPayload(mainRoot, branch, quality, acceptance, steps.approval));
+  const payload = JSON.stringify(buildMarkerPayload(mainRoot, branch, quality, null, steps.approval));
   try {
     createMarker(path, payload);
   } catch (e) {

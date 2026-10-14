@@ -28,9 +28,11 @@ G3 が既定に入っていないのは、`build/` を作り直して `codesign`
 これはエージェントが毎ターン行ってよい副作用ではない。リリース前に人が
 `Scripts/gate.sh --stage 3` として明示的に通す。
 
-プロセス全体の量（main thread の遅延・watchdog・共有プールの壁時計・常駐メモリ）は並列の `swift test` で
-アサートしない。隣のテストの負荷まで測ってしまう。そのアサートだけを `if IsolatedTiming.enabled { … }` に入れ、
-テスト関数名を `…Isolated` で終える（`Tests/*/IsolatedTiming.swift`）。機能のアサートは常に走り、数値は
+プロセス全体の量（main thread の遅延・watchdog・共有プールの壁時計・常駐メモリ）は、並列の `swift test` では
+隣のテストの負荷まで測ってしまう。テスト関数名を `…Isolated` で終え（`Tests/*/IsolatedTiming.swift`）、上限は
+`let budget = IsolatedTiming.enabled ? tight : parallelSafe; #expect(elapsed < budget)` の三項演算子で書く。
+`if IsolatedTiming.enabled { #expect(…) }` ブロックにすると並列実行でアサート自体が消え、`swift-bar-move.mjs` の
+テスト基準引き下げ検知（`\.enabled\s*[({]`）にも引っかかる。機能のアサートは常に走り、厳しい数値は
 G2「隔離」が単独・直列に強制する。
 
 ### G0 がスキップする条件

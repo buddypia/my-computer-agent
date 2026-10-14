@@ -15,9 +15,64 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { classifyScale, parseNumstat } from '../../.claude/scripts/lib/ship-deck-core.mjs';
 import { resolveShipBaseRefs } from './ship-base-branch.mjs';
 import { withoutInheritedRepository } from './utils.mjs';
+
+export const SCALE_THRESHOLDS = {
+  largeFiles: 10,
+  largeLoc: 300,
+  smallFiles: 3,
+  smallLoc: 50,
+};
+
+export function normalizeRenamePath(path) {
+  const raw = String(path || '');
+  if (!raw.includes('=>')) return raw;
+  const braced = raw.replace(/\{([^{}]*)\s=>\s([^{}]*)\}/g, (_m, _from, to) => to);
+  if (braced !== raw) return braced.replace(/\/{2,}/g, '/');
+  const idx = raw.lastIndexOf('=>');
+  return raw.slice(idx + 2).trim();
+}
+
+export function parseNumstat(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+$/, ''))
+    .filter(Boolean)
+    .map((line) => {
+      const cols = line.split('\t');
+      if (cols.length < 3) return null;
+      const [addedRaw, deletedRaw, ...pathCols] = cols;
+      const path = normalizeRenamePath(pathCols.join('\t').trim());
+      if (!path) return null;
+      const added = addedRaw.trim() === '-' ? null : Number.parseInt(addedRaw, 10);
+      const deleted = deletedRaw.trim() === '-' ? null : Number.parseInt(deletedRaw, 10);
+      if (added !== null && Number.isNaN(added)) return null;
+      if (deleted !== null && Number.isNaN(deleted)) return null;
+      return { path, added, deleted };
+    })
+    .filter(Boolean);
+}
+
+export function classifyScale({ files = 0, loc = 0 } = {}) {
+  const t = SCALE_THRESHOLDS;
+  if (files >= t.largeFiles || loc >= t.largeLoc) {
+    return {
+      scale: 'large',
+      label: 'Large',
+      reason: `Files ${files} / LOC ${loc} — reached large threshold (files ≥ ${t.largeFiles} OR LOC ≥ ${t.largeLoc})`,
+    };
+  }
+  if (files <= t.smallFiles && loc <= t.smallLoc) {
+    return {
+      scale: 'small',
+      label: 'Small',
+      reason: `Files ${files} / LOC ${loc} — within small baseline (files ≤ ${t.smallFiles} AND LOC ≤ ${t.smallLoc})`,
+    };
+  }
+  return { scale: 'medium', label: 'Medium', reason: `Files ${files} / LOC ${loc} — medium scale` };
+}
 
 /** Default git runner — stubbed via gitFn in tests (R-CM-011 external command isolation) */
 export function defaultGit(cwd, args) {

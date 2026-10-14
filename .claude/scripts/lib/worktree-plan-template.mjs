@@ -68,8 +68,7 @@ export const DEFAULT_PLAN_SECTIONS = [
         type: 'checklist_group',
         subheading: '### Automated (Run within this turn)',
         items: [
-          '(Required — Commands like `npm test` / `npx vitest run <paths>`)',
-          '(Required — Automated checks like lint / audit / smoke tests)',
+          '(Required — Commands like `./Scripts/gate.sh` / `swift test --filter <Suite>`)',
         ],
       },
       {

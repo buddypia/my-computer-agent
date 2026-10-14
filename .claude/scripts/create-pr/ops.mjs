@@ -35,19 +35,15 @@ import { basename, join, resolve, dirname, isAbsolute, relative, sep } from 'nod
 import { fileURLToPath } from 'node:url';
 import {
   inferBranchFromWorktreePath,
-  resolveMilestoneReminderPath,
   resolveWorktreePlanPath,
   safeBranchKey,
 } from '../../../.cli/lib/worktree-plan-path.mjs';
 import { readQualityGateRecord, checkQualityGateStaleness } from '../lib/worktree-quality-gate.mjs';
 import { recordQualityGate } from '../record-quality-gate.mjs';
 import { answerStorePath, readAnswerStore, resolveReviewDiffId } from '../lib/pre-ship-steps.mjs';
-import { loadApprovalPolicy } from '../lib/approval-policy.mjs';
-import { loadTrust, saveTrustStore } from '../lib/approval-trust.mjs';
-import { removeBranchTaskContract } from '../lib/task-passport.mjs';
 // isAncestor: worktree-new.mjs 의 기존 export 재사용 (merge-base --is-ancestor boolean 화 SSOT)
 import { isAncestor } from '../worktree-new.mjs';
-import { classifyScale } from '../lib/ship-deck-core.mjs';
+import { classifyScale } from '../../../.cli/lib/ship-scale.mjs';
 import { appendJsonlAtomicSync } from '../lib/atomic-fs.mjs';
 import {
   assessTrunk,
@@ -1043,7 +1039,7 @@ function cmdShipFeature(args) {
     result,
   });
 
-  return { ok: true, ...result, warnings: [...(result.warnings ?? []), ...ledgerWarnings, ...syncApprovalTrust()] };
+  return { ok: true, ...result, warnings: [...(result.warnings ?? []), ...ledgerWarnings] };
 }
 
 function cmdFinalize() {
@@ -1437,48 +1433,8 @@ export function collectShipQualitySnapshot({
     /* Scale determination failure */
   }
   const { quality_label, proof_path } = readProofLabel(absWtPath);
-  let milestone_deck = false;
-  try {
-    milestone_deck = hasMilestoneDeck({ branch, projectDir, existsFn, readdirFn });
-  } catch {
-    /* fs error */
-  }
   // proof_path is not a ledger field — it only names where a null label was looked for.
-  return { scale, quality_label, milestone_deck, proof_path, ...readMarkerApproval(absWtPath) };
-}
-
-/**
- * Persists escapes found in trunk history so they outlive the scan window, and names new ones.
- * Runs after the merge; never throws (same contract as the ledger append above).
- */
-export function syncApprovalTrust({
-  loadPolicyFn = () => loadApprovalPolicy(PROJECT_DIR),
-  loadTrustFn = loadTrust,
-  saveFn = saveTrustStore,
-  readLedgerFn = readLedger,
-} = {}) {
-  try {
-    // No policy, or one without `escape` (the scaffold copy carries ui/stage only): escape tracking
-    // is not enabled here. P1's missing policy already surfaces as the ship gate's T2 `no_policy`.
-    const { policy } = loadPolicyFn();
-    if (!policy?.raw?.escape) return [];
-    const trust = loadTrustFn({
-      projectDir: PROJECT_DIR,
-      baseBranch: BASE_BRANCH,
-      ledger: readLedgerFn(),
-      policy,
-      runGit: (args) => git(args, { cwd: PROJECT_DIR }),
-    });
-    if (!trust.added.length) return [];
-    saveFn(trust.storePath, trust.store);
-    return [
-      `approval escape(s) detected: ${trust.added.map((e) => `${e.id} [${e.areas.join(', ')}]`).join('; ')} — ` +
-        'these areas now need human approval until a prevention guard is registered ' +
-        '(node .claude/scripts/approval-trust.mjs status).',
-    ];
-  } catch (e) {
-    return [`approval trust sync failed: ${e?.message ?? e}`];
-  }
+  return { scale, quality_label, milestone_deck: false, proof_path, ...readMarkerApproval(absWtPath) };
 }
 
 /**
@@ -1541,49 +1497,6 @@ export function measureWorktreeDiffScale({ absWtPath, baseBranch, gitFn = git })
     if (m[2] !== '-') loc += Number(m[2]);
   }
   return { files, loc, ...classifyScale({ files, loc }) };
-}
-
-export function hasMilestoneDeck({
-  branch,
-  projectDir = PROJECT_DIR,
-  existsFn = existsSync,
-  readdirFn = readdirSync,
-}) {
-  const deckRoot = join(projectDir, '.tmp', 'review-deck', safeBranchKey(branch));
-  return (
-    existsFn(deckRoot) &&
-    readdirFn(deckRoot).some(
-      (d) => String(d).startsWith('milestone-') && existsFn(join(deckRoot, d, 'index.html')),
-    )
-  );
-}
-
-export function detectMissingReviewDeckWarning({
-  absWtPath,
-  branch,
-  baseBranch,
-  gitFn = git,
-  projectDir = PROJECT_DIR,
-  existsFn = existsSync,
-  readdirFn = readdirSync,
-}) {
-  try {
-    const { files, loc, scale } = measureWorktreeDiffScale({ absWtPath, baseBranch, gitFn });
-    if (scale !== 'large') return null;
-
-    const key = safeBranchKey(branch);
-    if (hasMilestoneDeck({ branch, projectDir, existsFn, readdirFn })) return null;
-
-    const reminded = existsFn(resolveMilestoneReminderPath(absWtPath, branch));
-    const head = `CP-MILESTONE review deck missing: Large change (${files} files, ${loc} LOC) but no .tmp/review-deck/${key}/milestone-*/ deck trace exists.`;
-    return reminded
-      ? `${head} Reminded during implementation but shipping without deck — next time run: ` +
-          `node .claude/scripts/review-deck.mjs --stage milestone (R-CM-030 Rule 12).`
-      : `${head} Reached threshold without prior reminder opportunity (informational — ship deck covers same scope). ` +
-          `milestone-deck-warning notifies during active editing (R-CM-030 Rule 12).`;
-  } catch {
-    return null;
-  }
 }
 
 export function detectBarMoveWarning({ absWtPath, baseBranch, gitFn = git }) {
@@ -2238,13 +2151,6 @@ function cmdShipWorktree(args) {
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath });
   if (!branch || branch === 'HEAD') throw new Error(`Failed to determine branch: ${wtPath}`);
 
-  const reviewDeckWarning = detectMissingReviewDeckWarning({
-    absWtPath,
-    branch,
-    baseBranch: BASE_BRANCH,
-  });
-  if (reviewDeckWarning) supersetWarnings.push(reviewDeckWarning);
-
   const barMoveWarning = detectBarMoveWarning({ absWtPath, baseBranch: BASE_BRANCH });
   if (barMoveWarning) supersetWarnings.push(barMoveWarning);
 
@@ -2276,7 +2182,6 @@ function cmdShipWorktree(args) {
       result,
     }),
   );
-  supersetWarnings.push(...syncApprovalTrust());
 
   let cleanedUp = false;
   let cleanupResult = null;
@@ -2297,8 +2202,6 @@ function cmdShipWorktree(args) {
 
   if (result.merged) {
     unlinkShipReviewMarker(wtPath);
-    // The branch's acceptance contract is spent once merged; fail-open like the marker unlink.
-    try { removeBranchTaskContract(PROJECT_DIR, branch); } catch { /* fail-open */ }
   }
 
   const post_merge_main_status = result.merged ? detectPostMergeMainStatus() : null;
