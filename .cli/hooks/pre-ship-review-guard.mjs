@@ -24,7 +24,7 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import {
   readStdin,
   output,
@@ -87,6 +87,7 @@ import {
   safeBranchKey,
   inferBranchFromWorktreePath,
   preShipMarkerPath,
+  resolveWorktreePlanPath,
 } from '../lib/worktree-plan-path.mjs';
 import { loadReviewPanelConfig, renderReviewPanel } from '../lib/worktree-ship-report.mjs';
 import { resolveShipBaseBranch } from '../lib/ship-base-branch.mjs';
@@ -389,6 +390,32 @@ export function buildDenyMessage(branch, safeKey, projectDir, cwd, showChainHint
   return lines.join('\n');
 }
 
+/**
+ * True when `trust.mjs approve` recorded this worktree's Pre-Ship approval (AUTO_MERGE). The Panel
+ * is then not owed to anyone — AGENTS.md ships without asking — and the full deny text told the AI
+ * the opposite. The marker CLI still re-checks every step, so this only changes the guidance.
+ */
+export function trustRecordedApproval(worktreeAbs, branch) {
+  if (!worktreeAbs || !branch) return false;
+  try {
+    const answers = JSON.parse(
+      readFileSync(join(dirname(resolveWorktreePlanPath(worktreeAbs, branch)), 'pre-ship-answers.json'), 'utf-8'),
+    );
+    return answers?.approval?.source === 'trust';
+  } catch {
+    return false;
+  }
+}
+
+export function buildTrustApprovedDenyMessage(branch, helperPath) {
+  return [
+    '[pre-ship-review-guard] ship call blocked: no fresh Pre-Ship marker.',
+    'trust recorded the approval (AUTO_MERGE), so no Review Panel is needed. Create the marker in its',
+    'own Bash call (a marker made in the same chain is invisible to this hook), then re-run ship:',
+    `  node ${helperPath} ${branch} --quality <agent_go|skill_review_pass|self_review_pass|trivial_skip>`,
+  ].join('\n');
+}
+
 /** Returns `{ command, stripped }` for a real ship invocation, else null (not Bash / not ship / --help). */
 function shipInvocationOf(data) {
   if (data?.tool_name !== 'Bash') return null;
@@ -464,6 +491,9 @@ function evaluateShipInvocation(data, { command, stripped }) {
         'quality_label_missing',
       ),
     );
+  }
+  if (trustRecordedApproval(extractWorktreeAbsPath(command, projectDir), branch)) {
+    return HookOutput.deny(buildTrustApprovedDenyMessage(branch, resolveHelperPath(projectDir, data?.cwd)));
   }
   return HookOutput.deny(
     buildDenyMessage(branch, safeKey, projectDir, data?.cwd, showChainHint),

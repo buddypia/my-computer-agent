@@ -142,6 +142,8 @@ const CHECK_LOCAL_BRANCH_SUPERSET = localBranchSupersetCheckEnabled(CFG);
 // Active flag stale threshold (30 minutes)
 export const ACTIVE_FLAG_STALE_MS = 30 * 60 * 1000;
 const MERGEABLE_TIMEOUT_MS = 300_000;
+/** CI on a fresh head takes 5–10 min here; the mergeability budget would give up before it ends. */
+const CHECKS_TIMEOUT_MS = 1_800_000;
 const MERGEABLE_POLL_MS = 5_000;
 
 // ═ Shell ═
@@ -843,7 +845,7 @@ export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null 
     const verdict = pr.headRefOid === headSha ? checksVerdict(pr.statusCheckRollup) : { state: 'pending' };
     if (verdict.state === 'passed') return { passed: true, state: 'CHECKS_PASSED' };
     if (verdict.state === 'failed') return { passed: false, state: `CHECKS_FAILED: ${verdict.failed.join(', ')}` };
-    if (waited >= MERGEABLE_TIMEOUT_MS) return { passed: false, state: 'CHECKS_TIMEOUT' };
+    if (waited >= CHECKS_TIMEOUT_MS) return { passed: false, state: 'CHECKS_TIMEOUT' };
     if (sleepFn) sleepFn(MERGEABLE_POLL_MS);
     else execFileSync('sleep', [String(MERGEABLE_POLL_MS / 1000)]);
     waited += MERGEABLE_POLL_MS;
@@ -867,7 +869,19 @@ function createAndMergePr({
     return { prNumber, prUrl, merged: false, pending: true, existing };
   }
 
-  let { mergeable, state } = waitMergeable(prNumber, repo);
+  // A required check keeps the PR BLOCKED until it finishes, and waitMergeable returns on BLOCKED
+  // at once — so a head whose CI was still running (always the case right after ship merged the
+  // base) was deferred instead of merged. Wait for this head's checks first.
+  const ciGated = Boolean(worktreeDir) && hasWorkflows(worktreeDir);
+  const settle = () => {
+    if (ciGated) {
+      const checks = waitChecks(prNumber, repo, git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim());
+      if (!checks.passed) return { mergeable: false, state: checks.state };
+    }
+    return waitMergeable(prNumber, repo);
+  };
+
+  let { mergeable, state } = settle();
   if (!mergeable && worktreeDir && (state === 'BEHIND' || state === 'DIRTY' || state === 'BLOCKED')) {
     console.log(`[create-pr] PR #${prNumber} is not mergeable (${state}). Attempting automatic sync and retry.`);
     try {
@@ -910,7 +924,7 @@ function createAndMergePr({
       if (syncSuccess) {
         git(['push', 'origin', head], { cwd: worktreeDir, timeout: PUSH_TIMEOUT_MS, retry: 3 });
         console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
-        const retryResult = waitMergeable(prNumber, repo);
+        const retryResult = settle();
         mergeable = retryResult.mergeable;
         state = retryResult.state;
       }
@@ -931,7 +945,7 @@ function createAndMergePr({
   // After the sync above, so a re-pushed head is judged by its own checks. The merge below names
   // the same sha, so GitHub refuses it if the head moved after the checks were read.
   const headSha = worktreeDir ? git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim() : null;
-  if (mergeable && worktreeDir && hasWorkflows(worktreeDir)) {
+  if (mergeable && ciGated) {
     ({ passed: mergeable, state } = waitChecks(prNumber, repo, headSha));
   }
 
@@ -1915,6 +1929,15 @@ export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}
     // runner there is nothing to measure, so they keep the original strict block rather than
     // silently shipping an unverified merged tree.
     const runnerPresent = deps.runCiMirror ? true : existsSync(join(absWtPath, CI_MIRROR_SCRIPT));
+    const ciGated = deps.ciGated ?? hasWorkflows(absWtPath);
+    if (staleness.checked && staleness.stale && diffStatus === 'same' && ciGated) {
+      // Only the base moved, and createAndMergePr merges this exact head only after its CI passed
+      // (waitChecks under the same hasWorkflows predicate, merge pinned to the sha). That run is the
+      // gate on the merged tree, from a clean machine — re-running it here only added minutes, and
+      // without the CI mirror script it demanded a hand-written record for a tree nobody had seen.
+      console.log('[ship-worktree] Base merge moved HEAD; the merged tree is certified by its CI before merge.');
+      return;
+    }
     if (staleness.checked && staleness.stale && diffStatus === 'same' && runnerPresent) {
       reverifyMergedTree(absWtPath, record, deps);
       return;
