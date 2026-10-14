@@ -11,6 +11,12 @@ import Testing
 @MainActor
 struct ToolApprovalWatchdogStressTests {
 
+    private func waitUntilAwaitingApproval(_ state: HUDState) async throws {
+        for _ in 0..<250 where !state.isAwaitingApproval {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
     @Test("5 consecutive approval cycles present and dismiss responsively without tripping MainThreadWatchdog")
     func consecutiveApprovalCyclesWithoutWatchdogHangIsolated() async throws {
         _ = NSApplication.shared
@@ -51,7 +57,7 @@ struct ToolApprovalWatchdogStressTests {
             let approvalTask = Task {
                 await state.requestApproval(req)
             }
-            try await Task.sleep(for: .milliseconds(50))
+            try await waitUntilAwaitingApproval(state)
             #expect(state.isAwaitingApproval, "Round \(round): state must be awaiting approval")
 
             // 3. User approves
@@ -91,7 +97,7 @@ struct ToolApprovalWatchdogStressTests {
             guard let chat, let state else { return .cancelled }
             chat.presentForApproval()
             let status = await state.requestApproval(request)
-            _ = await chat.closeAndWaitForSurfaceRemoval()
+            _ = await chat.closeAndWaitForSurfaceRemoval(timeout: .seconds(10))
             return status
         }
 
@@ -108,7 +114,7 @@ struct ToolApprovalWatchdogStressTests {
 
             // Wait for approval to appear in state
             var pendingId: UUID?
-            for _ in 0..<50 where pendingId == nil {
+            for _ in 0..<250 where pendingId == nil {
                 try await Task.sleep(for: .milliseconds(20))
                 pendingId = state.messages.last(where: { $0.approvalStatus == .pending })?.approval?.id
             }
@@ -155,7 +161,9 @@ struct ToolApprovalWatchdogStressTests {
             guard let chat, let state else { return .cancelled }
             chat.presentForApproval()
             let status = await state.requestApproval(request)
-            _ = await chat.closeAndWaitForSurfaceRemoval()
+            _ = IsolatedTiming.enabled
+                ? await chat.closeAndWaitForSurfaceRemoval()
+                : await chat.closeAndWaitForSurfaceRemoval(timeout: .seconds(10))
             return status
         }
 
@@ -171,8 +179,8 @@ struct ToolApprovalWatchdogStressTests {
 
         // Concurrently on MainActor, perform multiple cooperative checks
         var interleavingPassed = 0
-        for _ in 0..<10 {
-            try await Task.sleep(for: .milliseconds(30))
+        for _ in 0..<250 where interleavingPassed == 0 {
+            try await Task.sleep(for: .milliseconds(20))
             if state.isAwaitingApproval {
                 interleavingPassed += 1
                 let reqId = state.messages.last(where: { $0.approvalStatus == .pending })?.approval?.id

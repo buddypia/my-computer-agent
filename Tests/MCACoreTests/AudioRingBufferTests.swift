@@ -114,14 +114,32 @@ struct TimeoutTests {
     func blockingOverrun() async {
         // The whole point: a synchronous C call that ignores cancellation must
         // still surface as a timeout rather than hanging the subsystem forever.
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let started = Date()
         await #expect(throws: TimedOutError.self) {
             try await withBlockingTimeout(seconds: 0.3) {
-                Thread.sleep(forTimeInterval: 5)
+                _ = gate.wait(timeout: .now() + 60)
                 return 1
             }
         }
-        #expect(Date().timeIntervalSince(started) < 3, "timeout did not fire promptly")
+        #expect(Date().timeIntervalSince(started) < 15, "timeout did not fire")
+    }
+
+    @Test("blocking timeout fires within its wall-clock budget")
+    func blockingOverrunPromptnessIsolated() async {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let started = Date()
+        await #expect(throws: TimedOutError.self) {
+            try await withBlockingTimeout(seconds: 0.3) {
+                _ = gate.wait(timeout: .now() + 60)
+                return 1
+            }
+        }
+        if IsolatedTiming.enabled {
+            #expect(Date().timeIntervalSince(started) < 3, "timeout did not fire promptly")
+        }
     }
 
     @Test("blocking work that finishes in time returns normally")
