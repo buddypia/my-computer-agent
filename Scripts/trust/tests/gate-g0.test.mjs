@@ -42,11 +42,13 @@ const gate = (root, mode) => {
   const count = join(root, '.tmp/swift-count');
   mkdirSync(dirname(count), { recursive: true });
   rmSync(count, { force: true });
+  // Inherited, it turns the gate's own `node --test` into a silent child of this run: no TAP, exit 0.
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
   const r = spawnSync(join(root, 'Scripts/gate.sh'), ['--stage', '1'], {
     encoding: 'utf-8',
     timeout: 60_000, // a retry loop that lost its bound fails here instead of hanging the suite
     env: {
-      ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_SWIFT_MODE: mode, FAKE_SWIFT_COUNT: count,
+      ...env, PATH: `${bin}:${process.env.PATH}`, FAKE_SWIFT_MODE: mode, FAKE_SWIFT_COUNT: count,
       MCA_GATE: 'on', MCA_GATE_NO_CACHE: '1', MCA_GATE_LOCK_RETRY_SECONDS: '0',
     },
   });
@@ -95,6 +97,18 @@ test('on main, a clean tree is still classified by its HEAD commit alone', () =>
   assert.match(r.out, /GATE SKIP\s+docs-only change/, r.out);
   assert.equal(r.runs, 0);
   assert.equal(r.status, 0, r.out);
+});
+
+test('a docs-only change that skips the build still fails on a failing trust check', () => {
+  const root = repo('trust-red');
+  writeFileSync(join(root, 'Scripts/trust/trust.mjs'), 'process.exit(1);\n');
+  commit(root, 'Scripts/trust/trust.mjs');
+  commit(root, 'docs/notes.md');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const r = gate(root, 'ok');
+  assert.match(r.out, /GATE FAIL\s+trust checks \(docs-only change\)/, r.out);
+  assert.equal(r.status, 1);
+  assert.equal(r.runs, 0);
 });
 
 test('G1 retries a build that found the build database locked, and passes when it frees', () => {
