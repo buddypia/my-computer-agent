@@ -22,12 +22,15 @@ const commit = (cwd, file) => {
   git(cwd, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qm', file);
 };
 
-/** A repo carrying this gate.sh, with `main` pushed to origin/main. */
+/** A repo carrying this gate.sh and passing trust stand-ins, with `main` pushed to origin/main. */
 const repo = (name) => {
   const root = join(scratch, name);
-  mkdirSync(join(root, 'Scripts'), { recursive: true });
+  mkdirSync(join(root, 'Scripts/trust/tests'), { recursive: true });
   git(root, 'init', '-q', '-b', 'main');
   copyFileSync(GATE, join(root, 'Scripts/gate.sh'));
+  // A docs-only change still runs the trust checks; without these it fails before it can skip.
+  writeFileSync(join(root, 'Scripts/trust/trust.mjs'), '');
+  writeFileSync(join(root, 'Scripts/trust/tests/ok.test.mjs'), "import { test } from 'node:test';\ntest('ok', () => {});\n");
   writeFileSync(join(root, '.gitignore'), '.tmp/\n');
   commit(root, 'Sources/A.swift');
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
@@ -41,6 +44,7 @@ const gate = (root, mode) => {
   rmSync(count, { force: true });
   const r = spawnSync(join(root, 'Scripts/gate.sh'), ['--stage', '1'], {
     encoding: 'utf-8',
+    timeout: 60_000, // a retry loop that lost its bound fails here instead of hanging the suite
     env: {
       ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_SWIFT_MODE: mode, FAKE_SWIFT_COUNT: count,
       MCA_GATE: 'on', MCA_GATE_NO_CACHE: '1', MCA_GATE_LOCK_RETRY_SECONDS: '0',
@@ -61,6 +65,7 @@ locked='error: unable to attach DB: error: accessing build database "x/build.db"
 case "$FAKE_SWIFT_MODE" in
   ok) echo 'Build complete!' ;;
   locked-once) [ "$n" -gt 1 ] || { echo "$locked"; exit 1; }; echo 'Build complete!' ;;
+  locked-long-once) [ "$n" -gt 1 ] || { echo "$locked"; yes 'Compiling MyComputerAgent SomeFile.swift' | head -n 5000; exit 1; }; echo 'Build complete!' ;;
   locked) echo "$locked"; exit 1 ;;
   broken) echo "error: cannot find 'x' in scope"; exit 1 ;;
 esac
@@ -87,14 +92,23 @@ test('on main, a clean tree is still classified by its HEAD commit alone', () =>
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   const r = gate(root, 'ok');
   assert.doesNotMatch(r.out, /GATE RUN/);
-  assert.match(r.out, /docs-only change/);
+  assert.match(r.out, /GATE SKIP\s+docs-only change/, r.out);
   assert.equal(r.runs, 0);
+  assert.equal(r.status, 0, r.out);
 });
 
 test('G1 retries a build that found the build database locked, and passes when it frees', () => {
   const root = repo('locked-once');
   const r = gate(root, 'locked-once');
   assert.equal(r.status, 0, r.out);
+  assert.equal(r.runs, 2);
+});
+
+// Real swift output runs to hundreds of KB, past a pipe buffer: `printf | grep -q` under pipefail
+// would fail on SIGPIPE once grep quits at the first match, and the lock would never be retried.
+test('G1 still recognises the lock in a build log longer than a pipe buffer', () => {
+  const r = gate(repo('locked-long-once'), 'locked-long-once');
+  assert.equal(r.status, 0, r.out.slice(-2000));
   assert.equal(r.runs, 2);
 });
 
