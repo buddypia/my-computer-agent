@@ -49,11 +49,11 @@ struct CancellableToolProcessTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         let cancelElapsed = clock.now - begin
         #expect(descendant.timedOut && resistant.timedOut)
-        if IsolatedTiming.enabled {
-            #expect(descendant.supervisorElapsed < .milliseconds(700))
-            #expect(resistant.supervisorElapsed < .milliseconds(700))
-            #expect(cancelElapsed < .seconds(3))
-        }
+        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(700) : .seconds(10)
+        let cancelBudget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(10)
+        #expect(descendant.supervisorElapsed < supervisorBudget)
+        #expect(resistant.supervisorElapsed < supervisorBudget)
+        #expect(cancelElapsed < cancelBudget)
     }
     @Test("Output pipes are drained while the child runs")
     func output() async throws {

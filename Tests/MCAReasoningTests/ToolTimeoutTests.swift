@@ -135,10 +135,9 @@ struct ToolTimeoutTests {
         }
         let ceilingElapsed = ContinuousClock.now - ceilingBegin
         #expect(ceilingOut.content.contains("did not finish within"))
-        if IsolatedTiming.enabled {
-            #expect(stuckElapsed < .seconds(3))
-            #expect(ceilingElapsed < .seconds(3))
-        }
+        let budget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(15)
+        #expect(stuckElapsed < budget)
+        #expect(ceilingElapsed < budget)
     }
 
     @Test("Once enough calls are stuck, further calls are refused without running")

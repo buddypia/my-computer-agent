@@ -137,9 +137,8 @@ struct TimeoutTests {
                 return 1
             }
         }
-        if IsolatedTiming.enabled {
-            #expect(Date().timeIntervalSince(started) < 3, "timeout did not fire promptly")
-        }
+        let budget = IsolatedTiming.enabled ? 3.0 : 15.0
+        #expect(Date().timeIntervalSince(started) < budget, "timeout did not fire promptly")
     }
 
     @Test("blocking work that finishes in time returns normally")
