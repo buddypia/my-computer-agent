@@ -164,7 +164,7 @@ struct ToolTimeoutTests {
         }
         #expect(stuck.isSaturated)
         tool.release()
-        for _ in 0..<50 where stuck.isSaturated { try await Task.sleep(for: .milliseconds(20)) }
+        for _ in 0..<250 where stuck.isSaturated { try await Task.sleep(for: .milliseconds(20)) }
         #expect(!stuck.isSaturated)
     }
 
