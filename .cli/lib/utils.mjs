@@ -13,13 +13,6 @@ import { execSync } from 'child_process';
 import { randomBytes } from 'crypto';
 import { isHookEnabled } from './hook-flags.mjs';
 
-// Execution telemetry state. Configured by safeHookMainWithProfile, consumed by output.
-// Placed at top to avoid TDZ ReferenceErrors.
-/** Hook id currently running in this process (1 hook = 1 process). @type {string|null} */
-let activeHookId = null;
-/** governance-writer module cache. null = unloaded or load failed (proceeds without telemetry). */
-let telemetryModule = null;
-
 // ═══════════════════════════════════════════════════════════════
 // Safe JSON File Reading (Centralized)
 //
@@ -358,16 +351,9 @@ export async function readStdin() {
  * Outputs JSON result to stdout.
  * Hook results must be delivered via stdout JSON.
  *
- * Additionally records **firing (numerator) telemetry** when result is deny/block.
- * Evaluation is handled by ledger format SSOT (`recordFiringIfDenyBlock`).
- * Since telemetry module is preloaded by `safeHookMainWithProfile`, invocation is synchronous.
- *
  * @param {object} data - Data to output
  */
 export function output(data) {
-  if (activeHookId && telemetryModule) {
-    telemetryModule.recordFiringIfDenyBlock(activeHookId, data, currentHookEventName());
-  }
   console.log(JSON.stringify(data));
 }
 
@@ -595,44 +581,6 @@ export function isDirectInvocation(importMetaUrl) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Execution Telemetry — Process Gate Independent of Dispatch Path
-//
-// Orchestrated hooks record evaluation (denominator) / firing (numerator) via orchestrator.
-// However, events without dispatchers (SessionEnd / PermissionRequest), prefix glob matchers (`mcp__*`),
-// `if` conditional registrations, and cliTargets adapter hooks were structurally excluded from orchestrator.
-//
-// All hooks pass through two functions in this file: entry via safeHookMainWithProfile and output via output.
-// Placing telemetry here ensures unified measurement regardless of dispatch method.
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Loads telemetry module once (failures do not impact hook execution).
- *
- * Dynamic import prevents circular dependencies with governance-writer (which imports resolveProjectDir).
- * In scaffold (Perspective 2), `.claude/scripts/lib/` is not distributed, naturally acting as a no-op.
- *
- * @returns {Promise<object|null>}
- */
-async function loadTelemetry() {
-  if (telemetryModule) return telemetryModule;
-  try {
-    telemetryModule = await import('../../.claude/scripts/lib/governance-writer.mjs');
-  } catch {
-    telemetryModule = null; // Telemetry absence does not impact guard decisions
-  }
-  return telemetryModule;
-}
-
-/**
- * Current hook event name. Injected by Claude Code; returns empty string on absence — does not guess.
- * @returns {string}
- */
-function currentHookEventName() {
-  const raw = process.env.CLAUDE_HOOK_EVENT_NAME;
-  return typeof raw === 'string' ? raw : '';
-}
-
 /**
  * Profile-aware safe hook main wrapper.
  * Combines safeHookMain with isHookEnabled checks.
@@ -640,20 +588,11 @@ function currentHookEventName() {
  * @param {string} hookId - Registry entry id
  * @param {() => Promise<void>} fn - Async main function
  * @param {{checkProfile?: boolean}} [opts] - `checkProfile: false` for unprofiled hooks (`profileChecked: false`).
- *   Telemetry is recorded regardless of profile gating.
  */
 export function safeHookMainWithProfile(hookId, fn, opts) {
   if (opts?.checkProfile !== false && !isHookEnabled(hookId)) {
     try { console.log('{}'); } catch { /* ignore broken stdout pipes */ }
     return;
   }
-  activeHookId = typeof hookId === 'string' && hookId ? hookId : null;
-  safeHookMain(async () => {
-    const telemetry = await loadTelemetry();
-    // Evaluation (denominator) = "dispatch reached this hook". Recorded before fn execution.
-    if (activeHookId && telemetry) {
-      telemetry.recordHookEvaluations([{ id: activeHookId }], currentHookEventName());
-    }
-    await fn();
-  });
+  safeHookMain(fn);
 }

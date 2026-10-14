@@ -18,19 +18,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writeJsonAtomicSync } from './atomic-fs.mjs';
-import {
-  defaultGit,
-  checkShipDeckFreshness,
-  hasMilestoneDeckTrace,
-  measureShipScale,
-} from '../../../.cli/lib/ship-scale.mjs';
-import { safeBranchKey, resolveWorktreePlanPath } from '../../../.cli/lib/worktree-plan-path.mjs';
+import { defaultGit, measureShipScale } from '../../../.cli/lib/ship-scale.mjs';
+import { resolveWorktreePlanPath } from '../../../.cli/lib/worktree-plan-path.mjs';
 import { parseUncheckedPlanItems } from '../../../.cli/lib/worktree-plan-status.mjs';
-import {
-  OBLIGATION_MIN_REASON_LENGTH,
-  parseObligationDecisions,
-} from '../../../.cli/lib/plan-obligation.mjs';
-import { readCreatePrConfigKey, resolveShipBaseBranch } from '../../../.cli/lib/ship-base-branch.mjs';
+import { parseObligationDecisions } from '../../../.cli/lib/plan-obligation.mjs';
+import { resolveShipBaseBranch } from '../../../.cli/lib/ship-base-branch.mjs';
 import {
   COUNTED_SCALES,
   assessTrunk,
@@ -44,14 +36,9 @@ import {
   trunkRef,
 } from '../../../.cli/lib/ship-quality-ledger.mjs';
 import { readQualityGateRecord, resolveHeadSha } from './worktree-quality-gate.mjs';
-import { readBranchTaskContract } from './task-passport.mjs';
 import { APPROVAL_CHOICES, normalizeApproval } from '../../../.cli/lib/approval-vocabulary.mjs';
 import { loadReviewPanelConfig } from '../../../.cli/lib/worktree-ship-report.mjs';
 import { checkLabelEvidence } from '../../../.cli/lib/quality-gate-labels.mjs';
-import { loadApprovalPolicy } from './approval-policy.mjs';
-import { measureDiffRisk } from './change-risk.mjs';
-import { assessAutoApproval, loadTrust } from './approval-trust.mjs';
-import { loadReachMap } from './change-reach.mjs';
 
 export const STEP_STATUS = {
   OK: 'ok',
@@ -79,24 +66,6 @@ export function readAnswerStore(path, { existsFn = existsSync, readFn = readFile
   }
 }
 
-/**
- * Projects cross-review skip streak including the current ship, over what actually landed on the trunk.
- *
- * `landings` (newest-first, from `git log --first-parent origin/<base>`) is joined with the ledger
- * first, so a merge that never wrote a row counts instead of being absent. `landings` null/omitted
- * means the trunk was not read: reported as `trunkRead: false`, never as zero bypasses, and the streak
- * falls back to the ledger rows alone.
- *
- * The census (`unrecorded`, `unrecordedTotal`) is computed even when the current scale is not counted
- * and before the projected entry is appended — a bypass is a fact about the repository, and a
- * projected `agent_go` would otherwise bury every bypass behind itself.
- *
- * @param {{ledger: Array<object>|null, landings?: Array<object>|null, scale: string|null,
- *          qualityLabel: string|null, refMovedAge?: number|null, baseBranch?: string|null}} input
- * @returns {{counted: boolean, streak: number, prs: Array<number|string>, unrecorded: Array<number|string>,
- *            unrecordedTotal: number, bots: Array<number|string>, noLedger: boolean, trunkRead: boolean, refMovedAge: number|null,
- *            baseBranch: string|null, scale: string|null}}
- */
 export function projectCrossReviewStreak({
   ledger,
   landings = null,
@@ -137,15 +106,6 @@ export function projectCrossReviewStreak({
   };
 }
 
-/**
- * The bypass census as its own panel line — a fact about the **repository**, so it renders whenever
- * the panel does (including when the ship is blocked before PROOF, the population most likely to be
- * skipping the gate), not as a tail of step 4's evidence.
- *
- * A read trunk is always qualified with the local ref and when it last moved: `origin/<base>` is a
- * local copy that may be a day old, and an unqualified "0 unrecorded" reads as current. An unread
- * trunk is never qualified — a timestamp beside "NOT READ" would imply something was seen.
- */
 export function formatTrunkCensusLine(crossReview) {
   if (!crossReview) return 'Trunk: census undetermined';
   if (!crossReview.trunkRead) {
@@ -197,39 +157,6 @@ function formatCrossReviewEvidence(crossReview) {
   return `Cross-review skip streak: ${crossReview.streak} consecutive (including current ship)`;
 }
 
-/**
- * Identifies *what the human reviewed*: the diff this branch contributes, hashed.
- *
- * **Why not the HEAD sha (observed 2026-08-25 → 2026-08-27)**: `ship-worktree` merges
- * `origin/<base>` into the branch as part of shipping (`ops.mjs#cmdShipWorktree`). That merge moves
- * HEAD, so a HEAD-bound approval was invalidated **by the very command the human had just
- * authorised**, and the human was re-asked. With other sessions landing PRs the same day, one ship
- * consumed four separate human approvals before it completed — the loop is structural, not bad luck:
- * re-verification takes minutes, and any PR landing inside that window restarts it.
- *
- * `<base>...HEAD` survives those merges when the base did not touch what this branch touches. Three-
- * dot diffs are computed against `merge-base(base, HEAD)`, so merging the base only advances the
- * merge-base and the branch's own hunks come out identical. The id *does* change when the branch
- * gains real work, when conflict resolution rewrites the branch's own files, and — because the hash
- * covers the rendered patch, not just its semantics — when the base edits a file this branch also
- * edits closely enough to shift hunk headers or context lines. The last case re-asks the human for a
- * change they arguably already reviewed; that is the conservative direction, and it is why this is
- * "survives an unrelated base merge", not "invariant under any base merge".
- *
- * Ship re-checks this after its own merge (`ops.mjs#assertApprovalFreshAfterBaseMerge`) — recording
- * the id at approval time is not enough on its own, because ship mutates the tree afterwards.
- *
- * This mirrors GitHub's own semantics (approvals survive base updates; "dismiss stale reviews"
- * fires on branch commits) and is stricter than it looks here, because this repo squash-merges:
- * the diff *is* the commit that lands.
- *
- * Machine PROOF keeps its HEAD binding deliberately (`quality-gate-proof` step) — re-running a test
- * suite is cheap and must cover the merged tree. Only the expensive, human-blocking signal is
- * rebound. Two bindings, two costs.
- *
- * @returns {string|null} sha256 of the diff, or null when git cannot resolve any base ref
- *   (fail-closed at the call sites: a null id falls back to the HEAD-sha comparison).
- */
 export function resolveReviewDiffId(worktreeAbs, baseBranch, gitFn = defaultGit) {
   for (const ref of [`origin/${baseBranch}`, baseBranch]) {
     try {
@@ -243,13 +170,6 @@ export function resolveReviewDiffId(worktreeAbs, baseBranch, gitFn = defaultGit)
   return null;
 }
 
-/**
- * An answer is stale when what the human reviewed changed.
- *
- * Prefers the review-diff binding and falls back to the HEAD sha when either side lacks one —
- * answers recorded before this binding existed, and worktrees where no base ref resolves, keep the
- * old (stricter) behaviour rather than silently becoming un-invalidatable.
- */
 function readFreshAnswer(ctx, id) {
   const a = ctx.answers?.[id];
   if (!a || typeof a.value !== 'string' || !a.value.trim()) return { fresh: false, stale: false };
@@ -262,83 +182,6 @@ function readFreshAnswer(ctx, id) {
     return { fresh: false, stale: true, answer: a };
   }
   return { fresh: true, stale: false, answer: a };
-}
-
-/**
- * Verdict for a large-scale branch that has no milestone deck trace.
- *
- * An accountable waiver must never cost more than saying nothing. A declared exemption used to
- * return BLOCKED while silence returned WARN, and the remedy read "or revert exemption line" — the
- * cheapest way past the gate was deleting the disclosure. "No deck exists"
- * also cannot refute an exemption *from producing a deck*: absence is the expected state under a
- * valid waiver, so the old test was circular. What is checkable is whether the waiver is accountable,
- * which `OBLIGATION_MIN_REASON_LENGTH` already defines. The measurement is quoted beside the claim so
- * a reviewer weighs the two together. A too-short reason is WARN like silence (with a remedy asking
- * for a real reason) — never more severe, unless the project opts into `block` (below).
- *
- * `shortReason: 'block'` (create-pr config `milestone_waiver_short_reason`) makes a too-short reason
- * BLOCKED. Silence stays WARN either way: the key tightens what an accountable waiver must carry, it
- * does not re-create the old gradient where deleting the disclosure was cheaper than keeping it —
- * a project choosing `block` accepts that trade explicitly.
- *
- * @param {{dropped?: boolean, reason?: string|null, reason_too_short?: boolean}|undefined} waiver
- * @param {{files:number, loc:number, base?:string}|null} scale
- * @param {{shortReason?: 'warn'|'block'}} [options]
- */
-export function evaluateMilestoneWaiver(waiver, scale, { shortReason = 'warn' } = {}) {
-  const measured = scale
-    ? `measured ${scale.files} files / ${scale.loc} LOC vs ${scale.base ?? 'base'}`
-    : 'scale unmeasured';
-  if (!waiver?.dropped) {
-    return {
-      status: STEP_STATUS.WARN,
-      evidence: `Proceeded without interim milestone deck, and without declaring why — ${measured}`,
-      remedy: 'node .claude/scripts/review-deck.mjs --stage milestone (can be generated now)',
-    };
-  }
-  if (waiver.reason_too_short) {
-    // Same severity as silence — a thin reason is still more disclosure than none, so it must not
-    // cost more. The message asks for a real reason instead.
-    const why = waiver.reason ? `too short a reason ("${waiver.reason}")` : 'no reason';
-    return {
-      status: shortReason === 'block' ? STEP_STATUS.BLOCKED : STEP_STATUS.WARN,
-      evidence: `Exemption declared with ${why} — ${measured}`,
-      remedy:
-        `State a real reason (at least ${OBLIGATION_MIN_REASON_LENGTH} characters) on the obligation line, ` +
-        'or generate the deck: node .claude/scripts/review-deck.mjs --stage milestone',
-    };
-  }
-  return {
-    status: STEP_STATUS.WARN,
-    evidence: `Interim milestone deck waived: "${waiver.reason}" — ${measured}`,
-    remedy: null,
-  };
-}
-
-/** Values of the create-pr config key `milestone_waiver_short_reason`; the first is the default. */
-export const MILESTONE_WAIVER_SHORT_REASON_MODES = Object.freeze(['warn', 'block']);
-
-/**
- * `milestone_waiver_short_reason` from the create-pr config. Only the exact lowercase values are
- * honoured; anything else reads as `warn` and carries a warning (a mistyped `"Block"` silently
- * meaning `warn` is exactly the kind of drift a gate setting must not hide).
- *
- * @returns {{mode: 'warn'|'block', warning: string|null}}
- */
-export function readMilestoneWaiverShortReason(projectDir, io) {
-  const raw = readCreatePrConfigKey(projectDir, 'milestone_waiver_short_reason', io);
-  if (raw === undefined || MILESTONE_WAIVER_SHORT_REASON_MODES.includes(raw)) {
-    return { mode: raw ?? 'warn', warning: null };
-  }
-  return {
-    mode: 'warn',
-    warning: `create-pr config milestone_waiver_short_reason ${JSON.stringify(raw)} is not "warn" or "block" — using "warn"`,
-  };
-}
-
-/** Mode only (see readMilestoneWaiverShortReason). */
-export function resolveMilestoneWaiverShortReason(projectDir, io) {
-  return readMilestoneWaiverShortReason(projectDir, io).mode;
 }
 
 export const PRE_SHIP_STEPS = [
@@ -421,81 +264,11 @@ export const PRE_SHIP_STEPS = [
     };
   }),
 
-  machine('ship-deck', 'Visual review deck exists for large scale changes', (ctx) => {
-    if (!isLargeScale(ctx)) {
-      return { status: STEP_STATUS.NA, evidence: `Scale ${ctx.scale?.label ?? 'undetermined'} — Deck not required` };
-    }
-    const deck = checkShipDeckFreshness(
-      ctx.projectDir,
-      safeBranchKey(ctx.branch),
-      ctx.worktreeAbs,
-      ctx.gitFn,
-      { existsFn: ctx.existsFn, statFn: ctx.statFn },
-    );
-    return deck.ok
-      ? { status: STEP_STATUS.OK, evidence: `Deck fresh: ${deck.deckPath}` }
-      : {
-          status: STEP_STATUS.BLOCKED,
-          evidence: deck.reason === 'deck_stale' ? 'New commits added after deck generation' : 'Deck missing',
-          remedy: `node .claude/scripts/ship-deck.mjs --worktree ${ctx.worktreeAbs} --narrative-json <path>`,
-        };
-  }),
-
-  machine('milestone-deck', 'Implementation interim check deck trace exists for large scale changes', (ctx) => {
-    if (!isLargeScale(ctx)) {
-      return { status: STEP_STATUS.NA, evidence: 'Not large scale — interim review not required' };
-    }
-    let trace = false;
-    try {
-      trace = hasMilestoneDeckTrace(ctx.projectDir, safeBranchKey(ctx.branch), {
-        existsFn: ctx.existsFn,
-        readdirFn: ctx.readdirFn,
-      });
-    } catch {
-      return { status: STEP_STATUS.WARN, evidence: 'Trace query failed — unable to evaluate' };
-    }
-    if (trace) return { status: STEP_STATUS.OK, evidence: 'CP-MILESTONE deck trace found' };
-
-    return evaluateMilestoneWaiver(ctx.obligations?.get('cp-milestone-deck'), ctx.scale, {
-      shortReason: ctx.milestoneWaiverShortReason,
-    });
-  }),
-
-  // DEFECT 2 visibility fix (contract-reconciliation-harness ADR M3): a 0-criteria acceptance
-  // contract stays fail-open (deliberate ADR choice — never blocks) but must be impossible to miss
-  // in the one place a human actually looks before approving. WARN (not BLOCKED) preserves that.
-  machine('acceptance-contract', 'Executable acceptance contract recorded for this branch', (ctx) => {
-    let contract = null;
-    try {
-      contract = ctx.readBranchContractFn?.(ctx.projectDir, ctx.branch) ?? null;
-    } catch {
-      contract = null;
-    }
-    const acceptance = Array.isArray(contract?.acceptance) ? contract.acceptance : [];
-    if (acceptance.length === 0) {
-      return {
-        status: STEP_STATUS.WARN,
-        evidence: 'acceptance: 0 criteria (branch-bound) / none recorded — definition of done not machine-checked (fail-open per ADR)',
-        remedy: `node .claude/scripts/task-interpretation.mjs record --acceptance '[...]' --branch ${ctx.branch}`,
-      };
-    }
-    return {
-      status: STEP_STATUS.OK,
-      evidence: `acceptance: ${acceptance.length} criteria (branch-bound), recorded_at=${contract.recorded_at ?? 'unknown'}`,
-    };
-  }),
-
   human(
     'approval',
-    'Human has explicitly approved',
-    // One human step, not two. A separate "have you reviewed the deck?" step accepted any
-    // non-empty text, so it could not tell a review from a reply: on 2026-09-23 the human
-    // answered it "다 진행해" ("just do it all") and it recorded "Human has directly reviewed
-    // the changes" PASS — a false record that cost a round-trip. What the human needs to see
-    // is named here instead; whether they looked is theirs to answer, not ours to log.
+    'Human or Trust evaluator has approved',
     (ctx) =>
-      `${isLargeScale(ctx) ? 'After opening the review deck' : 'After reading the change summary (Pre-Ship Panel — not large scale, so no review deck)'}` +
-      `, may we proceed with merge and cleanup? (${(ctx.approvalChoices ?? APPROVAL_CHOICES).join(' / ')})`,
+      `After reading the change summary (Pre-Ship Panel), may we proceed with merge and cleanup? (${(ctx.approvalChoices ?? APPROVAL_CHOICES).join(' / ')})`,
     (ctx) => {
       const a = readFreshAnswer(ctx, 'approval');
       if (a.stale) {
@@ -505,18 +278,21 @@ export const PRE_SHIP_STEPS = [
           remedy: 'Obtain fresh approval for updated changes',
         };
       }
-      // A recorded human answer always wins — including a reject of an auto-approvable ship.
       if (!a.fresh) {
         const auto = ctx.autoApproval;
-        if (auto?.auto) return { status: STEP_STATUS.OK, evidence: `Auto-approved (R-CM-030 Rule 13.1): ${auto.why}` };
+        if (auto?.auto) return { status: STEP_STATUS.OK, evidence: `Auto-approved: ${auto.why}` };
         return {
           status: STEP_STATUS.AWAITING,
-          evidence: `No answer recorded — human approval required: ${auto?.why ?? 'risk tier undetermined'}`,
+          evidence: 'No answer recorded — run `node Scripts/trust/trust.mjs approve --worktree <wt> --review <json> --ci` or record human approval',
         };
       }
       const decision = normalizeApproval(a.answer.value, { choices: ctx.approvalChoices });
       if (decision === 'approve') {
-        return { status: STEP_STATUS.OK, evidence: `User response: "${a.answer.value}"` };
+        const evidence =
+          a.answer.source === 'trust'
+            ? `Auto-approved (trust.mjs): ${(a.answer.reasons ?? []).join(', ') || 'eligible'}`
+            : `User response: "${a.answer.value}"`;
+        return { status: STEP_STATUS.OK, evidence };
       }
       return {
         status: STEP_STATUS.BLOCKED,
@@ -537,7 +313,6 @@ function projectCrossReview(ctx, readLedgerFn, readLandingsFn) {
     return projectCrossReviewStreak({
       ledger: readLedgerFn(),
       landings: readLandingsFn(),
-      // Read through `ctx.git`, which binds this module's `gitFn(cwd, args)` convention once.
       refMovedAge: readTrunkRefMovedAge(ctx.baseBranch, ctx.git),
       baseBranch: ctx.baseBranch ?? null,
       scale: ctx.scale?.scale ?? null,
@@ -548,29 +323,18 @@ function projectCrossReview(ctx, readLedgerFn, readLandingsFn) {
   }
 }
 
-/** Test-injectable value, or the real resolver when nothing was injected. */
 const injected = (value, resolve) => (value !== undefined ? value : resolve());
 
-/**
- * Project-configured knobs the steps read: create-pr `milestone_waiver_short_reason` and the review
- * panel's `approval_choices`. Each is resolved only when not injected.
- */
-function projectSettings(projectDir, { milestoneWaiverShortReason, approvalChoices } = {}) {
+function projectSettings(projectDir, { approvalChoices } = {}) {
   const warnings = [];
-  const waiver = injected(milestoneWaiverShortReason, () => {
-    const r = readMilestoneWaiverShortReason(projectDir);
-    if (r.warning) warnings.push(r.warning);
-    return r.mode;
-  });
   const choices = injected(approvalChoices, () => {
     const panel = loadReviewPanelConfig(projectDir);
     if (panel.warning) warnings.push(panel.warning);
     return panel.approvalChoices;
   });
-  return { milestoneWaiverShortReason: waiver, approvalChoices: choices, settingsWarnings: warnings };
+  return { approvalChoices: choices, settingsWarnings: warnings };
 }
 
-/** Scale is advisory — an unmeasurable worktree must not fail the whole evaluation. */
 function measureScaleSafely(worktreeAbs, gitFn) {
   try {
     return measureShipScale(worktreeAbs, gitFn);
@@ -579,35 +343,9 @@ function measureScaleSafely(worktreeAbs, gitFn) {
   }
 }
 
-/**
- * PROOF's label, only when its `gates[]` carry the evidence the label claims. Without this, `next`
- * run standalone (no `--quality`) previewed "Auto-approved" on a label the marker would later refuse.
- */
 export function evidencedProofLabel(record) {
   const label = record?.quality_label ?? null;
   return label && checkLabelEvidence(label, record.gates).satisfied ? label : null;
-}
-
-/**
- * Risk tier + review label + escape history → may the `approval` step pass without a human?
- * Any failure answers "no": the pre-policy behaviour (ask the human) is the safe fallback.
- */
-export function defaultAutoApproval(ctx, { readLedgerFn = readLedger, qualityLabel } = {}) {
-  try {
-    const { policy, error } = loadApprovalPolicy(ctx.projectDir);
-    const reachMap = loadReachMap(ctx.projectDir);
-    const risk = measureDiffRisk(ctx.worktreeAbs, { policy, policyError: error, reachMap, gitFn: ctx.gitFn });
-    const label = qualityLabel ?? evidencedProofLabel(ctx.readQualityFn(ctx.worktreeAbs, ctx.branch)?.record);
-    let trust;
-    try {
-      trust = policy ? loadTrust({ projectDir: ctx.projectDir, baseBranch: ctx.baseBranch, ledger: readLedgerFn(), policy, runGit: ctx.git }) : { error };
-    } catch (e) {
-      trust = { error: e?.message ?? String(e) };
-    }
-    return { ...assessAutoApproval({ risk, qualityLabel: label, policy, trust }), risk };
-  } catch (e) {
-    return { auto: false, tier: 'T2', why: `auto-approval check failed: ${e?.message ?? e}`, demotions: [] };
-  }
 }
 
 function readObligationDecisions(worktreeAbs, branch, existsFn, readFn) {
@@ -620,13 +358,7 @@ function readObligationDecisions(worktreeAbs, branch, existsFn, readFn) {
   }
 }
 
-/**
- * Fills in `evaluateSteps`' test-injectable defaults (git/fs accessors, ledger/quality readers). Kept
- * separate from `evaluateSteps` itself — each default expression is its own decision point for the
- * complexity linter, and this is where they belong: one place resolving "what runs when nothing was injected".
- */
 function withStepDefaults(opts) {
-  // `undefined` only, as the destructuring defaults this replaced: an injected `null` stays `null`.
   const or = (v, fallback) => (v === undefined ? fallback() : v);
   return {
     ...opts,
@@ -636,7 +368,6 @@ function withStepDefaults(opts) {
     readFn: or(opts.readFn, () => readFileSync),
     readQualityFn: or(opts.readQualityFn, () => readQualityGateRecord),
     readLedgerFn: or(opts.readLedgerFn, () => readLedger),
-    readBranchContractFn: or(opts.readBranchContractFn, () => readBranchTaskContract),
   };
 }
 
@@ -653,15 +384,11 @@ export function evaluateSteps(opts) {
     statFn,
     readQualityFn,
     readLedgerFn,
-    readBranchContractFn,
     landings,
-    // Test-injectable project settings; omitted keys come from the project config (see projectSettings).
     settings,
     answers,
     headSha,
     reviewDiffId,
-    // Injected verdict for tests; `qualityLabel` lets the marker CLI pass its verified --quality
-    // before it is backfilled into PROOF (one value, whichever channel carried it).
     autoApproval,
     qualityLabel,
   } = withStepDefaults(opts);
@@ -678,7 +405,6 @@ export function evaluateSteps(opts) {
     statFn,
     readQualityFn,
     readLedgerFn,
-    readBranchContractFn,
     landings,
     settings,
     answers,
@@ -757,7 +483,7 @@ function buildStepContext({
   ctx.crossReview = projectCrossReview(ctx, readLedgerFn, () =>
     injected(landings, () => readTrunkLandings(baseBranch, ctx.git)),
   );
-  ctx.autoApproval = injected(autoApproval, () => defaultAutoApproval(ctx, { readLedgerFn, qualityLabel }));
+  ctx.autoApproval = autoApproval ?? null;
   return ctx;
 }
 

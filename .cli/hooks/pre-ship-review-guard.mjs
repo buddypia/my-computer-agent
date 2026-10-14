@@ -471,10 +471,6 @@ function evaluateShipInvocation(data, { command, stripped }) {
   const safeKey = safeBranchKey(branch);
   const path = markerPath(projectDir, branch);
 
-  // R-CM-030 Rule 12 — Large deck obligation evaluated before marker check
-  const deckDeny = evaluateDeckGate(command, projectDir);
-  if (deckDeny) return HookOutput.deny(deckDeny);
-
   // The chain-timing rationale ("marker touch inside the same chain is invisible to this
   // hook") only applies when the chain actually creates the marker — an unrelated chained
   // command never had a timing race to explain.

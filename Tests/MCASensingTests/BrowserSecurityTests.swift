@@ -55,21 +55,27 @@ struct DevToolsEndpointTrustTests {
     /// it actually produces.
     @Test("our WebSocket client sends no Origin header")
     func clientSendsNoOrigin() async throws {
+        let queue = DispatchQueue(label: "test.OriginCheckServer", qos: .userInteractive)
         let listener = try NWListener(using: .tcp, on: .any)
         let request = RequestBox()
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { request.markReady() }
+        }
         listener.newConnectionHandler = { connection in
-            connection.start(queue: .global())
+            connection.start(queue: queue)
             connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
                 request.set(String(decoding: data ?? Data(), as: UTF8.self))
                 connection.cancel()
             }
         }
-        listener.start(queue: .global())
-        for _ in 0..<100 where (listener.port?.rawValue ?? 0) == 0 { try await Task.sleep(nanoseconds: 50_000_000) }
+        listener.start(queue: queue)
+        for _ in 0..<200 where !request.isReady || (listener.port?.rawValue ?? 0) == 0 {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
         let port = try #require(listener.port?.rawValue)
 
         let opening = Task { try await WebSocketTransport.open(URL(string: "ws://127.0.0.1:\(port)/devtools/browser/x")!) }
-        for _ in 0..<100 where request.value.isEmpty { try await Task.sleep(nanoseconds: 50_000_000) }
+        for _ in 0..<200 where request.value.isEmpty { try await Task.sleep(nanoseconds: 25_000_000) }
         opening.cancel()
         listener.cancel()
 
@@ -80,7 +86,10 @@ struct DevToolsEndpointTrustTests {
 
     private final class RequestBox: @unchecked Sendable {
         private let lock = NSLock()
+        private var ready = false
         private var text = ""
+        func markReady() { lock.lock(); ready = true; lock.unlock() }
+        var isReady: Bool { lock.lock(); defer { lock.unlock() }; return ready }
         func set(_ value: String) { lock.lock(); text = value; lock.unlock() }
         var value: String { lock.lock(); defer { lock.unlock() }; return text }
     }
