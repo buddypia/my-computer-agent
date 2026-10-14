@@ -449,7 +449,7 @@ async function assessBranch(args) {
 
   if (/^(fix|hotfix)[/-]/.test(branch)) {
     const ok = addsRegressionTest(testFiles);
-    evidence.push({ id: 'regression_test', ok, detail: ok ? '有効な assertion の追加あり' : 'fix ブランチなのに回帰テストがない' });
+    evidence.push({ id: 'regression_test', ok, detail: ok ? '有効な assertion の追加あり' : 'fix ブランチなのに Tests/ の Swift 回帰テストがない（node テストは数えない）' });
   }
 
   // Evidence is only about the tree it was gathered on.
