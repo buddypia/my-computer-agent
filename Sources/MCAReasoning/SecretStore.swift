@@ -71,6 +71,26 @@ public struct SecretStore: Sendable {
     var wrappingService: String { "\(namespace).wrapping-key" }
     private var wrappingAccount: String { "default" }
 
+    // MARK: - User interaction
+
+    /// Keychain access never shows UI unless the app turned it on.
+    ///
+    /// An item written by another binary (the bundled app vs. a rebuilt CLI, or a test
+    /// runner) makes macOS ask "allow access?", and the caller waits on that dialog
+    /// holding the login keychain's file lock — so one waiting test stalls every other
+    /// process that touches the keychain, other sessions included. A test, `mca act` or
+    /// the MCP server has nobody to answer it, so for them such an item fails at once
+    /// and the caller falls back (`CredentialStore` to the environment). The switch is
+    /// process-wide; applied lazily before the first keychain call.
+    static let interactionPolicy: Void = { SecKeychainSetUserInteractionAllowed(false) }()
+
+    /// Lets the keychain ask the user. Only the GUI app calls this: it has a user to ask,
+    /// and after a rebuild it is the one that must be allowed to read its own items again.
+    public static func allowUserInteraction() {
+        _ = interactionPolicy
+        SecKeychainSetUserInteractionAllowed(true)
+    }
+
     // MARK: - API
 
     /// The decrypted key for `provider`, or `nil` if none is stored.
@@ -78,28 +98,7 @@ public struct SecretStore: Sendable {
     /// A plaintext record written by an older build is returned *and* silently
     /// re-sealed, so upgrading does not ask the user to paste their keys again
     /// and does not leave the plaintext behind.
-    ///
-    /// With `interactive: false` an item this binary may not read yields `nil` at once
-    /// instead of a macOS "allow access" dialog the caller would wait on.
-    public func read(account: String, interactive: Bool = true) -> String? {
-        interactive ? readRecord(account: account) : Self.withoutUserInteraction { readRecord(account: account) }
-    }
-
-    /// The legacy keychain's interaction switch is process-wide, hence the lock and
-    /// the restore. An interactive read racing this one fails as "no key" instead of
-    /// prompting, which every caller already handles.
-    private static let interactionLock = NSLock()
-    private static func withoutUserInteraction<T>(_ body: () -> T) -> T {
-        interactionLock.lock()
-        defer { interactionLock.unlock() }
-        var allowed: DarwinBoolean = true
-        SecKeychainGetUserInteractionAllowed(&allowed)
-        SecKeychainSetUserInteractionAllowed(false)
-        defer { SecKeychainSetUserInteractionAllowed(allowed.boolValue) }
-        return body()
-    }
-
-    private func readRecord(account: String) -> String? {
+    public func read(account: String) -> String? {
         guard let record = KeychainItem.read(account: account, service: credentialService)
         else { return nil }
 
@@ -507,7 +506,8 @@ private enum KeychainItem {
     }
 
     private static func base(account: String, service: String) -> [String: Any] {
-        [
+        _ = SecretStore.interactionPolicy
+        return [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,

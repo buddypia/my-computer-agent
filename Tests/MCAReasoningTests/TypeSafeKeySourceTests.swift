@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import MCAReasoning
@@ -49,5 +50,18 @@ struct TypeSafeKeySourceTests {
         try store.write(account: "gemini", value: "sealed")
         let credentials = CredentialStore(environment: ["GEMINI_API_KEY": "plain"], secrets: store)
         #expect(credentials.key(for: "gemini") == "plain")
+    }
+}
+
+/// A test has nobody to answer a keychain "allow access" dialog; waiting on one also
+/// holds the login keychain's lock and stalls every other process using it.
+@Suite("Keychain user interaction")
+struct KeychainInteractionTests {
+    @Test("touching the keychain outside the app turns its dialogs off")
+    func noDialogsOutsideTheApp() {
+        _ = SecretStore(namespace: "com.buddypia.mca.tests.never-written").read(account: "typesafe")
+        var allowed: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&allowed)
+        #expect(!allowed.boolValue)
     }
 }
