@@ -64,4 +64,10 @@ struct KeychainInteractionTests {
         SecKeychainGetUserInteractionAllowed(&allowed)
         #expect(!allowed.boolValue)
     }
+
+    @Test("a refused item says where it can be changed")
+    func refusalPointsAtSettings() {
+        #expect(SecretStoreError.keychain(errSecAuthFailed).description.contains("Settings"))
+        #expect(!SecretStoreError.keychain(errSecDuplicateItem).description.contains("Settings"))
+    }
 }

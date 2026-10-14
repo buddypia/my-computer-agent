@@ -99,8 +99,16 @@ public struct SecretStore: Sendable {
     /// re-sealed, so upgrading does not ask the user to paste their keys again
     /// and does not leave the plaintext behind.
     public func read(account: String) -> String? {
-        guard let record = KeychainItem.read(account: account, service: credentialService)
-        else { return nil }
+        let (stored, status) = KeychainItem.load(account: account, service: credentialService)
+        guard let record = stored else {
+            if status != errSecItemNotFound, status != errSecSuccess {
+                Self.log.notice("""
+                    Stored key for \(account, privacy: .public) is not readable here \
+                    (\(status)); this process does not own it or may not ask.
+                    """)
+            }
+            return nil
+        }
 
         if let sealed = SealedRecord(record) {
             do {
@@ -433,7 +441,12 @@ public enum SecretStoreError: Error, CustomStringConvertible {
         switch self {
         case .keychain(let status):
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
-            return "Keychain error \(status): \(message)"
+            guard status == errSecAuthFailed || status == errSecInteractionNotAllowed else {
+                return "Keychain error \(status): \(message)"
+            }
+            // Outside the app the keychain may not ask (see `interactionPolicy`), so an
+            // item the app wrote cannot be changed from here.
+            return "Keychain error \(status): \(message). The app owns this item; change it in Settings ▸ Models & Keys."
         case .corruptRecord:
             return "The stored record is not in a format this build understands."
         }
