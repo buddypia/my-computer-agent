@@ -305,7 +305,7 @@ func runSearch(query: String) async {
 }
 
 func runAuth(_ arguments: [String]) {
-    guard arguments.count >= 2, arguments[0] == "set" else {
+    guard arguments.count >= 2, ["set", "delete"].contains(arguments[0]) else {
         print("""
             Usage:
               mca auth set <gemini|anthropic|openai-compatible|typesafe>
