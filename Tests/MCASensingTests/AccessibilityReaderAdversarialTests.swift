@@ -71,9 +71,8 @@ struct AccessibilityReaderAdversarialTests {
 
             // If NSRunningApplication doesn't exist for the PID, readWindow returns nil
             #expect(snapshot == nil || snapshot?.elementCount == 0)
-            if IsolatedTiming.enabled {
-                #expect(elapsedMs < 300, "Reading invalid PID \(pid) took too long: \(elapsedMs)ms")
-            }
+            let maxElapsedMs = IsolatedTiming.enabled ? 300.0 : 15_000.0
+            #expect(elapsedMs < maxElapsedMs, "Reading invalid PID \(pid) took too long: \(elapsedMs)ms")
         }
     }
 
@@ -97,9 +96,8 @@ struct AccessibilityReaderAdversarialTests {
         let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
 
         // With 50ms budget + 500ms messaging timeout, total wall-clock time should be strictly bounded
-        if IsolatedTiming.enabled {
-            #expect(elapsedMs < 1200, "Tight budget execution exceeded bound: \(elapsedMs)ms")
-        }
+        let maxElapsedMs = IsolatedTiming.enabled ? 1200.0 : 15_000.0
+        #expect(elapsedMs < maxElapsedMs, "Tight budget execution exceeded bound: \(elapsedMs)ms")
     }
 
     @Test("readFocusedWindowAsync retrieves snapshot asynchronously without deadlocking MainActor")
