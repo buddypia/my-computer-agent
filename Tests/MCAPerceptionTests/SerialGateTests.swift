@@ -14,27 +14,31 @@ struct SerialGateTests {
         let gate = SerialGate()
         let active = OSAllocatedUnfairLock(initialState: (now: 0, peak: 0))
 
-        let finished = await withTaskGroup(of: Bool.self) { group in
-            for index in 0..<20 {
-                group.addTask {
-                    do {
-                        try await gate.run {
-                            active.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
-                            try await Task.sleep(for: .milliseconds(5))
-                            active.withLock { $0.now -= 1 }
-                            if index.isMultiple(of: 2) { throw Boom() }
-                        }
-                    } catch is Boom {
-                    } catch {
-                        Issue.record(error)
+        // Unstructured, so a call stuck behind a lost release fails the count below
+        // instead of hanging the test the way awaiting a task group would.
+        let finished = OSAllocatedUnfairLock(initialState: 0)
+        for index in 0..<20 {
+            Task {
+                do {
+                    try await gate.run {
+                        active.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
+                        try await Task.sleep(for: .milliseconds(5))
+                        active.withLock { $0.now -= 1 }
+                        if index.isMultiple(of: 2) { throw Boom() }
                     }
-                    return true
+                } catch is Boom {
+                } catch {
+                    Issue.record(error)
                 }
+                finished.withLock { $0 += 1 }
             }
-            return await group.reduce(0) { $0 + ($1 ? 1 : 0) }
+        }
+        let deadline = ContinuousClock.now + .seconds(30)
+        while finished.withLock({ $0 }) < 20, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
         }
 
-        #expect(finished == 20)
+        #expect(finished.withLock { $0 } == 20)
         #expect(active.withLock { $0.peak } == 1)
     }
 
