@@ -60,7 +60,10 @@ struct ToolApprovalWatchdogStressTests {
             #expect(resolvedStatus == .approved, "Round \(round): resolved status must be approved")
 
             // 4. Dismiss and wait for surface removal (as Copilot.toolApprover does)
-            let removed = await chat.closeAndWaitForSurfaceRemoval()
+            // The app's 2 s default only with the process otherwise idle; removal itself always.
+            let removed = IsolatedTiming.enabled
+                ? await chat.closeAndWaitForSurfaceRemoval()
+                : await chat.closeAndWaitForSurfaceRemoval(timeout: .seconds(10))
             #expect(removed, "Round \(round): surface must be confirmed removed from Quartz")
             #expect(!chat.isOpen, "Round \(round): chatWindow must be closed")
             #expect(!state.isChatOpen, "Round \(round): state.isChatOpen must be false")
