@@ -81,12 +81,14 @@ is_doc_path() {
 
 # Paths the working tree has touched, tracked and untracked alike. If the tree
 # is clean the agent may have committed its work already, so fall back to what
-# HEAD brought in. Not `git show`: a clean merge commit (ship merging main into
-# the branch) shows no paths, and the gate would skip the very tree that is about
-# to land. -m lists a merge against each parent; --root lists every file of a
-# commit with no parent (a root commit, or the tip of a depth-1 clone).
-# --no-renames: a rename lists only its new path, so `git mv a.swift docs/a.txt`
-# would read as docs-only and hide the deleted source file.
+# the branch brought in since it left main, and what HEAD brought in. The branch
+# part: a code commit followed by a docs commit is still a code change. On main
+# it is empty, and HEAD's own commit decides. Not `git show`: a clean merge commit
+# (ship merging main into the branch) shows no paths, and the gate would skip the
+# very tree that is about to land. -m lists a merge against each parent; --root
+# lists every file of a commit with no parent (a root commit, or the tip of a
+# depth-1 clone). --no-renames: a rename lists only its new path, so
+# `git mv a.swift docs/a.txt` would read as docs-only and hide the deleted source file.
 changed_paths() {
     local out
     out="$(
@@ -94,7 +96,10 @@ changed_paths() {
         git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null
     )"
     if [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then
-        out="$(git -C "$ROOT" diff-tree --root -m -r --no-commit-id --name-only HEAD 2>/dev/null)"
+        out="$(
+            git -C "$ROOT" diff --no-renames --name-only origin/main...HEAD 2>/dev/null
+            git -C "$ROOT" diff-tree --root -m -r --no-commit-id --name-only HEAD 2>/dev/null
+        )"
     fi
     printf '%s\n' "$out" | sed '/^$/d' | sort -u
 }
@@ -131,6 +136,23 @@ trust_tests() {
         echo "trust: skipped/todo tests are not allowed in Scripts/trust/tests"
         return 1
     fi
+}
+
+# SwiftPM queues its own processes on .build/.lock, so concurrent gates wait for each other.
+# Something outside that lock can still hold swift-build's database for a moment, and the build
+# then fails with "database is locked" although nothing is wrong with the tree. Only that failure
+# is retried; any other is the build's own.
+swift_build() {
+    local out attempt=1
+    until out="$(swift build --package-path "$ROOT" 2>&1)"; do
+        printf '%s\n' "$out"
+        # A here-string, not a pipe: under pipefail, grep -q quitting early fails a long printf (SIGPIPE).
+        grep -q 'database is locked' <<< "$out" && [ "$attempt" -lt 3 ] || return 1
+        echo "gate: the build database is locked by another build; retrying"
+        sleep "${MCA_GATE_LOCK_RETRY_SECONDS:-5}"
+        attempt=$((attempt + 1))
+    done
+    printf '%s\n' "$out"
 }
 
 swift_tests() {
@@ -234,7 +256,7 @@ run_stage() {
     return 1
 }
 
-run_stage 1 build  swift build --package-path "$ROOT" || exit 1
+run_stage 1 build  swift_build                         || exit 1
 run_stage 2 trust  trust_tests                         || exit 1
 run_stage 2 test   swift_tests                         || exit 1
 run_stage 2 isolated isolated_tests                    || exit 1
