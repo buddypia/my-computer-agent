@@ -103,7 +103,7 @@ public struct SecretStore: Sendable {
         let (stored, status) = KeychainItem.load(account: account, service: credentialService)
         guard let record = stored else {
             if status != errSecItemNotFound, status != errSecSuccess,
-                Self.reportedUnreadable.withLock({ $0.insert("\(account)/\(status)").inserted })
+                Self.reportedUnreadable.withLock({ $0.insert("\(credentialService)/\(account)/\(status)").inserted })
             {
                 Self.log.notice("""
                     Stored key for \(account, privacy: .public) is not readable here \

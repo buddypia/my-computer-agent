@@ -124,7 +124,7 @@ final class SettingsModel {
     /// keychain: a stored secret is not re-displayed, only replaced or removed.
     var draftKeys: [String: String] = [:]
     /// Why the last save for a provider failed, if it did.
-    var saveErrors: [String: String] = [:]
+    var keyErrors: [String: String] = [:]
     var keySources: [String: CredentialStore.Source] = [:]
     var routes: [RouteStatus] = []
     var onDeviceReason: String?
@@ -335,10 +335,10 @@ final class SettingsModel {
             // Shown rather than swallowed: a failed save used to look exactly
             // like a successful one, and the user found out later as a route
             // that would not run.
-            saveErrors[provider] = "\(error)"
+            keyErrors[provider] = localized("Could not save: ", "保存できませんでした: ", "저장하지 못했습니다: ") + "\(error)"
             return
         }
-        saveErrors[provider] = nil
+        keyErrors[provider] = nil
         draftKeys[provider] = ""
         credentialsChanged()
     }
@@ -346,9 +346,9 @@ final class SettingsModel {
     func removeKey(for provider: String) {
         do {
             try SecretStore.shared.delete(account: provider)
-            saveErrors[provider] = nil
+            keyErrors[provider] = nil
         } catch {
-            saveErrors[provider] = "\(error)"
+            keyErrors[provider] = localized("Could not remove: ", "削除できませんでした: ", "삭제하지 못했습니다: ") + "\(error)"
         }
         credentialsChanged()
     }
@@ -1433,9 +1433,9 @@ private struct ProviderRow: View {
                         .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
 
-            if let failure = model.saveErrors[provider.id] {
+            if let failure = model.keyErrors[provider.id] {
                 Label(
-                    localized("Could not save: ", "保存できませんでした: ", "저장하지 못했습니다: ") + failure,
+                    failure,
                     systemImage: "xmark.octagon.fill")
                     .font(.system(size: 10))
                     .foregroundStyle(.red)

@@ -66,8 +66,9 @@ struct KeychainInteractionTests {
     }
 
     /// The item is made by `/usr/bin/security`, so its access list names that tool and
-    /// not this test — what an app-saved key looks like to the CLI. Skipped rather than
-    /// run when dialogs are on: then this read is the dialog that hangs every process.
+    /// not this test — what an app-saved key looks like to the CLI. Skipped if
+    /// `interactionPolicy` stops turning dialogs off (`noDialogsOutsideTheApp` fails
+    /// then): this read would be the dialog that hangs every process.
     @Test(
         "an item another binary owns fails at once and is not reported removed",
         .enabled(if: {

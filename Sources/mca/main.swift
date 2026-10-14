@@ -138,8 +138,9 @@ func runDoctor() async {
     }
     let credentials = CredentialStore()
     let providers = credentials.availableProviders()
-    // Stored by the app but not readable by this binary. Reporting it as "no key" would
-    // send the user to `mca auth set`, which cannot replace it either.
+    // Stored but unusable here: saved by another build (the app vs. the CLI) or no longer
+    // decryptable. Reporting it as "no key" would send the user to `mca auth set`, which
+    // cannot replace an item another build owns.
     let unreadable = CredentialStore.providers.filter {
         !providers.contains($0) && SecretStore.shared.contains(account: $0)
     }
@@ -156,8 +157,8 @@ func runDoctor() async {
         print("  ✓ \(provider) key present (\(from))")
     }
     for provider in unreadable {
-        print("  ✗ \(provider) key is stored by another build of mca; this one may not read it")
-        print("    The app uses it. For the CLI, set $\(CredentialStore.environmentVariables(for: provider)[0]).")
+        print("  ✗ \(provider) key is stored but not usable here (saved by another build of mca, or no longer decryptable)")
+        print("    Replace it in the app's Settings ▸ Models & Keys; for the CLI, set $\(CredentialStore.environmentVariables(for: provider)[0]).")
     }
     print("")
 
