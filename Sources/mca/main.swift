@@ -102,6 +102,7 @@ func installProcessWideCaptureExclusion() {
 
 @MainActor
 func runApp() {
+    SecretStore.allowUserInteraction()
     let configuration = (try? AgentConfiguration.load()) ?? AgentConfiguration()
 
     let application = NSApplication.shared

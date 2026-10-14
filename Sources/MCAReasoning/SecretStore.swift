@@ -71,6 +71,26 @@ public struct SecretStore: Sendable {
     var wrappingService: String { "\(namespace).wrapping-key" }
     private var wrappingAccount: String { "default" }
 
+    // MARK: - User interaction
+
+    /// Keychain access never shows UI unless the app turned it on.
+    ///
+    /// An item written by another binary (the bundled app vs. a rebuilt CLI, or a test
+    /// runner) makes macOS ask "allow access?", and the caller waits on that dialog
+    /// holding the login keychain's file lock — so one waiting test stalls every other
+    /// process that touches the keychain, other sessions included. A test, `mca act` or
+    /// the MCP server has nobody to answer it, so for them such an item fails at once
+    /// and the caller falls back (`CredentialStore` to the environment). The switch is
+    /// process-wide; applied lazily before the first keychain call.
+    static let interactionPolicy: Void = { SecKeychainSetUserInteractionAllowed(false) }()
+
+    /// Lets the keychain ask the user. Only the GUI app calls this: it has a user to ask,
+    /// and after a rebuild it is the one that must be allowed to read its own items again.
+    public static func allowUserInteraction() {
+        _ = interactionPolicy
+        SecKeychainSetUserInteractionAllowed(true)
+    }
+
     // MARK: - API
 
     /// The decrypted key for `provider`, or `nil` if none is stored.
@@ -79,8 +99,16 @@ public struct SecretStore: Sendable {
     /// re-sealed, so upgrading does not ask the user to paste their keys again
     /// and does not leave the plaintext behind.
     public func read(account: String) -> String? {
-        guard let record = KeychainItem.read(account: account, service: credentialService)
-        else { return nil }
+        let (stored, status) = KeychainItem.load(account: account, service: credentialService)
+        guard let record = stored else {
+            if status != errSecItemNotFound, status != errSecSuccess {
+                Self.log.notice("""
+                    Stored key for \(account, privacy: .public) is not readable here \
+                    (\(status)); this process does not own it or may not ask.
+                    """)
+            }
+            return nil
+        }
 
         if let sealed = SealedRecord(record) {
             do {
@@ -413,7 +441,12 @@ public enum SecretStoreError: Error, CustomStringConvertible {
         switch self {
         case .keychain(let status):
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
-            return "Keychain error \(status): \(message)"
+            guard status == errSecAuthFailed || status == errSecInteractionNotAllowed else {
+                return "Keychain error \(status): \(message)"
+            }
+            // Outside the app the keychain may not ask (see `interactionPolicy`), so an
+            // item the app wrote cannot be changed from here.
+            return "Keychain error \(status): \(message). The app owns this item; change it in Settings ▸ Models & Keys."
         case .corruptRecord:
             return "The stored record is not in a format this build understands."
         }
@@ -486,7 +519,8 @@ private enum KeychainItem {
     }
 
     private static func base(account: String, service: String) -> [String: Any] {
-        [
+        _ = SecretStore.interactionPolicy
+        return [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,

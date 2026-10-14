@@ -49,18 +49,29 @@ public struct CredentialStore: Sendable {
         }
     }
 
+    /// Providers whose key sealed in the keychain wins over the environment. A shell
+    /// profile may export `TYPESAFE_API_KEY` in plaintext for other tools; that must not
+    /// override the encrypted copy. The variable stays the fallback, as for CI.
+    static let sealedKeyFirst: Set<String> = ["typesafe"]
+
     public func key(for provider: String) -> String? {
         if let value = overrides[provider], !value.isEmpty { return value }
-        if let variable = environmentVariable(for: provider) { return environment[variable] }
+        if let variable = environmentVariable(for: provider) {
+            return sealedFirst(provider) ?? environment[variable]
+        }
         return secrets.read(account: provider)
     }
 
     public func source(for provider: String) -> Source? {
         if let value = overrides[provider], !value.isEmpty { return .override }
         if let variable = environmentVariable(for: provider) {
-            return .environment(variable: variable)
+            return sealedFirst(provider) != nil ? .keychain : .environment(variable: variable)
         }
         return secrets.read(account: provider) != nil ? .keychain : nil
+    }
+
+    private func sealedFirst(_ provider: String) -> String? {
+        Self.sealedKeyFirst.contains(provider) ? secrets.read(account: provider) : nil
     }
 
     private func environmentVariable(for provider: String) -> String? {

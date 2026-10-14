@@ -26,11 +26,12 @@ public enum SystemOneBackend {
 
     public static func resolve(
         model: String? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        secrets: SecretStore
     ) -> any TypeSafeEvaluating {
         let gemmaModel = model ?? environment["MCA_EMBEDDING_GEMMA_MODEL"]
         switch environment["MCA_SYSTEM_ONE"]?.lowercased() {
-        case "typesafe": return TypeSafeClient.configured(credentials: CredentialStore(environment: environment))
+        case "typesafe": return TypeSafeClient.configured(credentials: CredentialStore(environment: environment, secrets: secrets))
         case "clef": return CloudflareClefClient(model: .clef)
         case "clef-flash": return CloudflareClefClient(model: .clefFlash)
         case "embeddinggemma", "embeddinggemma2", "gemma", "local":
@@ -39,7 +40,7 @@ public enum SystemOneBackend {
         default:
             let localGemma = EmbeddingGemmaClient(model: gemmaModel, environment: environment)
             if localGemma.isConfigured { return localGemma }
-            let typeSafe = TypeSafeClient.configured(credentials: CredentialStore(environment: environment))
+            let typeSafe = TypeSafeClient.configured(credentials: CredentialStore(environment: environment, secrets: secrets))
             return typeSafe.hasKey ? typeSafe : Offline()
         }
     }
@@ -118,7 +119,7 @@ extension TypeSafeDecisionEngine {
     /// whichever backend decides: ranking is on the machine and only reorders, so it
     /// is not an opt-in the way a decision backend is.
     public static func live(confidenceThreshold: Float = 0.80, model: String? = nil) -> TypeSafeDecisionEngine {
-        let client = SystemOneBackend.resolve(model: model)
+        let client = SystemOneBackend.resolve(model: model, secrets: .shared)
         if client is CloudflareClefClient { CloudflareCredentials.shared.prefetch() }
         return TypeSafeDecisionEngine(
             client: client,

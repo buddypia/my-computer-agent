@@ -29,7 +29,8 @@ struct SystemOneEvalTests {
     func evaluate() async throws {
         let online = ProcessInfo.processInfo.environment["MCA_EVAL_ONLINE"] == "1"
         // Online uses the same backend the app resolves (MCA_SYSTEM_ONE / TypeSafe key / cf).
-        let backend = SystemOneBackend.resolve()
+        // Offline never resolves it: that would read the developer's keychain in every test run.
+        let backend: any TypeSafeEvaluating = online ? SystemOneBackend.resolve(secrets: .shared) : SystemOneBackend.Offline()
         let engine = online
             ? TypeSafeDecisionEngine(client: backend)
             : TypeSafeDecisionEngine(customEvaluator: { _ in throw EvalOffline() })

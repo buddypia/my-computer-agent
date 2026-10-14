@@ -30,7 +30,9 @@ struct TypeSafeClientCredentialTests {
 
     @Test("The backend reads the key from the environment it is given")
     func backendUsesGivenEnvironment() {
-        let client = SystemOneBackend.resolve(environment: ["MCA_SYSTEM_ONE": "typesafe", "TYPESAFE_API_KEY": "k"])
+        let client = SystemOneBackend.resolve(
+            environment: ["MCA_SYSTEM_ONE": "typesafe", "TYPESAFE_API_KEY": "k"],
+            secrets: SecretStore(namespace: "com.buddypia.mca.tests.never-written"))
         #expect((client as? TypeSafeClient)?.hasKey == true)
     }
 }
