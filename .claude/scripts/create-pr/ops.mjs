@@ -862,16 +862,19 @@ function hasWorkflows(dir) {
 }
 
 /**
- * The base branch's required status checks, so a merge waits for those by name. [] when the repo
- * has no protection or the token cannot read it — GitHub still enforces them on the merge call.
+ * The base branch's required status checks, so a merge waits for those by name. [] only when GitHub
+ * says there are none (404: no protection or no status-check rule). Any other failure throws: reading
+ * it as "nothing required" would merge on whatever checks happened to be green.
  */
 export function requiredChecks(repo, base, { ghFn = gh } = {}) {
+  let out;
   try {
-    const out = ghFn(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts[]']);
-    return String(out || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  } catch {
-    return [];
+    out = ghFn(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts[]']);
+  } catch (e) {
+    if (/HTTP 404/.test(`${e.stderr ?? ''} ${e.message ?? ''}`)) return [];
+    throw e;
   }
+  return String(out || '').split('\n').map((l) => l.trim()).filter(Boolean);
 }
 
 /**
