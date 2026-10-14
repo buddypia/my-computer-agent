@@ -51,6 +51,7 @@ struct SerialGateTests {
 
         let (acquired, acquiredSignal) = AsyncStream<Void>.makeStream()
         let (release, releaseSignal) = AsyncStream<Void>.makeStream()
+        defer { releaseSignal.finish() }  // never leave the shared gate held if the test throws
         let holder = Task {
             try await TextRecognizer.visionGate.run {
                 acquiredSignal.yield()

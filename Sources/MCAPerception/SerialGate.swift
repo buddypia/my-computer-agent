@@ -1,8 +1,9 @@
-/// Runs async work one call at a time, in arrival order.
+/// Runs async work one call at a time, in the order the calls reach the gate.
 ///
 /// An actor alone does not do this: it is reentrant, so a second call starts
 /// as soon as the first suspends. A caller cancelled while waiting still waits
 /// its turn; the work it then runs sees the cancellation and returns early.
+/// Work that never returns holds the gate for good, so pass only work that ends.
 final class SerialGate: Sendable {
     private let state = State()
 
