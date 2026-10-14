@@ -807,7 +807,7 @@ const PASSING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
  * No checks at all is pending, not passed: right after the push they are not registered yet.
  * A queued run has no startedAt yet and is the newest of its check.
  */
-export function checksVerdict(rollup) {
+export function checksVerdict(rollup, required = []) {
   const latest = new Map();
   const started = (c) => c.startedAt || '\uffff';
   for (const c of rollup ?? []) {
@@ -817,7 +817,10 @@ export function checksVerdict(rollup) {
   }
   if (latest.size === 0) return { state: 'pending', failed: [] };
   const failed = [];
-  let pending = false;
+  // A required check that has not reported yet is pending, not absent: a fast workflow (gitleaks)
+  // going green first must not read as "all checks passed" while the gate is still queued.
+  const names = new Set([...latest.values()].map((c) => c.name ?? c.context));
+  let pending = required.some((name) => !names.has(name));
   for (const [key, c] of latest) {
     const done = c.__typename === 'StatusContext' ? c.state !== 'PENDING' && c.state !== 'EXPECTED' : c.status === 'COMPLETED';
     if (!done) pending = true;
@@ -836,13 +839,13 @@ export function checksVerdict(rollup) {
  * The rollup only counts while GitHub's PR head is `headSha`: right after a push it can still
  * describe the previous head, whose green checks say nothing about the tree being merged.
  */
-export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null } = {}) {
+export function waitChecks(prNumber, repo, headSha, { ghFn = gh, sleepFn = null, required = [] } = {}) {
   let waited = 0;
   for (;;) {
     const pr = JSON.parse(ghFn([
       'pr', 'view', String(prNumber), '--repo', repo, '--json', 'headRefOid,statusCheckRollup',
     ]) || '{}');
-    const verdict = pr.headRefOid === headSha ? checksVerdict(pr.statusCheckRollup) : { state: 'pending' };
+    const verdict = pr.headRefOid === headSha ? checksVerdict(pr.statusCheckRollup, required) : { state: 'pending' };
     if (verdict.state === 'passed') return { passed: true, state: 'CHECKS_PASSED' };
     if (verdict.state === 'failed') return { passed: false, state: `CHECKS_FAILED: ${verdict.failed.join(', ')}` };
     if (waited >= CHECKS_TIMEOUT_MS) return { passed: false, state: 'CHECKS_TIMEOUT' };
@@ -858,6 +861,32 @@ function hasWorkflows(dir) {
   return existsSync(wf) && readdirSync(wf).some((f) => /\.ya?ml$/.test(f));
 }
 
+/**
+ * The base branch's required status checks, so a merge waits for those by name. [] when the repo
+ * has no protection or the token cannot read it — GitHub still enforces them on the merge call.
+ */
+export function requiredChecks(repo, base, { ghFn = gh } = {}) {
+  try {
+    const out = ghFn(['api', `repos/${repo}/branches/${base}/protection/required_status_checks`, '--jq', '.contexts[]']);
+    return String(out || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Waits for this head's checks, then reads mergeability. A required check keeps the PR BLOCKED until
+ * it finishes, and waitMergeable returns on BLOCKED at once — so a head whose CI was still running
+ * (always the case right after ship merged the base) was deferred instead of merged.
+ */
+export function settleMergeable({ prNumber, repo, headSha, ciGated, required = [], ghFn = gh, sleepFn = null }) {
+  if (ciGated) {
+    const checks = waitChecks(prNumber, repo, headSha, { ghFn, sleepFn, required });
+    if (!checks.passed) return { mergeable: false, state: checks.state };
+  }
+  return waitMergeable(prNumber, repo, { ghFn, sleepFn });
+}
+
 function createAndMergePr({
   base, head, title, body, deleteBranch = null, noMerge = false, worktreeDir = null,
   forceQualityGate = false,
@@ -869,19 +898,15 @@ function createAndMergePr({
     return { prNumber, prUrl, merged: false, pending: true, existing };
   }
 
-  // A required check keeps the PR BLOCKED until it finishes, and waitMergeable returns on BLOCKED
-  // at once — so a head whose CI was still running (always the case right after ship merged the
-  // base) was deferred instead of merged. Wait for this head's checks first.
   const ciGated = Boolean(worktreeDir) && hasWorkflows(worktreeDir);
-  const settle = () => {
-    if (ciGated) {
-      const checks = waitChecks(prNumber, repo, git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim());
-      if (!checks.passed) return { mergeable: false, state: checks.state };
-    }
-    return waitMergeable(prNumber, repo);
-  };
+  const required = ciGated ? requiredChecks(repo, base) : [];
+  const settle = () => settleMergeable({
+    prNumber, repo, ciGated, required,
+    headSha: worktreeDir ? git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim() : null,
+  });
 
   let { mergeable, state } = settle();
+  let synced = false;
   if (!mergeable && worktreeDir && (state === 'BEHIND' || state === 'DIRTY' || state === 'BLOCKED')) {
     console.log(`[create-pr] PR #${prNumber} is not mergeable (${state}). Attempting automatic sync and retry.`);
     try {
@@ -923,10 +948,7 @@ function createAndMergePr({
 
       if (syncSuccess) {
         git(['push', 'origin', head], { cwd: worktreeDir, timeout: PUSH_TIMEOUT_MS, retry: 3 });
-        console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
-        const retryResult = settle();
-        mergeable = retryResult.mergeable;
-        state = retryResult.state;
+        synced = true;
       }
     } catch (syncErr) {
       console.error(`[create-pr] Error during automatic sync attempt: ${syncErr.message}`);
@@ -941,12 +963,17 @@ function createAndMergePr({
   // uncertified tree to the feature branch is harmless — nothing consumes it — whereas landing it on
   // the trunk is not, and this throws before the merge call below.
   if (worktreeDir) assertQualityGateFreshAfterBaseMerge(worktreeDir, forceQualityGate);
+  // After the assert, so a merge that rewrote this branch's diff fails now rather than after a CI wait.
+  if (synced) {
+    console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
+    ({ mergeable, state } = settle());
+  }
 
   // After the sync above, so a re-pushed head is judged by its own checks. The merge below names
   // the same sha, so GitHub refuses it if the head moved after the checks were read.
   const headSha = worktreeDir ? git(['rev-parse', 'HEAD'], { cwd: worktreeDir }).trim() : null;
   if (mergeable && ciGated) {
-    ({ passed: mergeable, state } = waitChecks(prNumber, repo, headSha));
+    ({ passed: mergeable, state } = waitChecks(prNumber, repo, headSha, { required }));
   }
 
   if (!mergeable) {

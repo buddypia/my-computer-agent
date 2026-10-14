@@ -410,8 +410,9 @@ export function trustRecordedApproval(worktreeAbs, branch) {
 export function buildTrustApprovedDenyMessage(branch, helperPath) {
   return [
     '[pre-ship-review-guard] ship call blocked: no fresh Pre-Ship marker.',
-    'trust recorded the approval (AUTO_MERGE), so no Review Panel is needed. Create the marker in its',
-    'own Bash call (a marker made in the same chain is invisible to this hook), then re-run ship:',
+    'trust recorded the approval (AUTO_MERGE) for this worktree. If it still holds for the current diff,',
+    'no Review Panel is needed: create the marker in its own Bash call (a marker made in the same chain',
+    'is invisible to this hook), then re-run ship. The marker CLI re-checks every Pre-Ship step:',
     `  node ${helperPath} ${branch} --quality <agent_go|skill_review_pass|self_review_pass|trivial_skip>`,
   ].join('\n');
 }

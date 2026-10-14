@@ -70,6 +70,7 @@ G2「隔離」が単独・直列に強制する。
    （`--ci` は CI run の完了を待ち、その証拠を使う。ローカルで swift test は走らない）
    - exit 0 かつ `TRUST AUTO_MERGE` と「Pre-Ship approval を trust として記録した」が出力された場合だけ、
      人間に聞かずに `/create-pr ship-worktree` へ進む。PR 本文に判定結果を載せ、マージ後に報告する。
+     ship は main を取り込んだ head の CI を最大 30 分待ってからマージするので、background で実行する。
      exit 0 だけでは判断しない（INC-012）。
    - exit 3（`HUMAN`）: 表示された理由（どの軸で致命的か）を Pre-Ship Panel に添えて人間の承認を待つ。
      回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する。
