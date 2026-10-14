@@ -344,8 +344,12 @@ final class SettingsModel {
     }
 
     func removeKey(for provider: String) {
-        SecretStore.shared.delete(account: provider)
-        saveErrors[provider] = nil
+        do {
+            try SecretStore.shared.delete(account: provider)
+            saveErrors[provider] = nil
+        } catch {
+            saveErrors[provider] = "\(error)"
+        }
         credentialsChanged()
     }
 
@@ -1332,6 +1336,46 @@ private struct ProviderRow: View {
 
     private var source: CredentialStore.Source? { model.keySources[provider.id] }
 
+    /// Under `.environment` the key in use is `$variable`. For most providers it also
+    /// shadows a stored key; TypeSafe's stored key is used first (`sealedKeyFirst`), so
+    /// there saving one here is the way past the variable.
+    private func environmentNote(_ variable: String) -> String {
+        guard CredentialStore.sealedKeyFirst.contains(provider.id) else {
+            return localized(
+                """
+                $\(variable) wins over anything stored here, and it is only visible to \
+                processes that inherit it — a key that works from your shell may be missing \
+                when macOS launches the app at login.
+                """,
+                """
+                $\(variable) はここに保存されたものより優先され、それを継承したプロセスからしか\
+                見えません。シェルからは動くキーでも、ログイン時に macOS がアプリを起動した\
+                ときには存在しないことがあります。
+                """,
+                """
+                $\(variable) 는 여기에 저장된 값보다 우선하며, 그것을 물려받은 프로세스에서만 \
+                보입니다. 셸에서는 되는 키라도 로그인 시 macOS가 앱을 실행할 때는 없을 수 \
+                있습니다.
+                """)
+        }
+        return localized(
+            """
+            Using $\(variable) until a key is saved here; a saved key is used first. The \
+            variable is only visible to processes that inherit it — a key that works from your \
+            shell may be missing when macOS launches the app at login.
+            """,
+            """
+            ここにキーを保存するまでは $\(variable) を使います。保存したキーが優先されます。\
+            環境変数はそれを継承したプロセスからしか見えないため、シェルからは動くキーでも、\
+            ログイン時に macOS がアプリを起動したときには存在しないことがあります。
+            """,
+            """
+            여기에 키를 저장하기 전까지는 $\(variable) 를 씁니다. 저장한 키가 우선합니다. \
+            환경 변수는 그것을 물려받은 프로세스에서만 보이므로, 셸에서는 되는 키라도 로그인 시 \
+            macOS가 앱을 실행할 때는 없을 수 있습니다.
+            """)
+    }
+
     private var statusText: String {
         switch source {
         case .keychain: return localized("In your keychain", "キーチェーンに保存済み", "키체인에 저장됨")
@@ -1363,22 +1407,7 @@ private struct ProviderRow: View {
             Text(localized(provider.hint)).font(.system(size: 10)).foregroundStyle(.secondary)
 
             if case .environment(let variable) = source {
-                Text(localized(
-                    """
-                    $\(variable) wins over anything stored here, and it is only visible to \
-                    processes that inherit it — a key that works from your shell may be missing \
-                    when macOS launches the app at login.
-                    """,
-                    """
-                    $\(variable) はここに保存されたものより優先され、それを継承したプロセスからしか\
-                    見えません。シェルからは動くキーでも、ログイン時に macOS がアプリを起動した\
-                    ときには存在しないことがあります。
-                    """,
-                    """
-                    $\(variable) 는 여기에 저장된 값보다 우선하며, 그것을 물려받은 프로세스에서만 \
-                    보입니다. 셸에서는 되는 키라도 로그인 시 macOS가 앱을 실행할 때는 없을 수 \
-                    있습니다.
-                    """))
+                Text(environmentNote(variable))
                     .font(.system(size: 10))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)

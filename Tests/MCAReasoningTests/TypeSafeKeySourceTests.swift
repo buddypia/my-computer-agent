@@ -11,8 +11,8 @@ struct TypeSafeKeySourceTests {
     private let store = SecretStore(namespace: "com.buddypia.mca.tests.\(UUID().uuidString)")
 
     private func tearDown() {
-        store.delete(account: "typesafe")
-        store.delete(account: "gemini")
+        try? store.delete(account: "typesafe")
+        try? store.delete(account: "gemini")
         store.destroyWrappingKeyForTesting()
     }
 
@@ -65,9 +65,44 @@ struct KeychainInteractionTests {
         #expect(!allowed.boolValue)
     }
 
+    /// The item is made by `/usr/bin/security`, so its access list names that tool and
+    /// not this test — what an app-saved key looks like to the CLI. Skipped rather than
+    /// run when dialogs are on: then this read is the dialog that hangs every process.
+    @Test(
+        "an item another binary owns fails at once and is not reported removed",
+        .enabled(if: {
+            _ = SecretStore.interactionPolicy
+            var allowed: DarwinBoolean = true
+            SecKeychainGetUserInteractionAllowed(&allowed)
+            return !allowed.boolValue
+        }()))
+    func foreignItemIsHonest() throws {
+        let store = SecretStore(namespace: "com.buddypia.mca.tests.\(UUID().uuidString)")
+        try security("add-generic-password", "-s", store.credentialService, "-a", "gemini", "-w", "foreign")
+        defer { try? security("delete-generic-password", "-s", store.credentialService, "-a", "gemini") }
+
+        // Returning at all is the point: with a dialog this call would not.
+        #expect(store.read(account: "gemini") == nil)
+        #expect(store.contains(account: "gemini"))
+        #expect(throws: SecretStoreError.self) { try store.delete(account: "gemini") }
+        #expect(store.contains(account: "gemini"))
+    }
+
+    private func security(_ arguments: String...) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        try #require(process.terminationStatus == 0)
+    }
+
     @Test("a refused item says where it can be changed")
     func refusalPointsAtSettings() {
         #expect(SecretStoreError.keychain(errSecAuthFailed).description.contains("Settings"))
+        #expect(SecretStoreError.keychain(errSecInvalidOwnerEdit).description.contains("Keychain Access"))
         #expect(!SecretStoreError.keychain(errSecDuplicateItem).description.contains("Settings"))
     }
 }
