@@ -24,7 +24,7 @@ struct IsolatedMeasurementConventionTests {
         // modifiers before `func`, and the body where the switch is read. Same name pattern as the gate.
         let function = try Regex(#"\bfunc\s+(\w+)\s*\("#)
         let tightWallBound = try Regex(
-            #"(?:<\s*\.(?:milliseconds\(|seconds\([1-9]\))|timeIntervalSince\([^)]*\)\s*<\s*[1-9](?:\.\d+)?\b)"#
+            #"(?:<\s*\.(?:milliseconds\(|seconds\([1-9]\))|timeIntervalSince\([^)]*\)\s*<\s*[1-9](?:\.\d+)?\b|elapsedMs\s*<\s*[1-9]\d{0,3}\b)"#
         )
         var isolated = 0
         for file in try Self.swiftFiles()

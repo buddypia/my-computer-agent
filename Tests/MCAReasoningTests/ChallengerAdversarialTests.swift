@@ -263,7 +263,7 @@ struct ChallengerAdversarialTests {
         let token = CancellationToken()
 
         let task = Task {
-            try await token.sleep(milliseconds: 1000)
+            try await token.sleep(milliseconds: 60_000)
         }
 
         // Cancel the Task directly rather than the token

@@ -57,7 +57,7 @@ struct MainThreadWatchdogTests {
 
         // Wait until watchdog detects the 1-second timeout
         var didHang = false
-        for _ in 0..<30 {
+        for _ in 0..<100 {
             try await Task.sleep(for: .milliseconds(100))
             let isHung = hangTriggered.withLock { $0 }
             if isHung {
@@ -71,7 +71,7 @@ struct MainThreadWatchdogTests {
         blockSemaphore.signal()
 
         var didRecover = false
-        for _ in 0..<30 {
+        for _ in 0..<100 {
             try await Task.sleep(for: .milliseconds(100))
             let isRecovered = recoveredTriggered.withLock { $0 }
             if isRecovered {

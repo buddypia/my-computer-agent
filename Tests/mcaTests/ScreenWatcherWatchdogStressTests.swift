@@ -101,9 +101,8 @@ struct ScreenWatcherWatchdogStressTests {
         let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
 
         #expect(closureRan)
-        if IsolatedTiming.enabled {
-            #expect(elapsedMs < 1000, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
-        }
+        let maxElapsedMs = IsolatedTiming.enabled ? 1000.0 : 15_000.0
+        #expect(elapsedMs < maxElapsedMs, "MainActor execution was delayed by \(elapsedMs)ms during ScreenWatcher tick")
 
         await tickTask.value
     }

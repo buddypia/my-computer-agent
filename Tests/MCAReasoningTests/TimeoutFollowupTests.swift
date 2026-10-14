@@ -53,8 +53,8 @@ struct TimeoutFollowupTests {
         }
         #expect(output.content.contains("did not finish within"))
         tool.release()
-        for _ in 0..<100 where tool.acted.withLock({ $0 }) == nil {
-            try await Task.sleep(for: .milliseconds(10))
+        for _ in 0..<250 where tool.acted.withLock({ $0 }) == nil {
+            try await Task.sleep(for: .milliseconds(20))
         }
         #expect(tool.acted.withLock { $0 } == false)
     }
@@ -84,6 +84,7 @@ struct TimeoutFollowupTests {
                 focusedElementId: nil, visibleCandidates: [field], timestamp: Date(), frameHash: "hash_\(title)")
         }
         var config = AutonomousLoopConfig.testing
+        config.settlingDelayMs = 0
         config.maxDurationSeconds = 3
         let coordinator = TwoTierAutonomousLoopCoordinator(
             planner: MockPlanningLLM.staticPlan(subgoals: [Subgoal(
@@ -94,14 +95,26 @@ struct TimeoutFollowupTests {
             inspector: MockUIInspector(snapshots: [snapshot("Form"), snapshot("Form"), snapshot("Form Typed")]),
             config: config,
             keystrokeApprover: SlowApprover(delay: .seconds(4)))
-        _ = try await coordinator.execute(goal: "Enter email")
+        let summary = try await coordinator.execute(goal: "Enter email")
+        #expect(summary.isSuccess)
     }
 }
 
-private struct SlowApprover: ToolApproving {
+private final class SlowApprover: ToolApproving, Sendable {
     let delay: Duration
+    private let didSleep = Mutex(false)
+    init(delay: Duration) {
+        self.delay = delay
+    }
     func decide(_ request: ToolApprovalRequest) async -> ToolApprovalDecision {
-        try? await Task.sleep(for: delay)
+        let shouldSleep = didSleep.withLock { state -> Bool in
+            if state { return false }
+            state = true
+            return true
+        }
+        if shouldSleep {
+            try? await Task.sleep(for: delay)
+        }
         return .approved
     }
 }

@@ -211,8 +211,7 @@ struct ScreenWatcherVisionStressTests {
         await watcher.tick()
         let duration = ContinuousClock.now - start
 
-        if IsolatedTiming.enabled {
-            #expect(duration < .milliseconds(100), "Tick when off should return immediately")
-        }
+        let maxDuration: Duration = IsolatedTiming.enabled ? .milliseconds(100) : .seconds(10)
+        #expect(duration < maxDuration, "Tick when off should return immediately")
     }
 }
