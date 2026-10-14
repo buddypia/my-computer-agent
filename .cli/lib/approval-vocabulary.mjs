@@ -47,7 +47,8 @@ export const APPROVAL_SPECS = [
       /^y(es)?$/u,
       /^go$/u,
       /^shipit$/u,
-      /^承認(します)?$/u,
+      /^承認(します|して)?$/u,
+      /^承認して進め(る|て|ます|てください)$/u, // "Approve and proceed" as Japanese users type it
       /^進行$/u,
       /^進めて(ください)?$/u,
     ],
