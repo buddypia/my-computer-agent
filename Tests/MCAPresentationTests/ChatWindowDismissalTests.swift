@@ -24,12 +24,39 @@ struct ChatWindowDismissalTests {
         let number = try #require(shown)
         #expect(surfaceIsVisible(number))
 
-        let removed = await chat.closeAndWaitForSurfaceRemoval()
+        // Removal is asserted, not its speed: under the loaded parallel suite Quartz delists
+        // the surface later than the app's 2 s budget (CI runs 38488139472, 38488630678).
+        // That budget is held by `closeWithinAppBudgetIsolated`.
+        let removed = await chat.closeAndWaitForSurfaceRemoval(timeout: .seconds(10))
         let remainingSurfaces = visibleSurfaceNames(number)
         #expect(removed, "ChatWindow did not confirm removal from Quartz")
         #expect(remainingSurfaces.isEmpty, "Quartz still lists matching surfaces: \(remainingSurfaces)")
         #expect(!chat.isOpen)
         #expect(!state.isChatOpen)
+    }
+
+    /// Copilot cancels the action when removal is not confirmed within the default
+    /// timeout, so that default must hold when nothing else loads the process.
+    @Test("closing chat confirms Quartz removal within the app's default timeout")
+    func closeWithinAppBudgetIsolated() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+        chat.present()
+        var shown = false
+        for _ in 0..<100 where !shown {
+            try await Task.sleep(for: .milliseconds(50))
+            shown = NSApp.windows.first { $0.isVisible && $0.delegate === chat }
+                .map { surfaceIsVisible($0.windowNumber) } ?? false
+        }
+        try #require(shown)
+
+        // The default is enforced only with the process otherwise idle (G2 isolated stage).
+        let removed = IsolatedTiming.enabled
+            ? await chat.closeAndWaitForSurfaceRemoval()
+            : await chat.closeAndWaitForSurfaceRemoval(timeout: .seconds(10))
+        #expect(removed, "ChatWindow did not confirm removal from Quartz")
     }
 
     @Test("an approval brings the chat forward without a caret in the input field")
