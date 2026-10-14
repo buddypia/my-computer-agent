@@ -143,15 +143,15 @@ trust_tests() {
 # then fails with "database is locked" although nothing is wrong with the tree. Only that failure
 # is retried; any other is the build's own.
 swift_build() {
-    local out attempt
-    for attempt in 1 2 3; do
-        out="$(swift build --package-path "$ROOT" 2>&1)" && { printf '%s\n' "$out"; return 0; }
+    local out attempt=1
+    until out="$(swift build --package-path "$ROOT" 2>&1)"; do
         printf '%s\n' "$out"
         printf '%s' "$out" | grep -q 'database is locked' && [ "$attempt" -lt 3 ] || return 1
         echo "gate: the build database is locked by another build; retrying"
         sleep "${MCA_GATE_LOCK_RETRY_SECONDS:-5}"
+        attempt=$((attempt + 1))
     done
-    return 1
+    printf '%s\n' "$out"
 }
 
 swift_tests() {
