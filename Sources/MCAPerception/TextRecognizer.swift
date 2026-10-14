@@ -14,6 +14,14 @@ public struct TextRecognizer: Sendable {
     private let log = Logger(subsystem: "com.buddypia.mca", category: "OCR")
     private let languages: [Locale.Language]
 
+    /// One text recognition at a time, process-wide. Concurrent
+    /// `RecognizeTextRequest.perform` calls crash inside TextRecognition
+    /// (EXC_BAD_ACCESS in `objc_retain`, warm model or not) a few percent of the
+    /// time under load, and the screen watcher, Copilot and the tools can all
+    /// read the screen at once. Running them in turn costs no throughput: the
+    /// Neural Engine was serialising them anyway.
+    static let visionGate = SerialGate()
+
     public init(languages: [String] = ["en-US", "ja-JP"]) {
         self.languages = languages.map { Locale.Language(identifier: $0) }
     }
@@ -253,7 +261,8 @@ public struct TextRecognizer: Sendable {
         request.usesLanguageCorrection = true
         request.recognitionLanguages = languages
 
-        let observations = try await request.perform(on: image)
+        let configured = request
+        let observations = try await Self.visionGate.run { try await configured.perform(on: image) }
         let targetRect = windowFrame ?? CGRect(
             x: 0,
             y: 0,

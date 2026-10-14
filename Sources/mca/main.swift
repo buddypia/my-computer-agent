@@ -319,7 +319,10 @@ func runAuth(_ arguments: [String]) {
 
     let provider = arguments[1]
     if arguments[0] == "delete" {
-        SecretStore.shared.delete(account: provider)
+        guard SecretStore.shared.delete(account: provider) else {
+            FileHandle.standardError.write(Data("Could not remove the key for \(provider).\n".utf8))
+            exit(1)
+        }
         print("Removed key for \(provider).")
         return
     }
