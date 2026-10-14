@@ -146,7 +146,8 @@ swift_build() {
     local out attempt=1
     until out="$(swift build --package-path "$ROOT" 2>&1)"; do
         printf '%s\n' "$out"
-        printf '%s' "$out" | grep -q 'database is locked' && [ "$attempt" -lt 3 ] || return 1
+        # A here-string, not a pipe: under pipefail, grep -q quitting early fails a long printf (SIGPIPE).
+        grep -q 'database is locked' <<< "$out" && [ "$attempt" -lt 3 ] || return 1
         echo "gate: the build database is locked by another build; retrying"
         sleep "${MCA_GATE_LOCK_RETRY_SECONDS:-5}"
         attempt=$((attempt + 1))
