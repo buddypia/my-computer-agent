@@ -248,12 +248,14 @@ public final class ScreenCapturer: Sendable {
         guard !Self.isRefused(bundleID: fresh.window.bundleID, windowTitle: fresh.window.windowTitle, extra: isExcluded) else {
             throw CaptureError.windowExcluded
         }
+        // The title is not identity: a browser window's title follows its active tab and
+        // changes on its own ("(1) Home / X"). Treating that as the window being gone ended
+        // pinned watches. The fresh title is still checked against the exclusion list above.
         guard fresh.window.id == target.id,
               let pid = captured.processID, fresh.window.processID == pid,
               (target.processID == nil || target.processID == pid),
               captured.bundleID == fresh.window.bundleID,
               (target.bundleID == nil || target.bundleID == fresh.window.bundleID),
-              captured.windowTitle == fresh.window.windowTitle,
               captured.frame == fresh.frame,
               AccessibilityInspector.isValidCoordinateRect(fresh.frame) else { throw CaptureError.windowGone }
         try Task.checkCancellation()

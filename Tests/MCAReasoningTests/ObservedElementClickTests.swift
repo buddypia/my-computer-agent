@@ -50,7 +50,7 @@ struct ObservedElementClickTests {
         #expect(!DesktopActionAuthorization.matchesObservation(before, changed, operation: operation))
     }
 
-    @Test("Restored focus never permits a changed window or candidate", arguments: ["click", "scroll", "Click element"])
+    @Test("Restored focus never permits a changed app or candidate", arguments: ["click", "scroll", "Click element"])
     func coordinateOperationsRejectChangedObservation(operation: String) {
         let before = observedSnapshot(focused: false)
         let restored = observedSnapshot(focused: true)
@@ -58,14 +58,21 @@ struct ObservedElementClickTests {
         changed.appBundleId = "fixture.other"
         #expect(!DesktopActionAuthorization.matchesObservation(before, changed, operation: operation))
         changed = restored
-        changed.windowTitle = "Other window"
-        #expect(!DesktopActionAuthorization.matchesObservation(before, changed, operation: operation))
-        changed = restored
         changed.visibleCandidates = [candidate("delete", label: "Different action")]
         #expect(!DesktopActionAuthorization.matchesObservation(before, changed, operation: operation))
         changed = restored
         changed.visibleCandidates = []
         #expect(!DesktopActionAuthorization.matchesObservation(before, changed, operation: operation))
+    }
+
+    /// A browser window's title follows its tab ("Home / X" → "(1) Home / X"). Which window it
+    /// is gets settled by window ID; a title change alone must not refuse the selected window.
+    @Test("A title change alone is not a changed observation", arguments: ["click", "scroll", "Click element", "type"])
+    func titleChangeIsNotIdentity(operation: String) {
+        let before = observedSnapshot(focused: true)
+        var retitled = before
+        retitled.windowTitle = "(1) Selected"
+        #expect(DesktopActionAuthorization.matchesObservation(before, retitled, operation: operation))
     }
 
 }
