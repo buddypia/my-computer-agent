@@ -934,15 +934,14 @@ final class Copilot {
 
         guard initialCapture.frame != .zero else { return "Target window geometry is unavailable; no scroll was executed." }
         let expectedFrame = initialCapture.frame
-        let expectedTitle = initialCapture.windowTitle
         let synthesizer = EventSynthesizer()
         let collector = ScreenContentCollector(readViewport: { [weak self] in
             guard let self else { throw CancellationError() }
-            let capture = try await self.collectionCapture(pinned, pid: pid, title: expectedTitle, frame: expectedFrame)
+            let capture = try await self.collectionCapture(pinned, pid: pid, frame: expectedFrame)
             return PrivacyFilter().redactSensitiveText(try await self.textRecognizer.recognizeText(in: capture.image))
         }, scroll: { [weak self] in
             guard let self else { throw CancellationError() }
-            let capture = try await self.collectionCapture(pinned, pid: pid, title: expectedTitle, frame: expectedFrame)
+            let capture = try await self.collectionCapture(pinned, pid: pid, frame: expectedFrame)
             try Task.checkCancellation()
             try await ActionAuthorization.current?.consumeAction()
             try synthesizer.scrollProcess(pid: pid, at: CGPoint(x: capture.frame.midX, y: capture.frame.midY), deltaX: 0, deltaY: deltaY)
@@ -970,12 +969,15 @@ final class Copilot {
             """)
     }
 
-    private func collectionCapture(_ target: PinnedWindow, pid: pid_t, title: String, frame: CGRect) async throws -> ScreenCapturer.WindowCapture {
+    /// Binds each capture to the window by ID, PID and frame. Not by title: a browser's title
+    /// follows its page and changes during a scroll ("(1) Home / X"), which aborted collection.
+    /// The current title is still checked against the exclusion list.
+    private func collectionCapture(_ target: PinnedWindow, pid: pid_t, frame: CGRect) async throws -> ScreenCapturer.WindowCapture {
         let configuration = self.configuration
         try Task.checkCancellation()
         let capture = try await screenCapturer.captureWindow(target,
             excluding: { configuration.isExcluded(bundleID: $0, windowTitle: $1) })
-        guard capture.processID == pid, capture.windowTitle == title, capture.frame == frame,
+        guard capture.processID == pid, capture.frame == frame,
               !configuration.isExcluded(bundleID: capture.bundleID, windowTitle: capture.windowTitle) else {
             throw ActionAuthorizationError.staleTarget
         }

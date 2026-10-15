@@ -18,7 +18,9 @@ public enum DesktopActionAuthorization {
         else { throw stale("nothing observed yet") }
         guard let bundle = before.appBundleId, let title = before.windowTitle,
               !before.visibleCandidates.isEmpty else { throw stale("observation lacks app, title or candidates") }
-        guard selected.bundleID == bundle, selected.windowTitle == title else {
+        // The pinned title is a snapshot from pin time and a browser's title follows its tab, so
+        // it is not compared. Which window was observed is settled by ID below (`windowIDs`).
+        guard selected.bundleID == bundle else {
             throw stale("observation is not of the selected window")
         }
         if let requestedApp, requestedApp.caseInsensitiveCompare(before.appName ?? "") != .orderedSame {
@@ -26,15 +28,16 @@ public enum DesktopActionAuthorization {
         }
 
         let inspector = InspectUIElementsTool.makeDefaultInspector(maxCandidates: before.candidateLimit ?? 25)
-        guard matchesObservation(before, try await inspector.captureSnapshot(), operation: operation) else {
+        let current = try await inspector.captureSnapshot()
+        guard matchesObservation(before, current, operation: operation) else {
             throw stale("screen changed since it was observed")
         }
         guard let processID = await resolveProcess(selected: selected, bundle: bundle) else {
             throw stale("target process is not uniquely identifiable")
         }
         if let requestedPID, requestedPID != processID { throw stale("requested PID differs") }
-        guard windowIDs(pid: processID, title: title) == [selected.id] else {
-            throw stale("selected window is not the only window with this title")
+        guard isSelectedWindow(current, pid: processID, selected: selected) else {
+            throw stale("focused window is not uniquely the selected window")
         }
 
         try await ActionAuthorization.requireApproval(operation: "Desktop: " + operation,
@@ -44,15 +47,25 @@ public enum DesktopActionAuthorization {
                 // confirmed after it, immediately before control returns to the dispatch.
                 let after = try await inspector.captureSnapshot()
                 guard matchesObservation(before, after, operation: operation),
-                      windowIDs(pid: processID, title: title) == [selected.id] else { return false }
+                      isSelectedWindow(after, pid: processID, selected: selected) else { return false }
                 return await MainActor.run {
                     NSWorkspace.shared.frontmostApplication?.processIdentifier == processID
                 }
             })
     }
 
+    /// The title is only a lookup key into the window list, taken as it is now; identity is the
+    /// window ID. A browser's title follows its tab ("(1) Home / X"), so comparing titles across
+    /// time refused actions on the very window the user selected.
+    private static func isSelectedWindow(_ snapshot: UIStateSnapshot, pid: pid_t, selected: PinnedWindow) -> Bool {
+        guard let title = snapshot.windowTitle else { return false }
+        return windowIDs(pid: pid, title: title) == [selected.id]
+    }
+
+    /// Same window is decided by ID (`isSelectedWindow`), not here: the title may change between
+    /// observation and approval without the window or its candidates changing.
     static func matchesObservation(_ before: UIStateSnapshot, _ after: UIStateSnapshot, operation: String) -> Bool {
-        guard before.appBundleId == after.appBundleId, before.windowTitle == after.windowTitle,
+        guard before.appBundleId == after.appBundleId,
               before.visibleCandidates == after.visibleCandidates else { return false }
         // These operations use frozen coordinates, not the currently focused field.
         // The approval UI may restore focus to the selected window. Unknown and

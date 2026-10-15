@@ -39,7 +39,8 @@ struct CopilotScreenshotPrivacyTests {
                 })
         })
         let image = await copilot.subjectFrame(for: .pinned(pinned))
-        #expect((image != nil) == (change == "allowed"))
+        // A permitted retitle ("Another page") is the same window: browsers retitle with the tab.
+        #expect((image != nil) == (change == "allowed" || change == "title"))
         #expect(await probe.count == 1)
     }
 
