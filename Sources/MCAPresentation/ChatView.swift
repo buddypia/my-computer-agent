@@ -500,7 +500,7 @@ public struct ChatView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
                     if state.messages.isEmpty && !state.isStreaming {
                         emptyState
                     }
@@ -782,12 +782,21 @@ public struct ChatView: View {
         }
         .padding(14)
         // Not under an approval card: see `ChatWindow.presentForApproval`.
-        .onAppear { if !state.chatInputFocusSuppressed { inputFocused = true } }
+        .onAppear {
+            if !state.chatInputFocusSuppressed && !state.isAwaitingApproval {
+                inputFocused = true
+            }
+        }
         .onChange(of: state.chatFocusRequest) {
-            if !state.chatInputFocusSuppressed { inputFocused = true }
+            if !state.chatInputFocusSuppressed && !state.isAwaitingApproval {
+                inputFocused = true
+            }
         }
         .onChange(of: state.chatInputFocusSuppressed) {
             if state.chatInputFocusSuppressed { inputFocused = false }
+        }
+        .onChange(of: state.isAwaitingApproval) {
+            if state.isAwaitingApproval { inputFocused = false }
         }
     }
 
