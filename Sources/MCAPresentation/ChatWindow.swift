@@ -94,6 +94,7 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
         let window = makeWindowIfNeeded()
         window.becomesKeyOnlyIfNeeded = false
         window.initialFirstResponder = window.contentView
+        window.makeFirstResponder(nil)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -104,11 +105,12 @@ public final class ChatWindow: NSObject, NSWindowDelegate {
 
     public func close() {
         if let window {
+            window.makeFirstResponder(nil)
             window.orderOut(nil)
             window.close()
         }
         state.isChatOpen = false
-        state.chatInputFocusSuppressed = false
+        state.chatInputFocusSuppressed = state.isAwaitingApproval
     }
 
     /// Closes the chat and waits until Quartz no longer lists its panel.

@@ -294,4 +294,57 @@ struct ApprovalPresentationAdversarialTests {
         #expect(!state.isAwaitingApproval)
         #expect(!state.chatInputFocusSuppressed, "Expiry must reset focus suppression")
     }
+
+    @Test("Closing chat window while approval is awaiting preserves focus suppression")
+    func closeWhileAwaitingApprovalPreservesFocusSuppression() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+
+        chat.presentForApproval()
+        let request = ActionApprovalRequest(goal: "g1", operation: "o1", target: "t1", details: "d1", consequence: "c1")
+        let approval = Task { await state.requestApproval(request) }
+        await waitUntilAwaitingApproval(state)
+
+        #expect(state.isAwaitingApproval)
+        #expect(state.chatInputFocusSuppressed)
+
+        // Close chat window while still awaiting approval
+        chat.close()
+        #expect(!state.isChatOpen)
+        #expect(state.isAwaitingApproval)
+        #expect(state.chatInputFocusSuppressed, "chatInputFocusSuppressed must remain true when closed while awaiting approval")
+
+        state.cancelPendingApprovals()
+        #expect(await approval.value == .cancelled)
+    }
+
+    @Test("High volume messages layout under approval does not hang main thread")
+    func highVolumeMessagesLayoutUnderApproval() async throws {
+        _ = NSApplication.shared
+        let state = HUDState()
+        let chat = ChatWindow(state: state)
+        defer { chat.destroy() }
+
+        // Populate with maximum capacity of messages
+        for i in 0..<100 {
+            state.append(ChatMessage(role: i.isMultiple(of: 2) ? .user : .assistant, text: "Message \(i): Test long content ensuring layout computer handles geometry deterministically."))
+        }
+
+        chat.presentForApproval()
+        let request = ActionApprovalRequest(goal: "stress-test", operation: "op", target: "tgt", details: "det", consequence: "csq")
+        let approval = Task { await state.requestApproval(request) }
+        await waitUntilAwaitingApproval(state)
+
+        let window = try #require(NSApp.windows.first { $0.delegate === chat })
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(window.isVisible)
+        #expect(state.chatInputFocusSuppressed)
+        #expect(!(window.firstResponder is NSTextView))
+
+        state.cancelPendingApprovals()
+        #expect(await approval.value == .cancelled)
+    }
 }

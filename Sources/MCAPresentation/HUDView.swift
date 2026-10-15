@@ -872,7 +872,7 @@ public struct HUDView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     if state.messages.isEmpty && !state.isStreaming {
                         emptyState
                     }
@@ -892,10 +892,9 @@ public struct HUDView: View {
             // Both triggers are needed: a new message and a growing answer are
             // different changes, and following only the first leaves a long
             // streamed reply running off the bottom.
-            // When messages change, animate smoothly. During streaming, scroll
-            // immediately without animation to prevent NSScrollView layout
-            // recursion loops (_NSDetectedLayoutRecursion) from overlapping animations.
-            .onChange(of: state.messages.count) { scrollToBottom(proxy, animated: true) }
+            // When messages change or streaming, scroll immediately without animation
+            // to prevent NSScrollView layout recursion loops (_NSDetectedLayoutRecursion).
+            .onChange(of: state.messages.count) { scrollToBottom(proxy, animated: false) }
             .onChange(of: state.streamingText) { scrollToBottom(proxy, animated: false) }
             .onAppear { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
         }
@@ -1005,7 +1004,11 @@ public struct HUDView: View {
         }
         .padding(9)
         .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 9))
-        .onAppear { inputFocused = true }
+        .onAppear {
+            if !state.chatInputFocusSuppressed && !state.isAwaitingApproval {
+                inputFocused = true
+            }
+        }
     }
 
     /// The panel toggle is not here any more — it is the `macwindow` icon in the
