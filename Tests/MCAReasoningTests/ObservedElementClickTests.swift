@@ -73,6 +73,8 @@ struct ObservedElementClickTests {
         var retitled = before
         retitled.windowTitle = "(1) Selected"
         #expect(DesktopActionAuthorization.matchesObservation(before, retitled, operation: operation))
+        retitled.visibleCandidates = [candidate("delete", label: "Different action")]
+        #expect(!DesktopActionAuthorization.matchesObservation(before, retitled, operation: operation))
     }
 
 }
