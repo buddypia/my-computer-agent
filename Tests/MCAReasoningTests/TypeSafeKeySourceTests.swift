@@ -60,9 +60,7 @@ struct KeychainInteractionTests {
     @Test("touching the keychain outside the app turns its dialogs off")
     func noDialogsOutsideTheApp() {
         _ = SecretStore(namespace: "com.buddypia.mca.tests.never-written").read(account: "typesafe")
-        var allowed: DarwinBoolean = true
-        SecKeychainGetUserInteractionAllowed(&allowed)
-        #expect(!allowed.boolValue)
+        #expect(!SecretStore.isUserInteractionAllowed)
     }
 
     /// The item is made by `/usr/bin/security`, so its access list names that tool and
@@ -73,9 +71,7 @@ struct KeychainInteractionTests {
         // Fails rather than reads if dialogs are on: then the read below would be the
         // dialog that hangs every process using the keychain.
         _ = SecretStore.interactionPolicy
-        var allowed: DarwinBoolean = true
-        SecKeychainGetUserInteractionAllowed(&allowed)
-        try #require(!allowed.boolValue)
+        try #require(!SecretStore.isUserInteractionAllowed)
 
         try security("add-generic-password", "-s", store.credentialService, "-a", "gemini", "-w", "foreign")
         defer { try? security("delete-generic-password", "-s", store.credentialService, "-a", "gemini") }
