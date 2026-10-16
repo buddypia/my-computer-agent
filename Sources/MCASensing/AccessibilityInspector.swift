@@ -4,6 +4,9 @@ import Foundation
 import MCACore
 import OSLog
 
+@_silgen_name("_AXUIElementGetWindow")
+private func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
+
 /// Inspects the frontmost application window's Accessibility hierarchy,
 /// extracting actionable UI element candidates with precise screen coordinates.
 ///
@@ -247,11 +250,23 @@ public struct AccessibilityInspector: Sendable {
         let started = ContinuousClock.now
         let deadline = started + Self.traversalBudget
 
+        let webArea = findWebArea(in: window, deadline: deadline)
+        if let webArea {
+            traverseTree(
+                element: webArea,
+                windowBounds: windowBounds,
+                depth: 0,
+                deadline: deadline,
+                visited: &visitedCount,
+                into: &candidates
+            )
+        }
         traverseTree(
             element: window,
             windowBounds: windowBounds,
             depth: 0,
             deadline: deadline,
+            skipping: webArea,
             visited: &visitedCount,
             into: &candidates
         )
@@ -404,14 +419,29 @@ public struct AccessibilityInspector: Sendable {
 
     // MARK: - Tree Traversal
 
+    private func findWebArea(in element: AXUIElement, depth: Int = 0, deadline: ContinuousClock.Instant) -> AXUIElement? {
+        guard depth < 8, Self.walkMayContinue(until: deadline) else { return nil }
+        Self.boundQueries(on: element)
+        let role = copyString(element, kAXRoleAttribute) ?? ""
+        if role == "AXWebArea" { return element }
+        guard depth == 0 || role == kAXGroupRole || role == kAXSplitGroupRole || role == kAXScrollAreaRole,
+              let children = copyElementArray(element, kAXChildrenAttribute) else { return nil }
+        for child in children {
+            if let found = findWebArea(in: child, depth: depth + 1, deadline: deadline) { return found }
+        }
+        return nil
+    }
+
     private func traverseTree(
         element: AXUIElement,
         windowBounds: CGRect?,
         depth: Int,
         deadline: ContinuousClock.Instant,
+        skipping: AXUIElement? = nil,
         visited: inout Int,
         into output: inout [UIElementCandidate]
     ) {
+        if let skipping, CFEqual(element, skipping) { return }
         guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
               Self.walkMayContinue(until: deadline) else { return }
         visited += 1
@@ -460,6 +490,7 @@ public struct AccessibilityInspector: Sendable {
                 windowBounds: windowBounds,
                 depth: depth + 1,
                 deadline: deadline,
+                skipping: skipping,
                 visited: &visited,
                 into: &output
             )
@@ -605,11 +636,41 @@ extension AccessibilityInspector: UIStateProviding {
         )
     }
 
+    static func axWindowID(_ element: AXUIElement) -> CGWindowID? {
+        var windowID: CGWindowID = 0
+        guard _AXUIElementGetWindow(element, &windowID) == .success, windowID != 0 else { return nil }
+        return windowID
+    }
+
+    /// Compares a Quartz `kCGWindowName` title against an Accessibility `kAXTitleAttribute` title.
+    /// Chromium browsers append `" - <Browser/Profile>"` to `kAXTitleAttribute` and middle-elide long
+    /// `NSWindow.title` values with `"…"`; some native apps expose an empty `kCGWindowName` while
+    /// populating `kAXTitleAttribute`.
+    static func titlesMatch(_ expected: String, _ candidate: String?) -> Bool {
+        guard let candidate else { return false }
+        if expected == candidate { return true }
+        if expected.isEmpty { return !candidate.isEmpty }
+        if candidate.hasPrefix(expected + " - ") || candidate.hasPrefix(expected + " — ") {
+            return true
+        }
+        let parts = expected.split(separator: "…", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty {
+            let prefix = String(parts[0])
+            let suffix = String(parts[1])
+            guard candidate.hasPrefix(prefix) else { return false }
+            let remainder = String(candidate.dropFirst(prefix.count))
+            return remainder.hasSuffix(suffix)
+                || remainder.contains(suffix + " - ")
+                || remainder.contains(suffix + " — ")
+        }
+        return false
+    }
+
     /// Resolves a Quartz window to exactly one AX window; focused/first-window
     /// fallbacks are deliberately absent from selected-window observations.
     static func uniqueWindowIndex(_ windows: [(title: String?, bounds: CGRect?)], title: String, bounds: CGRect) -> Int? {
         guard isValidCoordinateRect(bounds) else { return nil }
-        let matches = windows.indices.filter { windows[$0].title == title && windows[$0].bounds == bounds }
+        let matches = windows.indices.filter { titlesMatch(title, windows[$0].title) && windows[$0].bounds == bounds }
         return matches.count == 1 ? matches.first : nil
     }
 
@@ -644,7 +705,7 @@ extension AccessibilityInspector: UIStateProviding {
     /// Which half of the title+frame identity the AX windows failed: zero windows is an
     /// unanswered query, title-only misses a retitle, frame-only misses a move.
     static func axIdentityMismatch(_ windows: [(title: String?, bounds: CGRect?)], title: String, bounds: CGRect) -> String {
-        "no unique AX window (windows=\(windows.count) titleMatches=\(windows.filter { $0.title == title }.count) "
+        "no unique AX window (windows=\(windows.count) titleMatches=\(windows.filter { titlesMatch(title, $0.title) }.count) "
             + "frameMatches=\(windows.filter { $0.bounds == bounds }.count))"
     }
 
@@ -707,7 +768,8 @@ extension AccessibilityInspector: UIStateProviding {
             identities.append((title, getElementBounds(window)))
         }
         guard ContinuousClock.now < deadline, !Task.isCancelled else { return [] }
-        guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else { return [] }
+        guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds),
+              Self.axWindowID(windows[index]).map({ $0 == target.id }) ?? true else { return [] }
         let window = windows[index]
         var rects: [CGRect] = []
         for attribute in [kAXCloseButtonAttribute, kAXMinimizeButtonAttribute, kAXZoomButtonAttribute] {
@@ -728,9 +790,11 @@ extension AccessibilityInspector: UIStateProviding {
                   let row = rects.first, rect.minY >= row.minY, rect.maxY <= row.maxY else { return [] }
             rects.append(rect)
         }
+        let currentAXTitle = copyString(window, kAXTitleAttribute)
         guard prepare(window), let after = try? selectedWindowInfo(target, pid: pid), !app.isTerminated,
               before.title == after.title, before.bounds == after.bounds,
-              copyString(window, kAXTitleAttribute) == before.title,
+              currentAXTitle == identities[index].title,
+              Self.titlesMatch(after.title, currentAXTitle),
               getElementBounds(window) == before.bounds,
               ContinuousClock.now < deadline, !Task.isCancelled else { return [] }
 
@@ -767,7 +831,8 @@ extension AccessibilityInspector: UIStateProviding {
             let windows = copyElementArray(axApp, kAXWindowsAttribute) ?? []
             windows.forEach(Self.boundQueries(on:))
             let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
-            guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
+            guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds),
+                  Self.axWindowID(windows[index]).map({ $0 == target.id }) ?? true else {
                 throw Self.unavailable(Self.axIdentityMismatch(identities, title: before.title, bounds: before.bounds))
             }
             let window = windows[index]
@@ -809,7 +874,8 @@ extension AccessibilityInspector: UIStateProviding {
         let axApp = AXUIElementCreateApplication(pid)
         let windows = copyElementArray(axApp, kAXWindowsAttribute) ?? []
         let identities = windows.map { (title: copyString($0, kAXTitleAttribute), bounds: getElementBounds($0)) }
-        guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds) else {
+        guard let index = Self.uniqueWindowIndex(identities, title: before.title, bounds: before.bounds),
+              Self.axWindowID(windows[index]).map({ $0 == targetWindow.id }) ?? true else {
             throw Self.unavailable(Self.axIdentityMismatch(identities, title: before.title, bounds: before.bounds))
         }
         let after = try selectedWindowInfo(targetWindow, pid: pid)

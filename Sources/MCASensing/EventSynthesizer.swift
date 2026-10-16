@@ -387,6 +387,18 @@ public struct EventSynthesizer: Sendable {
         return (value as! AXUIElement)
     }
 
+    private func axWindowFrame(_ element: AXUIElement) -> CGRect? {
+        var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &rawPosition) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &rawSize) == .success,
+              let rawPosition, let rawSize,
+              CFGetTypeID(rawPosition) == AXValueGetTypeID(), CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero, size = CGSize.zero
+        guard AXValueGetValue(rawPosition as! AXValue, .cgPoint, &point),
+              AXValueGetValue(rawSize as! AXValue, .cgSize, &size) else { return nil }
+        return CGRect(origin: point, size: size)
+    }
+
     private func ensureInputTarget() throws {
         try Task.checkCancellation()
         guard let expected = Self.expectedTargetPID else { return }
@@ -397,22 +409,29 @@ public struct EventSynthesizer: Sendable {
                   let entry = info.first,
                   (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == expected,
                   let bounds = entry[kCGWindowBounds as String] as? [String: Any],
-                  let expectedFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { throw SynthesizerError.targetChanged }
-            var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(focused, kAXPositionAttribute as CFString, &rawPosition) == .success,
-                  AXUIElementCopyAttributeValue(focused, kAXSizeAttribute as CFString, &rawSize) == .success,
-                  let rawPosition, let rawSize, CFGetTypeID(rawPosition) == AXValueGetTypeID(), CFGetTypeID(rawSize) == AXValueGetTypeID() else { throw SynthesizerError.targetChanged }
-            var point = CGPoint.zero, size = CGSize.zero
-            guard AXValueGetValue(rawPosition as! AXValue, .cgPoint, &point),
-                  AXValueGetValue(rawSize as! AXValue, .cgSize, &size), CGRect(origin: point, size: size) == expectedFrame else { throw SynthesizerError.targetChanged }
+                  let expectedFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                  let focusedFrame = axWindowFrame(focused) else { throw SynthesizerError.targetChanged }
+            let targetWindow: AXUIElement
+            if focusedFrame == expectedFrame {
+                targetWindow = focused
+            } else if expectedFrame.contains(focusedFrame),
+                      let main = focusedAXElement(pid: expected, attribute: kAXMainWindowAttribute),
+                      axWindowFrame(main) == expectedFrame {
+                targetWindow = main
+            } else {
+                throw SynthesizerError.targetChanged
+            }
+            let expectedTitle = entry[kCGWindowName as String] as? String ?? ""
             var rawTitle: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(focused, kAXTitleAttribute as CFString, &rawTitle) == .success,
+            guard AccessibilityInspector.axWindowID(targetWindow).map({ $0 == windowID }) ?? true,
+                  AXUIElementCopyAttributeValue(targetWindow, kAXTitleAttribute as CFString, &rawTitle) == .success,
                   let title = rawTitle as? String,
+                  AccessibilityInspector.titlesMatch(expectedTitle, title),
                   let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { throw SynthesizerError.targetChanged }
             let matches = windows.filter { item in
                 guard (item[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == expected,
                       (item[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
-                      item[kCGWindowName as String] as? String == title,
+                      (item[kCGWindowName as String] as? String ?? expectedTitle) == expectedTitle,
                       let bounds = item[kCGWindowBounds as String] as? [String: Any] else { return false }
                 return CGRect(dictionaryRepresentation: bounds as CFDictionary) == expectedFrame
             }

@@ -104,7 +104,7 @@ public enum DesktopActionAuthorization {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return [] }
         return windows.compactMap { entry in
             guard (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
-                  entry[kCGWindowName as String] as? String == title,
+                  (entry[kCGWindowName as String] as? String ?? title) == title,
                   (entry[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 else { return nil }
             return (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value
         }
