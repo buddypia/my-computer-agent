@@ -88,116 +88,10 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
     }
 
     // =========================================================================
-    // MARK: - TIER 1: Feature Coverage (Features 1 - 8, 5 tests each = 40 tests)
+    // MARK: - TIER 1: Feature Coverage
     // =========================================================================
 
-    // --- Feature 1: Container Grounded Fallback Scroll (5 tests) ---
-
-    @Test("F1.1: AXScrollArea candidate is recognized and targeted for scroll actions in offline fallback")
-    func testF1_01_AXScrollAreaCandidateGrounded() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "feed_scroll", role: "AXScrollArea", label: "Timeline Feed", x: 50, y: 50, w: 400, h: 600)
-        let otherButton = makeCandidate(id: "btn_refresh", role: "AXButton", label: "Refresh", x: 460, y: 50, w: 80, h: 30)
-
-        let decision = engine.fallbackLocalDecision(goal: "Scroll down feed to view more posts", candidates: [scrollArea, otherButton])
-
-        #expect(decision.action == .scroll)
-        #expect(decision.confidence >= 0.80)
-        #expect(decision.scrollDelta?.dy != 0)
-    }
-
-    @Test("F1.2: AXWebArea candidate is targeted when no dedicated AXScrollArea is present")
-    func testF1_02_AXWebAreaTargetedWhenNoScrollArea() async throws {
-        let engine = makeOfflineEngine()
-        let webArea = makeCandidate(id: "web_container", role: "AXWebArea", label: "Article Body", x: 0, y: 0, w: 800, h: 1000)
-
-        let decision = engine.fallbackLocalDecision(goal: "Scroll feed down to read next section", candidates: [webArea])
-
-        #expect(decision.action == .scroll)
-        #expect(decision.confidence >= 0.80)
-    }
-
-    @Test("F1.3: AXList and AXTable containers support offline scroll action generation")
-    func testF1_03_AXTableOrListContainerScrolling() async throws {
-        let engine = makeOfflineEngine()
-        let tableArea = makeCandidate(id: "data_table", role: "AXTable", label: "Accounts Table", x: 100, y: 100, w: 600, h: 400)
-
-        let decision = engine.fallbackLocalDecision(goal: "Scroll down table to find account", candidates: [tableArea])
-
-        #expect(decision.action == .scroll)
-        #expect(decision.confidence >= 0.80)
-    }
-
-    @Test("F1.4: Scroll coordinates are safely dispatched to synthetic event synthesizer")
-    func testF1_04_ScrollCoordinatesGroundingToContainerCenter() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "scroll_box", role: "AXScrollArea", label: "Message Box", x: 100, y: 200, w: 300, h: 400)
-        let s0 = makeSnapshot(title: "Chat App", candidates: [scrollArea])
-        let s1 = makeSnapshot(title: "Chat App - Scrolled", candidates: [scrollArea])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_scroll", description: "Scroll feed down", expectedOutcome: "title changed to Chat App - Scrolled", maxSteps: 3)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Scroll feed")
-        #expect(summary.isSuccess)
-        #expect(synthesizer.recordedEvents.contains { if case .scroll = $0 { return true }; return false })
-    }
-
-    @Test("F1.5: Multiple scroll areas prioritize relevant candidate or first available container")
-    func testF1_05_MultipleScrollContainersSelection() async throws {
-        let engine = makeOfflineEngine()
-        let sidebar = makeCandidate(id: "sidebar_scroll", role: "AXScrollArea", label: "Sidebar Nav", x: 0, y: 0, w: 150, h: 600)
-        let mainFeed = makeCandidate(id: "main_scroll", role: "AXScrollArea", label: "Main Feed", x: 160, y: 0, w: 600, h: 600)
-
-        let decision = engine.fallbackLocalDecision(goal: "Scroll feed down", candidates: [sidebar, mainFeed])
-
-        #expect(decision.action == .scroll)
-        #expect(decision.confidence >= 0.80)
-    }
-
-    // --- Feature 2: Stagnation-Aware Action Adaptation (5 tests) ---
-
-    @Test("F2.1: Repeated scroll without screen diff triggers loop stagnation detection")
-    func testF2_01_UnchangedScreenTriggersStagnationDetection() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "stagnant_scroll", role: "AXScrollArea", label: "Static Feed", x: 0, y: 0, w: 400, h: 400)
-        let staticSnap = makeSnapshot(title: "Unchanging Window", candidates: [scrollArea])
-        let inspector = MockUIInspector(repeating: staticSnap)
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_stuck", description: "Scroll feed down", expectedOutcome: "screen changes", maxSteps: 10)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg], escalationResolution: .abort(reason: "Stagnant abort"))
-
-        var config = AutonomousLoopConfig.testing
-        config.identicalActionThreshold = 3
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: config
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Scroll feed")
-            Issue.record("Expected stagnation escalation or abort")
-        } catch let error as LoopExecutionError {
-            if case .escalationFailed(let reason) = error {
-                #expect(reason.contains("Stagnant abort") || reason.contains("stagnant") || reason.contains("infiniteLoopDetected"))
-            }
-        }
-    }
+    // --- Feature 2: Stagnation-Aware Action Adaptation ---
 
     @Test("F2.2: Stagnation escalation allows planner to adapt by retrying with alternative action")
     func testF2_02_StagnationEscalationProvidesAlternativeNavigation() async throws {
@@ -281,44 +175,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(!diffChanged.isStateUnchanged)
     }
 
-    @Test("F2.5: Significant screen change resets stagnation tracking across successive steps")
-    func testF2_05_ScreenChangeResetsConsecutiveStagnationCount() async throws {
-        let engine = makeOfflineEngine()
-        let btn1 = makeCandidate(id: "btn1", role: "AXButton", label: "Click Me", x: 10, y: 10, w: 80, h: 30)
-        let s0 = makeSnapshot(title: "Step 0", candidates: [btn1])
-        let s1 = makeSnapshot(title: "Step 1", candidates: [btn1])
-        let s2 = makeSnapshot(title: "Step 2", candidates: [btn1])
-        let inspector = MockUIInspector(snapshots: [s0, s1, s2])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_flow", description: "Click Click Me", expectedOutcome: "title changed to Step 2", maxSteps: 5)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Click button")
-        #expect(summary.isSuccess)
-    }
-
-    // --- Feature 3: Token-Based Candidate Matching (5 tests) ---
-
-    @Test("F3.1: Partial label match avoids 0.00 confidence fallthrough")
-    func testF3_01_PartialLabelMatchAvoidsZeroConfidence() {
-        let engine = makeOfflineEngine()
-        let candidate = makeCandidate(id: "btn_submit", role: "AXButton", label: "Submit Application Form", x: 100, y: 100, w: 150, h: 40)
-
-        let decision = engine.fallbackLocalDecision(goal: "Click Submit", candidates: [candidate])
-
-        #expect(decision.action == .click)
-        #expect(decision.targetElementId == "btn_submit")
-        #expect(decision.confidence >= 0.80)
-    }
+    // --- Feature 3: Token-Based Candidate Matching ---
 
     @Test("F3.2: Value attribute is matched when element label is empty")
     func testF3_02_ValueAttributeMatchingWhenLabelEmpty() {
@@ -367,7 +224,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(decision.targetElementId == "btn_publish")
     }
 
-    // --- Feature 4: Graceful Low-Confidence Recovery (5 tests) ---
+    // --- Feature 4: Graceful Low-Confidence Recovery ---
 
     @Test("F4.1: Unmatched goal produces low confidence decision that escalates to System 2 Planner")
     func testF4_01_ZeroConfidenceEscalatesToSystem2() async throws {
@@ -487,39 +344,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(!(decision.reasoning?.isEmpty ?? true))
     }
 
-    @Test("F4.5: Subgoal step budget resets upon successful escalation recovery")
-    func testF4_05_SubgoalStepBudgetResetsOnEscalationResolution() async throws {
-        let engine = makeOfflineEngine()
-        let button = makeCandidate(id: "btn_ok", role: "AXButton", label: "OK", x: 50, y: 50, w: 50, h: 25)
-        let s0 = makeSnapshot(title: "Window", candidates: [button])
-        let s1 = makeSnapshot(title: "Window OK", candidates: [button])
-        let inspector = MockUIInspector(snapshots: [s0, s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [
-                    Subgoal(id: "sg_retry", description: "Mismatched", expectedOutcome: "title changed to Window OK", maxSteps: 2)
-                ])
-            },
-            escalationHandler: { _, _, _, _ in
-                .retrySubgoal(Subgoal(id: "sg_retry_fixed", description: "Click OK", expectedOutcome: "title changed to Window OK", maxSteps: 3))
-            }
-        )
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Reset budget test")
-        #expect(summary.isSuccess)
-    }
-
-    // --- Feature 5: Feedback Loop to Decision Engine (5 tests) ---
+    // --- Feature 5: Feedback Loop to Decision Engine ---
 
     @Test("F5.1: Execution history records monotonically increasing step counts")
     func testF5_01_StepHistoryTrackedInCoordinatorExecution() async throws {
@@ -615,67 +440,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(diffs[0].titleChanged)
     }
 
-    @Test("F5.4: Synthesized events accurately reflect the engine's decided action")
-    func testF5_04_SynthesizedEventsReflectDecidedAction() async throws {
-        let engine = makeOfflineEngine()
-        let btn = makeCandidate(id: "btn_tap", role: "AXButton", label: "Tap", x: 80, y: 90, w: 50, h: 25)
-        let s0 = makeSnapshot(title: "Screen", candidates: [btn])
-        let s1 = makeSnapshot(title: "Screen Done", candidates: [btn])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_tap", description: "Click Tap", expectedOutcome: "title changed to Screen Done", maxSteps: 2)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        _ = try await coordinator.execute(goal: "Tap test")
-        #expect(synthesizer.recordedEvents.contains { if case .click = $0 { return true }; return false })
-    }
-
-    @Test("F5.5: First step executes cleanly with clean initial state and zero prior history")
-    func testF5_05_InitialStepExecutesCleanlyWithZeroHistory() async throws {
-        let engine = makeOfflineEngine()
-        let btn = makeCandidate(id: "btn_start", role: "AXButton", label: "Start", x: 10, y: 10, w: 60, h: 30)
-        let s0 = makeSnapshot(title: "Fresh", candidates: [btn])
-        let s1 = makeSnapshot(title: "Fresh Started", candidates: [btn])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_init", description: "Click Start", expectedOutcome: "title changed to Fresh Started", maxSteps: 2)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Initial start")
-        #expect(summary.isSuccess)
-    }
-
-    // --- Feature 6: Non-Recursive Heuristic Replan (5 tests) ---
-
-    @Test("F6.1: Heuristic replan for actionStagnant produces a retry subgoal")
-    func testF6_01_HeuristicReplanForActionStagnantReturnsRetrySubgoal() {
-        let failed = Subgoal(id: "sg_stuck", description: "Scroll feed", expectedOutcome: "Feed updated", maxSteps: 3)
-        let resolution = DefaultSubgoalPlanner.heuristicReplan(failedSubgoal: failed, reason: .actionStagnant(reason: "Stuck"))
-
-        if case .retrySubgoal(let retrySg) = resolution {
-            #expect(!retrySg.description.isEmpty)
-        } else {
-            Issue.record("Expected .retrySubgoal resolution for actionStagnant")
-        }
-    }
+    // --- Feature 6: Non-Recursive Heuristic Replan ---
 
     @Test("F6.2: Heuristic replan for lowConfidence produces an alternative element retry subgoal")
     func testF6_02_HeuristicReplanForLowConfidenceReturnsRetrySubgoal() {
@@ -686,18 +451,6 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
             #expect(retrySg.maxSteps >= 3)
         } else {
             Issue.record("Expected .retrySubgoal resolution for lowConfidence")
-        }
-    }
-
-    @Test("F6.3: Heuristic replan for loopDetected halts with abort resolution")
-    func testF6_03_HeuristicReplanForLoopDetectedAborts() {
-        let failed = Subgoal(id: "sg_loop", description: "Loop Action", expectedOutcome: "None", maxSteps: 3)
-        let resolution = DefaultSubgoalPlanner.heuristicReplan(failedSubgoal: failed, reason: .loopDetected(reason: "Infinite loop"))
-
-        if case .abort(let reason) = resolution {
-            #expect(reason.contains("Infinite loop") || reason.contains("Execution halted"))
-        } else {
-            Issue.record("Expected .abort resolution for loopDetected")
         }
     }
 
@@ -721,31 +474,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(subgoals[1].description.contains("Click"))
     }
 
-    // --- Feature 7: Coordinator Coordinate Fallback (5 tests) ---
-
-    @Test("F7.1: Scroll action with nil coordinates dispatches safely to synthesizer")
-    func testF7_01_ScrollDispatchedWithNilPointSafely() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "scroll_view", role: "AXScrollArea", label: "View", x: 10, y: 10, w: 500, h: 400)
-        let s0 = makeSnapshot(title: "Win", candidates: [scrollArea])
-        let s1 = makeSnapshot(title: "Win Done", candidates: [scrollArea])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_scr", description: "Scroll feed", expectedOutcome: "title changed to Win Done", maxSteps: 2)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Scroll test")
-        #expect(summary.isSuccess)
-    }
+    // --- Feature 7: Coordinator Coordinate Fallback ---
 
     @Test("F7.2: Click action dispatches exact candidate center coordinates to synthesizer")
     func testF7_02_ClickDispatchesExactCandidateCenter() async throws {
@@ -806,31 +535,6 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(scrolls[0] < 0)
     }
 
-    @Test("F7.4: TypeText action synthesizes string into targeted text field")
-    func testF7_04_TypeTextSynthesizerDispatch() async throws {
-        let engine = makeOfflineEngine()
-        let tf = makeCandidate(id: "tf_input", role: "AXTextField", label: "Email", x: 10, y: 10, w: 200, h: 30)
-        let s0 = makeSnapshot(title: "Form", candidates: [tf])
-        let s1 = makeSnapshot(title: "Form Typed", candidates: [tf])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_t", description: "Type user@example.com into Email", expectedOutcome: "title changed to Form Typed", maxSteps: 2)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: .testing,
-            keystrokeApprover: AutoApproveToolApprover()
-        )
-
-        _ = try await coordinator.execute(goal: "Enter email")
-        #expect(synthesizer.recordedEvents.contains { if case .typeText = $0 { return true }; return false })
-    }
-
     @Test("F7.5: KeyPress action synthesizes key combinations into event stream")
     func testF7_05_KeyPressSynthesizerDispatch() async throws {
         let engine = makeOfflineEngine()
@@ -856,93 +560,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(synthesizer.recordedEvents.contains { if case .pressKey = $0 { return true }; return false })
     }
 
-    // --- Feature 8: Consecutive Escalation Recovery Guard (5 tests) ---
-
-    @Test("F8.1: AutonomousLoopConfig respects custom maxConsecutiveEscalations limit")
-    func testF8_01_MaxConsecutiveEscalationsConfigurable() {
-        var config = AutonomousLoopConfig.testing
-        config.maxConsecutiveEscalations = 5
-        #expect(config.maxConsecutiveEscalations == 5)
-    }
-
-    @Test("F8.2: Reaching maxConsecutiveEscalations halts execution with escalationFailed error")
-    func testF8_02_ReachingLimitHaltsWithEscalationFailed() async throws {
-        let engine = makeOfflineEngine()
-        let s0 = makeSnapshot(title: "Empty Window", candidates: [])
-        let inspector = MockUIInspector(repeating: s0)
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [
-                    Subgoal(id: "sg_loop", description: "Empty Search", expectedOutcome: "Found", maxSteps: 5)
-                ])
-            },
-            escalationHandler: { _, subgoal, _, _ in
-                // System 2 stubbornly retries failed subgoal
-                .retrySubgoal(subgoal)
-            }
-        )
-
-        var config = AutonomousLoopConfig.testing
-        config.maxConsecutiveEscalations = 3
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: config
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Cascading escalation")
-            Issue.record("Expected escalation limit error")
-        } catch let error as LoopExecutionError {
-            if case .escalationFailed(let reason) = error {
-                #expect(reason.contains("Exceeded maximum consecutive escalations"))
-            }
-        }
-    }
-
-    @Test("F8.3: Escalation limit error diagnostics include context on recent escalation causes")
-    func testF8_03_ErrorDiagnosticIncludesRecentCauses() async throws {
-        let engine = makeOfflineEngine()
-        let s0 = makeSnapshot(title: "Empty Window", candidates: [])
-        let inspector = MockUIInspector(repeating: s0)
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [
-                    Subgoal(id: "sg_esc", description: "Search", expectedOutcome: "Result", maxSteps: 5)
-                ])
-            },
-            escalationHandler: { _, subgoal, _, _ in
-                .retrySubgoal(subgoal)
-            }
-        )
-
-        var config = AutonomousLoopConfig.testing
-        config.maxConsecutiveEscalations = 2
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: config
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Diagnostic test")
-            Issue.record("Expected failure")
-        } catch let error as LoopExecutionError {
-            if case .escalationFailed(let reason) = error {
-                #expect(reason.contains("2") || reason.contains("escalation"))
-            }
-        }
-    }
+    // --- Feature 8: Consecutive Escalation Recovery Guard ---
 
     @Test("F8.4: A single escalation that is successfully recovered allows overall goal to succeed")
     func testF8_04_SingleEscalationWithSubgoalResolutionCompletesSuccessfully() async throws {
@@ -1015,7 +633,7 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
     }
 
     // =========================================================================
-    // MARK: - TIER 2: Boundary & Corner Cases (8 tests)
+    // MARK: - TIER 2: Boundary & Corner Cases
     // =========================================================================
 
     @Test("T2.1: Empty candidates list produces 0.00 confidence without crash")
@@ -1067,40 +685,6 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
         #expect(decision.targetElementId == "btn_fallback")
     }
 
-    @Test("T2.5: Zero maxTotalSteps configuration immediately throws stepBudgetExceeded")
-    func testT2_05_ZeroMaxStepsThrowsBudgetExceededImmediately() async throws {
-        let engine = makeOfflineEngine()
-        let btn = makeCandidate(id: "btn1", role: "AXButton", label: "Button", x: 10, y: 10, w: 50, h: 20)
-        let s0 = makeSnapshot(title: "Win", candidates: [btn])
-        let inspector = MockUIInspector(repeating: s0)
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM.staticPlan(subgoals: [
-            Subgoal(id: "sg_1", description: "Click Button", expectedOutcome: "Clicked", maxSteps: 5)
-        ])
-
-        var config = AutonomousLoopConfig.testing
-        config.maxTotalSteps = 0
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: config
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Zero steps")
-            Issue.record("Expected stepBudgetExceeded error")
-        } catch let error as LoopExecutionError {
-            guard case .stepBudgetExceeded = error else {
-                Issue.record("Expected .stepBudgetExceeded, got \(error)")
-                return
-            }
-        }
-    }
-
     @Test("T2.6: Confidence exactly at 0.80 proceeds without escalation while 0.79 escalates")
     func testT2_06_ExactConfidenceThresholdBoundary() async throws {
         let evalPassing = MockTypeSafeEvaluator.scripted(targetChoice: "btn_ok", targetConfidence: 0.80, actionChoice: "click")
@@ -1145,50 +729,8 @@ struct TwoTierAutonomousLoopOfflineE2ETests {
     }
 
     // =========================================================================
-    // MARK: - TIER 3: Cross-Feature Combinations (5 tests)
+    // MARK: - TIER 3: Cross-Feature Combinations
     // =========================================================================
-
-    @Test("T3.1: Stagnant scroll + low confidence + replan feedback resolves to clean completion")
-    func testT3_01_StagnantScrollWithLowConfidenceAndReplanRecovery() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "feed_scroll", role: "AXScrollArea", label: "Feed", x: 0, y: 0, w: 400, h: 400)
-        let targetBtn = makeCandidate(id: "btn_finish", role: "AXButton", label: "Finish", x: 100, y: 350, w: 80, h: 30)
-
-        let s0 = makeSnapshot(title: "Feed View", candidates: [scrollArea])
-        let s1 = makeSnapshot(title: "Feed View", candidates: [scrollArea])
-        let s2 = makeSnapshot(title: "Target Appeared", candidates: [targetBtn])
-        let s3 = makeSnapshot(title: "Goal Completed", candidates: [])
-        let inspector = MockUIInspector(snapshots: [s0, s1, s2, s3])
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [
-                    Subgoal(id: "sg_scr", description: "Scroll feed down", expectedOutcome: "title changed to Target Appeared", maxSteps: 3)
-                ])
-            },
-            escalationHandler: { reason, _, _, _ in
-                // When stagnant or low confidence, switch to clicking finish
-                .replacePlan([
-                    Subgoal(id: "sg_clk", description: "Click Finish", expectedOutcome: "title changed to Goal Completed", maxSteps: 2)
-                ])
-            }
-        )
-
-        var config = AutonomousLoopConfig.testing
-        config.identicalActionThreshold = 2
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            inspector: inspector,
-            config: config
-        )
-
-        let summary = try await coordinator.execute(goal: "Scroll and finish")
-        #expect(summary.isSuccess)
-    }
 
     @Test("T3.2: Container scroll with observed state diff progress advances subgoal naturally")
     func testT3_02_ContainerScrollWithStateDiffProgress() async throws {

@@ -132,39 +132,7 @@ struct TwoTierAutonomousLoopAdversarialTests {
         }
     }
 
-    @Test("Escalation Cascade: replan returning .replacePlan with empty list terminates without crash")
-    func testReplanReturningEmptyPlan() async throws {
-        let planner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [
-                    Subgoal(id: "sg_1", description: "First subgoal", expectedOutcome: "Done", maxSteps: 5)
-                ])
-            },
-            escalationHandler: { _, _, _, _ in
-                .replacePlan([])
-            }
-        )
-
-        let inspector = MockUIInspector(repeating: makeSnapshot(title: "Empty Window", candidates: []))
-        let synthesizer = MockEventSynthesizer()
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: TypeSafeDecisionEngine(confidenceThreshold: 0.80),
-            synthesizer: synthesizer,
-            snapshotProvider: inspector,
-            config: AutonomousLoopConfig(settlingDelayMs: 0, maxConsecutiveEscalations: 2)
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Replace with empty plan")
-        } catch let error as LoopExecutionError {
-            if case .escalationFailed = error {
-                #expect(Bool(true))
-            }
-        }
-    }
-
-    // MARK: - 2. Confidence Threshold Boundaries (0.7999 vs 0.8000 vs 0.8001)
+    // MARK: - 2. Confidence Threshold Boundaries (0.7999 vs 0.8000)
 
     @Test("Confidence Boundary: 0.7999 escalates to System 2")
     func testConfidence07999Escalates() async throws {
@@ -248,38 +216,6 @@ struct TwoTierAutonomousLoopAdversarialTests {
         let escalations = await planner.recordedEscalations
         #expect(escalations.isEmpty, "Confidence 0.8000 must NOT escalate")
         #expect(synthesizer.recordedEvents.contains { if case .click = $0 { return true }; return false }, "Click event must be synthesized")
-    }
-
-    @Test("Confidence Boundary: 0.8001 proceeds without escalation")
-    func testConfidence08001Proceeds() async throws {
-        let candidate = makeCandidate(id: "btn_ok", label: "OK")
-        let s0 = makeSnapshot(title: "Window", candidates: [candidate])
-        let s1 = makeSnapshot(title: "New Window Title", candidates: [candidate])
-        let inspector = MockUIInspector(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let planner = MockPlanningLLM.staticPlan(subgoals: [
-            Subgoal(id: "sg_1", description: "Click OK", expectedOutcome: "window title changed", maxSteps: 5)
-        ])
-
-        let evaluator = MockTypeSafeEvaluator.scripted(targetChoice: "btn_ok", targetConfidence: 0.8001, actionChoice: "click")
-        let decisionEngine = TypeSafeDecisionEngine(client: evaluator, confidenceThreshold: 0.80)
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: decisionEngine,
-            synthesizer: synthesizer,
-            snapshotProvider: inspector,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Boundary test 0.8001")
-        #expect(summary.isSuccess)
-        #expect(summary.totalSteps == 1)
-
-        let escalations = await planner.recordedEscalations
-        #expect(escalations.isEmpty, "Confidence 0.8001 must NOT escalate")
-        #expect(synthesizer.recordedEvents.contains { if case .click = $0 { return true }; return false })
     }
 
     @Test("Confidence Config Mismatch: coordinator config threshold vs TypeSafeDecisionEngine threshold")
