@@ -592,8 +592,8 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         // 2. Focus change matching
         if focusChanged {
             let roleMatch = expectedTokens.contains { token in
-                after?.focusedElementRole?.lowercased().contains(token) == true ||
-                after?.focusedElementId?.lowercased().contains(token) == true ||
+                Self.outcomeMatch(token, in: after?.focusedElementRole ?? "") ||
+                Self.outcomeMatch(token, in: after?.focusedElementId ?? "") ||
                 (token.contains("submit") && after?.focusedElementId?.lowercased().contains("submit") == true) ||
                 (token.contains("button") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
                 (token.contains("ボタン") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
@@ -610,11 +610,12 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         }
 
         // 3. Window title / app navigation matching
-        if titleChanged, let newTitle = after?.windowTitle?.lowercased() {
+        if titleChanged, let rawTitle = after?.windowTitle {
+            let newTitle = rawTitle.lowercased()
             let matchingTitleTokens = expectedTokens.filter { token in
-                newTitle.contains(token) || (newTitle.count >= 2 && token.contains(newTitle))
+                Self.outcomeMatch(token, in: rawTitle) || (newTitle.count >= 2 && Self.outcomeMatch(newTitle, in: token))
             }
-            let directTitleMatch = newTitle.count >= 2 && lowerExpected.contains(newTitle)
+            let directTitleMatch = newTitle.count >= 2 && Self.outcomeMatch(newTitle, in: lowerExpected)
             if !matchingTitleTokens.isEmpty || directTitleMatch {
                 let tokenDesc: String
                 if !matchingTitleTokens.isEmpty {
@@ -633,13 +634,12 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             let role = added.role.lowercased()
             let id = added.id.lowercased()
             let matchedWord = expectedTokens.first { token in
-                label.contains(token) ||
-                (label.count >= 2 && token.contains(label)) ||
-                role.contains(token) ||
-                (role.count >= 2 && token.contains(role)) ||
-                id.contains(token) ||
-                (id.count >= 2 && token.contains(id)) ||
-                (label.count >= 2 && lowerExpected.contains(label)) ||
+                Self.outcomeMatch(token, in: added.label) ||
+                (label.count >= 2 && Self.outcomeMatch(label, in: token)) ||
+                Self.outcomeMatch(token, in: added.role) ||
+                Self.outcomeMatch(token, in: added.id) ||
+                (id.count >= 2 && Self.outcomeMatch(id, in: token)) ||
+                (label.count >= 2 && Self.outcomeMatch(label, in: lowerExpected)) ||
                 (token.contains("dialog") && (id.contains("dialog") || role.contains("window"))) ||
                 (token.contains("confirm") && (id.contains("confirm") || label.contains("proceed") || label.contains("sure"))) ||
                 (token.contains("ダイアログ") && (id.contains("dialog") || role.contains("window") || label.contains("ダイアログ"))) ||
@@ -653,7 +653,7 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
                 matchedSignals.append("element_added_\(signalName)")
                 matchScore += 0.55
                 break
-            } else if label.count >= 2 && lowerExpected.contains(label) {
+            } else if label.count >= 2 && Self.outcomeMatch(label, in: lowerExpected) {
                 matchedSignals.append("element_added_\(label)")
                 matchScore += 0.55
                 break
@@ -664,15 +664,15 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         for mod in modifiedElements {
             if let val = mod.newValue?.lowercased(), !val.isEmpty {
                 let matchingVal = expectedTokens.first { token in
-                    val.contains(token) || (val.count >= 2 && token.contains(val)) ||
-                    (val.count >= 2 && lowerExpected.contains(val))
+                    Self.outcomeMatch(token, in: val) || (val.count >= 2 && Self.outcomeMatch(val, in: token)) ||
+                    (val.count >= 2 && Self.outcomeMatch(val, in: lowerExpected))
                 }
                 if let matched = matchingVal {
                     let signalName = (val.count >= 2 && matched.contains(val)) ? val : matched
                     matchedSignals.append("value_updated_with_\(signalName)")
                     matchScore += 0.55
                     break
-                } else if val.count >= 2 && lowerExpected.contains(val) {
+                } else if val.count >= 2 && Self.outcomeMatch(val, in: lowerExpected) {
                     matchedSignals.append("value_updated_with_\(val)")
                     matchScore += 0.55
                     break
@@ -681,15 +681,15 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             if mod.labelChanged {
                 let newLabel = mod.newLabel.lowercased()
                 let matchingLabel = expectedTokens.first { token in
-                    newLabel.contains(token) || (newLabel.count >= 2 && token.contains(newLabel)) ||
-                    (newLabel.count >= 2 && lowerExpected.contains(newLabel))
+                    Self.outcomeMatch(token, in: mod.newLabel) || (newLabel.count >= 2 && Self.outcomeMatch(newLabel, in: token)) ||
+                    (newLabel.count >= 2 && Self.outcomeMatch(newLabel, in: lowerExpected))
                 }
                 if let matched = matchingLabel {
                     let signalName = (newLabel.count >= 2 && matched.contains(newLabel)) ? newLabel : matched
                     matchedSignals.append("label_updated_with_\(signalName)")
                     matchScore += 0.45
                     break
-                } else if newLabel.count >= 2 && lowerExpected.contains(newLabel) {
+                } else if newLabel.count >= 2 && Self.outcomeMatch(newLabel, in: lowerExpected) {
                     matchedSignals.append("label_updated_with_\(newLabel)")
                     matchScore += 0.45
                     break
@@ -802,6 +802,39 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             tokens.insert(trimmedFull)
         }
 
-        return tokens.sorted { $0.count > $1.count }
+        return tokens.subtracting(outcomeStopWords).sorted { $0.count > $1.count }
+    }
+
+    /// English function words carry no evidence about the screen, yet appear in almost every outcome
+    /// ("navigate to the settings page").
+    private static let outcomeStopWords: Set<String> = [
+        "to", "the", "an", "of", "in", "on", "at", "is", "be", "or", "and", "for", "with", "by",
+        "as", "it", "its", "from", "into", "onto", "that", "this", "then", "are", "was", "will", "should"
+    ]
+
+    /// Whether `needle` occurs in `haystack`. A Latin needle must be a whole word of `haystack`, with
+    /// camelCase and the `AX` role prefix split, so "to" does not hit "Photos" or "AXButton".
+    /// Anything else (CJK, emoji, multi-word phrases) matches as a substring: CJK has no spaces between words.
+    static func outcomeMatch(_ needle: String, in haystack: String) -> Bool {
+        let needle = needle.lowercased()
+        guard !needle.isEmpty, !haystack.isEmpty else { return false }
+        let isLatinWord = needle.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
+        guard isLatinWord else { return haystack.lowercased().contains(needle) }
+
+        let chars = Array(haystack)
+        var spaced = ""
+        for (i, c) in chars.enumerated() {
+            if i > 0, c.isUppercase {
+                let prev = chars[i - 1]
+                let nextIsLower = i + 1 < chars.count && chars[i + 1].isLowercase
+                if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextIsLower) {
+                    spaced.append(" ")
+                }
+            }
+            spaced.append(c)
+        }
+        return spaced.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .contains(needle)
     }
 }
