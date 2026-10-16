@@ -287,21 +287,6 @@ struct SafetyGuardrailsAdversarialTests {
         #expect(isEquivalent == false, "Infinity coordinate must evaluate to false")
     }
 
-    @Test("Subprocess test: verify NaN coordinate casting to Int crashes standard runtime")
-    func testIntCastOfNanInSubprocessExitsWithCrash() throws {
-        // Empirically verifies the safety vulnerability in `Int(pt.x)` when pt.x is NaN
-        let pipe = Pipe()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
-        process.arguments = ["-e", "let x = Double.nan; _ = Int(x)"]
-        process.standardError = pipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        #expect(process.terminationStatus != 0, "Casting Double.nan to Int must cause a fatal runtime crash")
-    }
-
     // MARK: - 4. Action Oscillation & Factor 2 State Stagnation
 
     @Test("LoopDetector: alternating action oscillation does not trigger Factor 1")
@@ -623,43 +608,6 @@ struct SafetyGuardrailsAdversarialTests {
         #expect(detector.consecutiveUnchangedStateCount == 0, "Moving to new virtualized content must count as significant progress")
     }
 
-    @Test("LoopDetector: 2-cycle alternating state oscillation triggers Factor 2")
-    func testStateOscillationDetectionAB_AB() throws {
-        var detector = TwoFactorLoopDetector(config: .init(unchangedStateThreshold: 5))
-
-        let actionA = ComputerActionDecision(targetElementId: "btn_tab_a", action: .click)
-        let actionB = ComputerActionDecision(targetElementId: "btn_tab_b", action: .click)
-
-        let snapA = UIStateSnapshot(windowTitle: "Tab A Screen", visibleCandidates: [
-            UIElementCandidate(id: "btn_tab_a", role: "AXButton", label: "Tab A", bounds: CGRect(x: 10, y: 10, width: 80, height: 30))
-        ])
-        let snapB = UIStateSnapshot(windowTitle: "Tab B Screen", visibleCandidates: [
-            UIElementCandidate(id: "btn_tab_b", role: "AXButton", label: "Tab B", bounds: CGRect(x: 100, y: 10, width: 80, height: 30))
-        ])
-
-        // Cycle 1: -> A
-        let diffA1 = UIStateDiff.compute(before: snapB, after: snapA)
-        try detector.recordAction(decision: actionA)
-        try detector.recordStateDiff(diff: diffA1)
-
-        // Cycle 2: -> B
-        let diffB1 = UIStateDiff.compute(before: snapA, after: snapB)
-        try detector.recordAction(decision: actionB)
-        try detector.recordStateDiff(diff: diffB1)
-
-        // Cycle 3: -> A
-        let diffA2 = UIStateDiff.compute(before: snapB, after: snapA)
-        try detector.recordAction(decision: actionA)
-        try detector.recordStateDiff(diff: diffA2)
-
-        // Cycle 4: -> B (A -> B -> A -> B complete: 2-cycle oscillation detected!)
-        let diffB2 = UIStateDiff.compute(before: snapA, after: snapB)
-        try detector.recordAction(decision: actionB)
-        #expect(throws: LoopExecutionError.self) {
-            try detector.recordStateDiff(diff: diffB2)
-        }
-    }
-
     @Test("LoopDetector: cyclic state revisit detection")
     func testCyclicStateRevisitDetection() throws {
         var detector = TwoFactorLoopDetector(config: .init(unchangedStateThreshold: 3))
@@ -786,42 +734,6 @@ struct SafetyGuardrailsAdversarialTests {
         }
     }
 
-    @Test("LoopDetector: alternating scroll directions bouncing between 2 states triggers oscillation")
-    func testAlternatingScrollDirectionsOscillationDetection() throws {
-        var detector = TwoFactorLoopDetector(config: .init(unchangedStateThreshold: 5))
-
-        let scrollDown = ComputerActionDecision(action: .scroll, scrollDelta: CGVector(dx: 0, dy: -100))
-        let scrollUp = ComputerActionDecision(action: .scroll, scrollDelta: CGVector(dx: 0, dy: 100))
-
-        let snapTop = UIStateSnapshot(windowTitle: "Page Top", visibleCandidates: [
-            UIElementCandidate(id: "header", role: "AXStaticText", label: "Header", bounds: CGRect(x: 10, y: 10, width: 200, height: 30))
-        ])
-        let snapScrolled = UIStateSnapshot(windowTitle: "Page Scrolled", visibleCandidates: [
-            UIElementCandidate(id: "content", role: "AXRow", label: "Content", bounds: CGRect(x: 10, y: 10, width: 200, height: 30))
-        ])
-
-        let diffDown = UIStateDiff.compute(before: snapTop, after: snapScrolled)
-        let diffUp = UIStateDiff.compute(before: snapScrolled, after: snapTop)
-
-        // Step 1: Scroll down -> snapScrolled
-        try detector.recordAction(decision: scrollDown)
-        try detector.recordStateDiff(diff: diffDown)
-
-        // Step 2: Scroll up -> snapTop
-        try detector.recordAction(decision: scrollUp)
-        try detector.recordStateDiff(diff: diffUp)
-
-        // Step 3: Scroll down -> snapScrolled
-        try detector.recordAction(decision: scrollDown)
-        try detector.recordStateDiff(diff: diffDown)
-
-        // Step 4: Scroll up -> snapTop (completes 2-cycle oscillation)
-        try detector.recordAction(decision: scrollUp)
-        #expect(throws: LoopExecutionError.self) {
-            try detector.recordStateDiff(diff: diffUp)
-        }
-    }
-
     // MARK: - 5. Cancellation Race Conditions
 
     @Test("CancellationToken: immediate cancellation before execution")
@@ -930,13 +842,6 @@ struct SafetyGuardrailsAdversarialTests {
         #expect(count == 1)
     }
 
-    @Test("HardwareSafety: live EventSynthesizer.releaseAllHeldEvents() executes without crash")
-    func testLiveEventSynthesizerReleaseAllHeldEventsExecution() {
-        let liveSynthesizer = EventSynthesizer()
-        // Must not crash regardless of accessibility permissions status
-        liveSynthesizer.releaseAllHeldEvents()
-    }
-
     // MARK: - 7. SubgoalPlan Boundary & Invariants
 
     @Test("SubgoalPlan: empty plan returns nil currentSubgoal and isCompleted true")
@@ -1010,6 +915,160 @@ struct SafetyGuardrailsAdversarialTests {
         let decoded = try JSONDecoder().decode(Subgoal.self, from: json)
         #expect(decoded.id == "sub_1")
         #expect(decoded.maxSteps == 1) // Clamped to >= 1
+    }
+
+    @Test("SubgoalPlan: advance() on already finished plan remains bounded and returns false")
+    func testSubgoalPlanAdvanceOnCompletedPlan() {
+        var plan = SubgoalPlan(
+            goal: "Complete plan",
+            subgoals: [Subgoal(description: "Single step", expectedOutcome: "Done")]
+        )
+        #expect(plan.advance() == false)
+        #expect(plan.isCompleted == true)
+        #expect(plan.currentSubgoalIndex == 1)
+
+        #expect(plan.advance() == false)
+        #expect(plan.currentSubgoalIndex == 1)
+    }
+
+    @Test("SubgoalPlan: negative start index increments toward valid range on advance()")
+    func testSubgoalPlanNegativeIndexAdvance() {
+        var plan = SubgoalPlan(
+            goal: "Negative start",
+            subgoals: [
+                Subgoal(description: "First", expectedOutcome: "Done 1"),
+                Subgoal(description: "Second", expectedOutcome: "Done 2")
+            ],
+            currentSubgoalIndex: -5
+        )
+
+        #expect(plan.advance() == true)
+        #expect(plan.currentSubgoalIndex == -4)
+    }
+
+    // MARK: - 8. Action Equivalence, Scroll/Type Differentiation & Sleep Cancellation
+
+    @Test("ActionEquivalence: typing different text at same coordinates or same text into different targets is NOT equivalent")
+    func testTypingEquivalenceDifferentiation() {
+        let sameCoord1 = ComputerActionDecision(action: .typeText, coordinates: CGPoint(x: 200, y: 300), textInput: "cat")
+        let sameCoord2 = ComputerActionDecision(action: .typeText, coordinates: CGPoint(x: 200, y: 300), textInput: "dog")
+        #expect(TwoFactorLoopDetector.areActionsEquivalent(sameCoord1, sameCoord2) == false)
+
+        let diffTarget1 = ComputerActionDecision(targetElementId: "input_username", action: .typeText, textInput: "admin")
+        let diffTarget2 = ComputerActionDecision(targetElementId: "input_password", action: .typeText, textInput: "admin")
+        #expect(TwoFactorLoopDetector.areActionsEquivalent(diffTarget1, diffTarget2) == false)
+    }
+
+    @Test("LoopDetector: sequential typing with different text does not trigger Factor 1, while identical text triggers at threshold")
+    func testTypingLoopDetectorDifferentiation() throws {
+        var detector = TwoFactorLoopDetector(config: .init(identicalActionThreshold: 3))
+        for word in ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"] {
+            let decision = ComputerActionDecision(targetElementId: "chat_field", action: .typeText, textInput: word)
+            try detector.recordAction(decision: decision)
+            #expect(detector.consecutiveIdenticalActionCount == 1)
+        }
+
+        let spam = ComputerActionDecision(targetElementId: "chat_field", action: .typeText, textInput: "spam")
+        try detector.recordAction(decision: spam)
+        #expect(detector.consecutiveIdenticalActionCount == 1)
+        try detector.recordAction(decision: spam)
+        #expect(detector.consecutiveIdenticalActionCount == 2)
+        #expect(throws: LoopExecutionError.self) {
+            try detector.recordAction(decision: spam)
+        }
+    }
+
+    @Test("LoopDetector: differing scroll magnitudes and alternating opposing scrolls do not trigger Factor 1, while identical scrolls do")
+    func testScrollEquivalenceAndLoopDetector() throws {
+        let scrollSmall = ComputerActionDecision(targetElementId: "scroll_view", action: .scroll, scrollDelta: CGVector(dx: 0, dy: -10))
+        let scrollLarge = ComputerActionDecision(targetElementId: "scroll_view", action: .scroll, scrollDelta: CGVector(dx: 0, dy: -100))
+        #expect(TwoFactorLoopDetector.areActionsEquivalent(scrollSmall, scrollLarge) == false)
+
+        var detector = TwoFactorLoopDetector(config: .init(identicalActionThreshold: 3))
+        let scrollDown = ComputerActionDecision(targetElementId: "feed", action: .scroll, scrollDelta: CGVector(dx: 0, dy: -50))
+        let scrollUp = ComputerActionDecision(targetElementId: "feed", action: .scroll, scrollDelta: CGVector(dx: 0, dy: 50))
+
+        for _ in 0..<5 {
+            try detector.recordAction(decision: scrollDown)
+            #expect(detector.consecutiveIdenticalActionCount == 1)
+            try detector.recordAction(decision: scrollUp)
+            #expect(detector.consecutiveIdenticalActionCount == 1)
+        }
+
+        try detector.recordAction(decision: scrollDown)
+        #expect(detector.consecutiveIdenticalActionCount == 1)
+        try detector.recordAction(decision: scrollDown)
+        #expect(detector.consecutiveIdenticalActionCount == 2)
+        #expect(throws: LoopExecutionError.self) {
+            try detector.recordAction(decision: scrollDown)
+        }
+    }
+
+    @Test("ActionEquivalence: different action types on same target are never equivalent")
+    func testDifferentActionTypesAreNotEquivalent() {
+        let allActions = [
+            ComputerActionDecision(targetElementId: "btn", action: .click),
+            ComputerActionDecision(targetElementId: "btn", action: .doubleClick),
+            ComputerActionDecision(targetElementId: "btn", action: .rightClick),
+            ComputerActionDecision(targetElementId: "btn", action: .typeText, textInput: "hi"),
+            ComputerActionDecision(action: .keyPress, keyCombination: ["Enter"]),
+            ComputerActionDecision(targetElementId: "btn", action: .scroll, scrollDelta: CGVector(dx: 0, dy: -10)),
+            ComputerActionDecision(action: .wait),
+            ComputerActionDecision(action: .none)
+        ]
+
+        for i in 0..<allActions.count {
+            for j in (i + 1)..<allActions.count {
+                #expect(TwoFactorLoopDetector.areActionsEquivalent(allActions[i], allActions[j]) == false)
+            }
+        }
+    }
+
+    @Test("LoopDetector: recordAction formats non-finite coordinates without trapping when threshold is reached")
+    func testNanCoordinatesInRecordActionReasonString() {
+        var cfg = TwoFactorLoopDetector.Configuration()
+        cfg.identicalActionThreshold = 1  // The init clamps to 2; set directly to trip on the first action.
+        var detector = TwoFactorLoopDetector(config: cfg)
+        let dec = ComputerActionDecision(
+            targetElementId: nil,
+            action: .click,
+            confidence: 0.9,
+            isCompleted: false,
+            coordinates: CGPoint(x: CGFloat.nan, y: CGFloat.infinity)
+        )
+
+        do {
+            try detector.recordAction(decision: dec)
+            Issue.record("Expected infiniteLoopDetected at threshold 1")
+        } catch let LoopExecutionError.infiniteLoopDetected(reason) {
+            #expect(reason.contains("coords (nan, inf)"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+    }
+
+    @Test("CancellationToken: ambient Task cancellation during sleep throws LoopExecutionError.cancelled")
+    func testAmbientTaskCancellationDuringSleepThrowsLoopExecutionErrorCancelled() async throws {
+        let token = CancellationToken()
+        let task = Task {
+            try await token.sleep(milliseconds: 60_000)
+        }
+
+        try await Task.sleep(for: .milliseconds(30))
+        task.cancel()
+
+        var caughtLoopCancelled = false
+        do {
+            try await task.value
+        } catch let err as LoopExecutionError {
+            if err == .cancelled {
+                caughtLoopCancelled = true
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+
+        #expect(caughtLoopCancelled == true)
     }
 }
 

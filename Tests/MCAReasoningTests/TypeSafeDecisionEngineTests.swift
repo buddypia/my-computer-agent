@@ -328,28 +328,29 @@ struct TypeSafeDecisionEngineTests {
         #expect(engine.shouldEscalate(decision: decision))
     }
 
-    @Test("Boundary testing for confidence threshold (0.79 vs 0.80 vs 0.81)")
+    @Test("Default confidence threshold escalates 0.79 and accepts 0.80 / 0.81")
     func testConfidenceThresholdBoundaries() async throws {
-        // Case 1: 0.79 -> Below threshold (Escalation)
+        // No explicit threshold: this pins the shipped default, which decides
+        // when System 2 takes over.
         let mock79 = MockTypeSafeEvaluator.scripted(targetChoice: "btn_search", targetConfidence: 0.79)
-        let engine = TypeSafeDecisionEngine(client: mock79, confidenceThreshold: 0.80)
+        let engine = TypeSafeDecisionEngine(client: mock79)
         let d79 = try await engine.decideNextAction(goal: "Test", candidates: makeCandidates())
-        #expect(d79.confidence < engine.confidenceThreshold)
+        #expect(d79.confidence == 0.79)
         #expect(engine.shouldEscalate(decision: d79))
 
-        // Case 2: 0.80 -> At threshold (Accepted)
         let mock80 = MockTypeSafeEvaluator.scripted(targetChoice: "btn_search", targetConfidence: 0.80)
-        let engine80 = TypeSafeDecisionEngine(client: mock80, confidenceThreshold: 0.80)
+        let engine80 = TypeSafeDecisionEngine(client: mock80)
         let d80 = try await engine80.decideNextAction(goal: "Test", candidates: makeCandidates())
-        #expect(d80.confidence >= engine80.confidenceThreshold)
+        #expect(d80.confidence == 0.80)
         #expect(!engine80.shouldEscalate(decision: d80))
 
-        // Case 3: 0.81 -> Above threshold (Accepted)
         let mock81 = MockTypeSafeEvaluator.scripted(targetChoice: "btn_search", targetConfidence: 0.81)
-        let engine81 = TypeSafeDecisionEngine(client: mock81, confidenceThreshold: 0.80)
+        let engine81 = TypeSafeDecisionEngine(client: mock81)
         let d81 = try await engine81.decideNextAction(goal: "Test", candidates: makeCandidates())
-        #expect(d81.confidence >= engine81.confidenceThreshold)
         #expect(!engine81.shouldEscalate(decision: d81))
+
+        // The autonomous loop escalates on its own copy of the threshold.
+        #expect(AutonomousLoopConfig.default.confidenceThreshold == engine.confidenceThreshold)
     }
 
     @Test("Custom configurable confidence threshold is strictly respected")
@@ -403,6 +404,23 @@ struct TypeSafeDecisionEngineTests {
         #expect(decision.action == .none)
         #expect(decision.confidence == 0.88)
         #expect(!engine.shouldEscalate(decision: decision))
+    }
+
+    @Test("is_completed boundary: 0.69 keeps acting, 0.70 completes")
+    func testGoalCompletionBoundary() async throws {
+        // A lower cut would end tasks before they are done.
+        let below = TypeSafeDecisionEngine(client: MockTypeSafeEvaluator.scripted(
+            targetChoice: "btn_search", isCompletedProbability: 0.69))
+        let acting = try await below.decideNextAction(goal: "Click search", candidates: makeCandidates())
+        #expect(!acting.isCompleted)
+        #expect(acting.action == .click)
+        #expect(acting.targetElementId == "btn_search")
+
+        let atCut = TypeSafeDecisionEngine(client: MockTypeSafeEvaluator.scripted(
+            targetChoice: "btn_search", isCompletedProbability: 0.70))
+        let done = try await atCut.decideNextAction(goal: "Click search", candidates: makeCandidates())
+        #expect(done.isCompleted)
+        #expect(done.action == .none)
     }
 
     // MARK: - 7. Deterministic Fallback on Network / API Failure

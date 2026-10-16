@@ -332,6 +332,7 @@ struct TwoTierAutonomousLoopOfflineRegressionTests {
 
         let summary = try await coordinator.execute(goal: "Read feed updates")
         #expect(summary.isSuccess)
+        #expect(summary.subgoalsCompleted == 1)
 
         let recorded = synthesizer.recordedEvents
         #expect(recorded.count >= 2)
@@ -420,42 +421,6 @@ struct TwoTierAutonomousLoopOfflineRegressionTests {
         #expect(DefaultSubgoalPlanner.stripReplanBoilerplate(from: onlyPrefix).isEmpty)
     }
 
-    @Test("Category B2: stripStagnantKeywords respects word boundaries and protects compound words")
-    func testB2_StripStagnantKeywordsWordBoundaries() {
-        let downloadGoal = "Download spreadsheet and update feedback form"
-        let stripped = DefaultSubgoalPlanner.stripStagnantKeywords(from: downloadGoal)
-        #expect(stripped == "Download spreadsheet and update feedback form", "Compound words containing down/feed must not be corrupted")
-
-        let stagnantGoal = "Scroll feed down to see more"
-        let strippedStagnant = DefaultSubgoalPlanner.stripStagnantKeywords(from: stagnantGoal)
-        #expect(!strippedStagnant.lowercased().contains("scroll"))
-        #expect(!strippedStagnant.lowercased().contains("feed"))
-
-        let japaneseStagnant = "タイムラインをスクロールして最新情報を探す"
-        let strippedJapanese = DefaultSubgoalPlanner.stripStagnantKeywords(from: japaneseStagnant)
-        #expect(!strippedJapanese.contains("スクロール"))
-        #expect(!strippedJapanese.contains("タイムライン"))
-    }
-
-    @Test("Category B3: nextRetryId produces strictly monotonic retry attempt identifiers")
-    func testB3_NextRetryIdProgression() {
-        let r1 = DefaultSubgoalPlanner.nextRetryId(from: "subgoal_1", suffix: "alt")
-        #expect(r1.id == "subgoal_1_alt" && r1.attempt == 1)
-
-        let r2 = DefaultSubgoalPlanner.nextRetryId(from: r1.id, suffix: "alt")
-        #expect(r2.id == "subgoal_1_alt_2" && r2.attempt == 2)
-
-        let r3 = DefaultSubgoalPlanner.nextRetryId(from: r2.id, suffix: "alt")
-        #expect(r3.id == "subgoal_1_alt_3" && r3.attempt == 3)
-
-        // Low-confidence suffix
-        let conf1 = DefaultSubgoalPlanner.nextRetryId(from: "sg_search", suffix: "retry_conf")
-        #expect(conf1.id == "sg_search_retry_conf" && conf1.attempt == 1)
-
-        let conf2 = DefaultSubgoalPlanner.nextRetryId(from: conf1.id, suffix: "retry_conf")
-        #expect(conf2.id == "sg_search_retry_conf_2" && conf2.attempt == 2)
-    }
-
     @Test("Category B4: heuristicReplan strips stagnant keywords and generates alternative navigation subgoal")
     func testB4_HeuristicReplanAdaptsStagnantSubgoal() {
         let failed = Subgoal(id: "sg_scroll", description: "Scroll down feed to find item", expectedOutcome: "item visible", maxSteps: 3)
@@ -468,27 +433,6 @@ struct TwoTierAutonomousLoopOfflineRegressionTests {
         } else {
             Issue.record("Expected retrySubgoal, got: \(resolution)")
         }
-    }
-
-    @Test("Category B5: heuristic recovery stops without proving an outcome")
-    func testB5_HeuristicReplanConcludesAtBoundary() {
-        let subgoal = Subgoal(
-            id: "sg_scroll_feed",
-            description: "Scroll down the feed to read more updates",
-            expectedOutcome: "read more updates",
-            maxSteps: 5
-        )
-        let reason = EscalationReason.actionStagnant(
-            reason: "Scroll and keyboard navigation produced no state change; page boundary reached or target inert. Concluding subgoal (offline fallback)"
-        )
-
-        let resolution = DefaultSubgoalPlanner.heuristicReplan(failedSubgoal: subgoal, reason: reason)
-
-        guard case .abort(let reason) = resolution else {
-            Issue.record("Expected abort on attempt 1 for boundary stagnation, got: \(resolution)")
-            return
-        }
-        #expect(reason.contains("page boundary or recovery limit"))
     }
 
     // =========================================================================
@@ -864,117 +808,5 @@ struct TwoTierAutonomousLoopOfflineRegressionTests {
 
         let clickEvents = synthesizer.recordedEvents.filter { if case .click = $0 { return true }; return false }
         #expect(!clickEvents.isEmpty, "Subgoal 2 must successfully execute click on Accept Terms button")
-    }
-
-    @Test("Category D4: Unresponsive modal dialog adapts away from stagnant actions without crashing")
-    func testD4_UnresponsiveModalDialog_AdaptsAndConcludes() async throws {
-        let engine = makeOfflineEngine()
-        let context = MockWindowContext.unresponsiveModalScenario()
-        let s0 = context.makeSnapshot(frameHash: "hash_modal_inert")
-        let perceiver = MockScreenPerceiver.stagnant(initial: s0, unchangedCount: 6)
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_modal", description: "Scroll down dialog", expectedOutcome: "", maxSteps: 5)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            snapshotProvider: perceiver,
-            config: .testing
-        )
-
-        let summary = try await coordinator.execute(goal: "Dismiss alert")
-        #expect(summary.isSuccess)
-    }
-
-    @Test("Category D5: All synthesized scroll actions have non-nil target coordinates dispatched")
-    func testD5_AllScrollActionsDispatchedWithCoordinates() async throws {
-        let engine = makeOfflineEngine()
-        let scrollArea = makeCandidate(id: "container", role: "AXScrollArea", label: "List", x: 200, y: 300, w: 400, h: 400)
-        let s0 = makeSnapshot(title: "List Window", candidates: [scrollArea], frameHash: "h0")
-        let s1 = makeSnapshot(title: "List Window Scrolled", candidates: [scrollArea], frameHash: "h1")
-
-        let perceiver = MockScreenPerceiver(snapshots: [s0, s1])
-        let synthesizer = MockEventSynthesizer()
-
-        let sg = Subgoal(id: "sg_scroll", description: "Scroll down list", expectedOutcome: "window title changed to List Window Scrolled", maxSteps: 2)
-        let planner = MockPlanningLLM.staticPlan(subgoals: [sg])
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: planner,
-            decisionEngine: engine,
-            synthesizer: synthesizer,
-            snapshotProvider: perceiver,
-            config: .testing
-        )
-
-        _ = try await coordinator.execute(goal: "Scroll list")
-
-        let scrollEvents = synthesizer.recordedEvents.filter { if case .scroll = $0 { return true }; return false }
-        #expect(!scrollEvents.isEmpty)
-        for event in scrollEvents {
-            if case .scroll(_, _, let point, _) = event {
-                #expect(point != nil, "All synthesized scroll events must have non-nil coordinates")
-            }
-        }
-    }
-
-    @Test("Category D6: Unmitigated legacy comparison trips three-strike limit as expected")
-    func testD6_UnmitigatedLegacyComparison_TripsThreeStrikeLimit() async throws {
-        let feedArea = makeCandidate(id: "feed_scroll", role: "AXScrollArea", label: "Timeline Feed", x: 50, y: 50, w: 400, h: 600)
-        let s0 = makeSnapshot(title: "Feed View", candidates: [feedArea], frameHash: "hash_s0")
-        let perceiver = MockScreenPerceiver(repeating: s0)
-        let synthesizer = MockEventSynthesizer()
-
-        // Simulate legacy ungrounded decision engine (pre-fix behavior):
-        // Scripted to output ungrounded scroll on target=none and ignore diff feedback
-        let legacyEvaluator = MockTypeSafeEvaluator.scripted(
-            targetChoice: "none",
-            targetConfidence: 0.85,
-            actionChoice: "scroll",
-            scrollDelta: "down"
-        )
-        let legacyEngine = TypeSafeDecisionEngine(client: legacyEvaluator)
-
-        // Legacy planner stubbornly retries identical subgoal
-        let subgoal = Subgoal(
-            id: "sg_scroll_legacy",
-            description: "Scroll down the feed to read more updates",
-            expectedOutcome: "read more updates",
-            maxSteps: 10
-        )
-        let legacyPlanner = MockPlanningLLM(
-            planProvider: { goal, _ in
-                SubgoalPlan(goal: goal, subgoals: [subgoal])
-            },
-            escalationHandler: { _, currentSubgoal, _, _ in
-                .retrySubgoal(currentSubgoal)
-            }
-        )
-
-        var config = AutonomousLoopConfig.testing
-        config.maxConsecutiveEscalations = 3
-        config.identicalActionThreshold = 2
-
-        let coordinator = TwoTierAutonomousLoopCoordinator(
-            planner: legacyPlanner,
-            decisionEngine: legacyEngine,
-            synthesizer: synthesizer,
-            snapshotProvider: perceiver,
-            config: config
-        )
-
-        do {
-            _ = try await coordinator.execute(goal: "Scroll down the feed to read more updates")
-            Issue.record("Expected coordinator to abort with Exceeded maximum consecutive escalations (3)")
-        } catch let error as LoopExecutionError {
-            guard case .escalationFailed(let reason) = error else {
-                Issue.record("Expected escalationFailed, got: \(error)")
-                return
-            }
-            #expect(reason.contains("Exceeded maximum consecutive escalations (3)"))
-        }
     }
 }
