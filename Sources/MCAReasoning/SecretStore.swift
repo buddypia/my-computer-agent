@@ -83,13 +83,19 @@ public struct SecretStore: Sendable {
     /// the MCP server has nobody to answer it, so for them such an item fails at once
     /// and the caller falls back (`CredentialStore` to the environment). The switch is
     /// process-wide; applied lazily before the first keychain call.
-    static let interactionPolicy: Void = { SecKeychainSetUserInteractionAllowed(false) }()
+    static let interactionPolicy: Void = { setKeychainUserInteractionAllowed(false) }()
 
     /// Lets the keychain ask the user. Only the GUI app calls this: it has a user to ask,
     /// and after a rebuild it is the one that must be allowed to read its own items again.
     public static func allowUserInteraction() {
         _ = interactionPolicy
-        SecKeychainSetUserInteractionAllowed(true)
+        setKeychainUserInteractionAllowed(true)
+    }
+
+    static var isUserInteractionAllowed: Bool {
+        var allowed: DarwinBoolean = true
+        getKeychainUserInteractionAllowed(&allowed)
+        return allowed.boolValue
     }
 
     // MARK: - API
@@ -557,3 +563,19 @@ private enum KeychainItem {
         ]
     }
 }
+
+// `SecKeychainSetUserInteractionAllowed` / `SecKeychainGetUserInteractionAllowed` are the
+// only switch that suppresses the "allow access?" dialog for the file-based login keychain
+// (`kSecUseAuthenticationUI` / `LAContext.interactionNotAllowed` only apply to the Data
+// Protection keychain; see `SecItem.h` and "Why not the data protection keychain" above).
+// `SecKeychain.h` was deprecated as a whole in macOS 10.10 without a replacement for
+// non-Data-Protection items, and Swift has no per-call deprecation suppression pragma.
+@_silgen_name("SecKeychainSetUserInteractionAllowed")
+@discardableResult
+private func setKeychainUserInteractionAllowed(_ state: DarwinBoolean) -> OSStatus
+
+@_silgen_name("SecKeychainGetUserInteractionAllowed")
+@discardableResult
+private func getKeychainUserInteractionAllowed(
+    _ state: UnsafeMutablePointer<DarwinBoolean>
+) -> OSStatus
