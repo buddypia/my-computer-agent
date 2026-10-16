@@ -59,6 +59,8 @@ struct TypeSafeKeySourceTests {
 struct KeychainInteractionTests {
     @Test("touching the keychain outside the app turns its dialogs off")
     func noDialogsOutsideTheApp() {
+        _ = SecretStore.interactionPolicy
+        #expect(!SecretStore.isUserInteractionAllowed)
         _ = SecretStore(namespace: "com.buddypia.mca.tests.never-written").read(account: "typesafe")
         #expect(!SecretStore.isUserInteractionAllowed)
     }
