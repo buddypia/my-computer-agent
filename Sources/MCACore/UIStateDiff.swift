@@ -814,8 +814,8 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
     /// Whether `needle` occurs in `haystack`. A Latin needle must be a whole word of `haystack`, so "to"
     /// does not hit "Photos" or "AXButton". Words split at camelCase and the `AX` role prefix, and the
-    /// unsplit run counts too, so "github" still finds "GitHub". Only ASCII letters and digits form a
-    /// word, so "gmail" finds "Gmailの受信トレイ". Anything else (CJK, emoji, multi-word phrases) matches
+    /// unsplit run counts too, so "github" still finds "GitHub". Letters of space-separated scripts
+    /// (below the CJK block) form a word, so "gmail" finds "Gmailの受信トレイ" and "sum" misses "Résumé". Anything else (CJK, emoji, multi-word phrases) matches
     /// as a substring: CJK has no spaces between words.
     static func outcomeMatch(_ needle: String, in haystack: String) -> Bool {
         let needle = needle.lowercased()
@@ -823,7 +823,9 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         let isLatinWord = needle.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
         guard isLatinWord else { return true }
 
-        let isWordChar: (Character) -> Bool = { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        let isWordChar: (Character) -> Bool = {
+            ($0.isLetter || $0.isNumber) && ($0.unicodeScalars.first?.value ?? 0) < 0x2E80
+        }
         for run in haystack.split(whereSeparator: { !isWordChar($0) }) {
             if run.lowercased() == needle { return true }
             let chars = Array(run)

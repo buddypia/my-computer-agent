@@ -548,5 +548,8 @@ struct UIStateDiffTests {
         #expect(UIStateDiff.outcomeMatch("github", in: "GitHub - Pull requests"))
         #expect(UIStateDiff.outcomeMatch("gmail", in: "Gmailの受信トレイ"))
         #expect(!UIStateDiff.outcomeMatch("hub", in: "Hubble"))
+        #expect(UIStateDiff.outcomeMatch("youtube", in: "YouTube"))
+        #expect(UIStateDiff.outcomeMatch("macos", in: "macOS Settings"))
+        #expect(!UIStateDiff.outcomeMatch("sum", in: "Résumé"))
     }
 }
