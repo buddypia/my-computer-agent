@@ -235,4 +235,24 @@ struct AccessibilityInspectorTests {
         #expect(!AccessibilityInspector.subTreePruningRoles.contains("AXScrollArea"))
         #expect(!AccessibilityInspector.subTreePruningRoles.contains("AXTable"))
     }
+
+    @Test("Chromium suffixed, middle-elided, and Find Bar AX windows resolve uniquely to the selected Quartz window")
+    func testChromiumAndEmptyQuartzWindowIdentity() {
+        let mainFrame = CGRect(x: 292, y: 25, width: 1495, height: 1044)
+        let findBarFrame = CGRect(x: 1309, y: 87, width: 376, height: 52)
+        let chromeWindows: [(title: String?, bounds: CGRect?)] = [
+            ("", findBarFrame),
+            ("Knowledge Atlas — 지식 성도 - Google Chrome - 俊浩", mainFrame)
+        ]
+        #expect(AccessibilityInspector.uniqueWindowIndex(chromeWindows, title: "Knowledge Atlas — 지식 성도", bounds: mainFrame) == 1)
+
+        let elidedQuartz = "cdn.jsdelivr.net/gh/orioncactus…able-jp-dynamic-subset.min.css"
+        let fullAX = "cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-jp-dynamic-subset.min.css - Google Chrome - 俊浩"
+        #expect(AccessibilityInspector.uniqueWindowIndex([(fullAX, mainFrame)], title: elidedQuartz, bounds: mainFrame) == 0)
+        #expect(AccessibilityInspector.uniqueWindowIndex([(fullAX, mainFrame)], title: "cdn.jsdelivr.net/gh/other…able-jp-dynamic-subset.min.css", bounds: mainFrame) == nil)
+
+        let geminiWindows: [(title: String?, bounds: CGRect?)] = [("Gemini - CEFR A1 한국어 커리큘럼 데이터", mainFrame)]
+        #expect(AccessibilityInspector.uniqueWindowIndex(geminiWindows, title: "", bounds: mainFrame) == 0)
+        #expect(AccessibilityInspector.uniqueWindowIndex([("A", mainFrame), ("B", mainFrame)], title: "", bounds: mainFrame) == nil)
+    }
 }

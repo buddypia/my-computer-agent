@@ -146,10 +146,10 @@ public actor AXBrowserDriver: BrowserDriving {
             }
             guard let entry = owned.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == scopedWindowID }),
                   let expectedBounds = entry[kCGWindowBounds as String] as? [String: Any],
-                  let frame = CGRect(dictionaryRepresentation: expectedBounds as CFDictionary),
-                  let title = entry[kCGWindowName as String] as? String else {
+                  let frame = CGRect(dictionaryRepresentation: expectedBounds as CFDictionary) else {
                 throw BrowserError.notConnected("selected browser window identity is unavailable")
             }
+            let title = entry[kCGWindowName as String] as? String ?? ""
             let identities = owned.map { item -> (title: String?, bounds: CGRect?) in
                 let bounds = (item[kCGWindowBounds as String] as? [String: Any])
                     .flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
@@ -157,12 +157,17 @@ public actor AXBrowserDriver: BrowserDriving {
             }
             let axWindows = AX.elements(axApp, kAXWindowsAttribute) ?? []
             let axIdentities = axWindows.map { (title: AX.string($0, kAXTitleAttribute), bounds: AX.frame($0)) }
+            let mainWindow = AX.element(axApp, kAXMainWindowAttribute)
             guard let cgIndex = AccessibilityInspector.uniqueWindowIndex(identities, title: title, bounds: frame),
                   (owned[cgIndex][kCGWindowNumber as String] as? NSNumber)?.uint32Value == scopedWindowID,
                   let axIndex = AccessibilityInspector.uniqueWindowIndex(axIdentities, title: title, bounds: frame),
-                  CFEqual(axWindows[axIndex], window) else {
+                  AccessibilityInspector.axWindowID(axWindows[axIndex]).map({ $0 == scopedWindowID }) ?? true,
+                  CFEqual(axWindows[axIndex], window) || (mainWindow.map { CFEqual(axWindows[axIndex], $0) } ?? false) else {
                 throw BrowserError.notConnected("the focused browser window is not uniquely the selected window")
             }
+            let resolved = axWindows[axIndex]
+            AXAttributes.enableEnhancedAccessibility(app: axApp, window: resolved)
+            return resolved
         }
         return window
     }

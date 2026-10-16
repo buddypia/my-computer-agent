@@ -22,7 +22,7 @@ public struct TextRecognizer: Sendable {
     /// Neural Engine was serialising them anyway.
     static let visionGate = SerialGate()
 
-    public init(languages: [String] = ["en-US", "ja-JP"]) {
+    public init(languages: [String] = ["en-US", "ja-JP", "ko-KR"]) {
         self.languages = languages.map { Locale.Language(identifier: $0) }
     }
 
@@ -259,6 +259,7 @@ public struct TextRecognizer: Sendable {
         var request = RecognizeTextRequest()
         request.recognitionLevel = recognitionLevel
         request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
         request.recognitionLanguages = languages
 
         let configured = request
