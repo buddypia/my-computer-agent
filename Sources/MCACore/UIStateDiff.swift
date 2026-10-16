@@ -812,29 +812,35 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         "as", "it", "its", "from", "into", "onto", "that", "this", "then", "are", "was", "will", "should"
     ]
 
-    /// Whether `needle` occurs in `haystack`. A Latin needle must be a whole word of `haystack`, with
-    /// camelCase and the `AX` role prefix split, so "to" does not hit "Photos" or "AXButton".
-    /// Anything else (CJK, emoji, multi-word phrases) matches as a substring: CJK has no spaces between words.
+    /// Whether `needle` occurs in `haystack`. A Latin needle must be a whole word of `haystack`, so "to"
+    /// does not hit "Photos" or "AXButton". Words split at camelCase and the `AX` role prefix, and the
+    /// unsplit run counts too, so "github" still finds "GitHub". Only ASCII letters and digits form a
+    /// word, so "gmail" finds "Gmailの受信トレイ". Anything else (CJK, emoji, multi-word phrases) matches
+    /// as a substring: CJK has no spaces between words.
     static func outcomeMatch(_ needle: String, in haystack: String) -> Bool {
         let needle = needle.lowercased()
-        guard !needle.isEmpty, !haystack.isEmpty else { return false }
+        guard !needle.isEmpty, haystack.lowercased().contains(needle) else { return false }
         let isLatinWord = needle.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
-        guard isLatinWord else { return haystack.lowercased().contains(needle) }
+        guard isLatinWord else { return true }
 
-        let chars = Array(haystack)
-        var spaced = ""
-        for (i, c) in chars.enumerated() {
-            if i > 0, c.isUppercase {
-                let prev = chars[i - 1]
-                let nextIsLower = i + 1 < chars.count && chars[i + 1].isLowercase
-                if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextIsLower) {
-                    spaced.append(" ")
+        let isWordChar: (Character) -> Bool = { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        for run in haystack.split(whereSeparator: { !isWordChar($0) }) {
+            if run.lowercased() == needle { return true }
+            let chars = Array(run)
+            var word = ""
+            for (i, c) in chars.enumerated() {
+                if i > 0, c.isUppercase {
+                    let prev = chars[i - 1]
+                    let nextIsLower = i + 1 < chars.count && chars[i + 1].isLowercase
+                    if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextIsLower) {
+                        if word.lowercased() == needle { return true }
+                        word = ""
+                    }
                 }
+                word.append(c)
             }
-            spaced.append(c)
+            if word.lowercased() == needle { return true }
         }
-        return spaced.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-            .contains(needle)
+        return false
     }
 }

@@ -533,6 +533,7 @@ struct UIStateDiffTests {
         #expect(outcome("Navigate to the Settings page", title: "Settings").isVerified)
         #expect(outcome("save dialog appears", added: [button("saveDialog", "Save changes?")]).isVerified)
         #expect(outcome("設定画面が開く", title: "設定").isVerified)
+        #expect(outcome("Open GitHub", title: "GitHub - Pull requests").isVerified)
     }
 
     @Test("outcomeMatch splits camelCase and the AX role prefix into words")
@@ -543,5 +544,9 @@ struct UIStateDiffTests {
         #expect(!UIStateDiff.outcomeMatch("to", in: "Photos"))
         #expect(!UIStateDiff.outcomeMatch("tab", in: "Table"))
         #expect(UIStateDiff.outcomeMatch("設定", in: "システム設定"))
+        // The unsplit run still counts, and only ASCII letters and digits form a Latin word.
+        #expect(UIStateDiff.outcomeMatch("github", in: "GitHub - Pull requests"))
+        #expect(UIStateDiff.outcomeMatch("gmail", in: "Gmailの受信トレイ"))
+        #expect(!UIStateDiff.outcomeMatch("hub", in: "Hubble"))
     }
 }
