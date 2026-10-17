@@ -628,11 +628,11 @@ public struct TypeSafeDecisionEngine: Sendable {
         }
 
         // Arrow keys
-        if hasRegexPattern("\\b(?:arrow\\s+down|down\\s+arrow|(?:press|hit|tap)\\s+(?:the\\s+)?down)\\b")
+        if hasRegexPattern("\\b(?:arrow\\s+down|down\\s+arrow|press\\s+down)\\b")
             || lower.contains("下矢印") || lower.contains("下キー") {
             return ["Down"]
         }
-        if hasRegexPattern("\\b(?:arrow\\s+up|up\\s+arrow|(?:press|hit|tap)\\s+(?:the\\s+)?up)\\b")
+        if hasRegexPattern("\\b(?:arrow\\s+up|up\\s+arrow|press\\s+up)\\b")
             || lower.contains("上矢印") || lower.contains("上キー") {
             return ["Up"]
         }
@@ -1230,9 +1230,10 @@ public struct TypeSafeDecisionEngine: Sendable {
         // The key comes from the command itself: in "press Tab to select the Escape tab" a goal-wide
         // scan finds the bare word "escape" first. Quoted text is a name ("Press Enter to Continue" tab),
         // not a command, and a chord the goal spells out ("Shift+Enter") stays whole. A straight single
-        // quote only quotes at word edges, so the apostrophes in "Bob's ... Alice's" are not a pair.
+        // quote only quotes where no Latin letter or digit touches it, so the apostrophes in
+        // "Bob's ... Alice's" are not a pair while "'Press Enter to Continue'タブ" still is.
         let unquotedGoal = normalizedGoal.replacingOccurrences(
-            of: "[\"“「『][^\"”」』]*[\"”」』]|(?<![\\p{L}\\p{N}])'.*?'(?![\\p{L}\\p{N}])",
+            of: "[\"“「『][^\"”」』]*[\"”」』]|(?<![A-Za-z0-9])'[\\s\\S]*?'(?![A-Za-z0-9])",
             with: " ", options: .regularExpression
         )
         let commandedKeys = unquotedGoal.range(of: keyCommandPattern, options: .regularExpression)

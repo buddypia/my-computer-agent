@@ -708,8 +708,8 @@ struct DecisionEngineRobustnessTests {
             ("Tap the spacebar to select the suggestion", ["Space"]),
             ("Press Backspace to select less", ["Backspace"]),
             ("Tap Delete to select less", ["Backspace"]),
-            ("Hit Up to select the previous suggestion", ["Up"]),
-            ("Tap the down to select the next suggestion", ["Down"]),
+            ("Press Up to select the previous suggestion", ["Up"]),
+            ("Press Down to select the next suggestion", ["Down"]),
             ("Press Cmd+A to select everything", ["cmd", "a"]),
             ("Hit Shift+Tab to select the previous field", ["shift", "tab"]),
             ("エンターキーを押して候補を選択", ["Return"]),
@@ -745,5 +745,27 @@ struct DecisionEngineRobustnessTests {
         let quoted = engine.fallbackLocalDecision(goal: "Open the 'Press Enter to Continue' tab", candidates: [quotedTab])
         #expect(quoted.action != .keyPress)
         #expect(quoted.targetElementId == "tab_continue")
+
+        // Japanese may touch the quote, and a quoted name may wrap onto the next line.
+        for goal in [
+            "'Press Enter to Continue'タブを選択",
+            "ホームの'Press Enter to Continue'を選択",
+            "Select the tab\n'Press Enter\nto Continue'",
+        ] {
+            #expect(engine.fallbackLocalDecision(goal: goal, candidates: [quotedTab]).action != .keyPress, "\(goal)")
+        }
+    }
+
+    @Test("Tap and hit before Up or Down name a control, not an arrow key")
+    func testTapUpOrDownIsNotAnArrowKey() {
+        let engine = TypeSafeDecisionEngine()
+        let upNext = makeCandidate(id: "btn_next", role: "AXButton", label: "Up Next")
+        let tapped = engine.fallbackLocalDecision(goal: "Tap the Up Next button", candidates: [upNext])
+        #expect(tapped.action == .click)
+        #expect(tapped.targetElementId == "btn_next")
+
+        for goal in ["Hit the Down button", "Tap down payments"] {
+            #expect(engine.fallbackLocalDecision(goal: goal, candidates: [upNext]).action != .keyPress, "\(goal)")
+        }
     }
 }
