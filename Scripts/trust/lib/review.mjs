@@ -32,7 +32,7 @@ export function validateReview(record, diffId) {
 
   const malformed = record.findings.filter((f) => !SEVERITIES.has(f?.severity));
   if (malformed.length > 0) {
-    return { ok: false, detail: `未知の severity: ${malformed.map((f) => f?.severity).join(', ')}`, blocking: [] };
+    return { ok: false, detail: `未知の severity: ${malformed.map((f) => f?.severity).join(', ')}（許容: ${[...SEVERITIES].join('|')}。大文字で書く）`, blocking: [] };
   }
 
   const blocking = record.findings.filter((f) => BLOCKING_SEVERITIES.has(f.severity) && f.resolved !== true);

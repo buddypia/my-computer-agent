@@ -23,7 +23,7 @@
  *
  * Updating only this file when adding new labels reflects changes in both emitter / verifier — preventing mismatch regressions.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -145,4 +145,35 @@ export function formatReviewRemedy({
   });
   const n = shipped.length;
   return [...shipped, `${'①②③④'[n] ?? `(${n + 1})`} ${agnostic}`].join(' or ');
+}
+
+/** How long a Pre-Ship marker authorizes a ship after `mark-pre-ship-confirmed` wrote it. */
+export const SHIP_MARKER_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Why a Pre-Ship marker does not authorize a ship, or null when it does (pure apart from the read).
+ *
+ * Shared by the hook and by ship-worktree itself: the hook matches command text, so an invocation
+ * it does not recognize (`$OPS ship-worktree`, `bash -c "…"`) reached the merge with no marker at all.
+ *
+ * @param {string} path
+ * @returns {null | {reason: 'missing'|'stale'|'label', ageMin?: number}}
+ */
+export function shipMarkerProblem(path, { now = Date.now(), ttlMs = SHIP_MARKER_TTL_MS } = {}) {
+  let stat;
+  try {
+    stat = statSync(path);
+  } catch {
+    return { reason: 'missing' };
+  }
+  let label = null;
+  try {
+    label = JSON.parse(readFileSync(path, 'utf-8'))?.quality_gate;
+  } catch {
+    /* empty or invalid JSON — no label */
+  }
+  if (!VALID_QUALITY_LABELS.has(label)) return { reason: 'label' };
+  const ageMs = now - stat.mtime.getTime();
+  if (ageMs > ttlMs) return { reason: 'stale', ageMin: Math.floor(ageMs / 60_000) };
+  return null;
 }

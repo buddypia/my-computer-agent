@@ -73,6 +73,8 @@ G2「隔離」が単独・直列に強制する。
    - exit 0 かつ `TRUST AUTO_MERGE` と「Pre-Ship approval を trust として記録した」が出力された場合だけ、
      人間に聞かずに `/create-pr ship-worktree` へ進む。PR 本文に判定結果を載せ、マージ後に報告する。
      exit 0 だけでは判断しない（INC-012）。
+     ship の直前に `node .claude/scripts/mark-pre-ship-confirmed.mjs <branch> --quality <label>` を単独の
+     Bash 呼び出しで実行し（マーカーの有効期限は 10 分）、`--worktree` にはリテラルの絶対パスを渡す。
      ship は main を取り込んだ head の CI を最大 30 分待ってからマージするので、background で実行する。
    - exit 3（`HUMAN`）: 表示された理由（どの軸で致命的か）を Pre-Ship Panel に添えて人間の承認を待つ。
      回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する。

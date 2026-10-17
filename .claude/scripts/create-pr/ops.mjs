@@ -54,6 +54,7 @@ import {
   readTrunkLandings,
 } from '../../../.cli/lib/ship-quality-ledger.mjs';
 import { parseUncheckedPlanItems } from '../../../.cli/lib/worktree-plan-status.mjs';
+import { SHIP_MARKER_TTL_MS, shipMarkerProblem } from '../../../.cli/lib/quality-gate-labels.mjs';
 import { shipTestLockFindings } from '../../../.cli/lib/test-lock.mjs';
 import {
   canonicalizePath,
@@ -255,7 +256,7 @@ function ghToken() {
  * *entire* gate, not one step. Measured 2026-08-24: a full 31-step run took 884.8s against the
  * old 900_000 — a 15-second margin, and `retry: 3` on that push would have silently re-run the
  * 15-minute gate three more times. Raised alongside the product-e2e step ceiling it must exceed
- * (`ci-local-status.mjs`), keeping the three-layer ordering intact.
+ * at the time, keeping the three-layer ordering intact.
  */
 export const PUSH_TIMEOUT_MS = 1_800_000;
 
@@ -1819,12 +1820,34 @@ export function assertApprovalFreshAfterBaseMerge(absWtPath, diffIdFn = resolveR
   if (contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) !== 'changed') return;
   const path = shipReviewMarkerPath(absWtPath);
   throw new Error(
-    `Pre-Ship human approval is stale: ${path}\n` +
-      `Merging origin/${BASE_BRANCH} changed the diff this branch contributes, so the change that ` +
-      `lands is no longer the change the human approved.\n` +
-      `Re-review the updated diff and record a fresh answer:\n` +
-      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}`,
+    `Pre-Ship approval is stale: ${path}\n` +
+      `The diff this branch contributes changed after the marker was written (a commit after approval, ` +
+      `or merging origin/${BASE_BRANCH}), so the change that lands is no longer the change approved.\n` +
+      `Re-review the updated diff, record a fresh answer, then re-create the marker before re-running ship:\n` +
+      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}\n` +
+      `  node .claude/scripts/mark-pre-ship-confirmed.mjs <branch> --quality <label>`,
   );
+}
+
+/**
+ * ship-worktree checks the Pre-Ship marker itself instead of relying on pre-ship-review-guard alone:
+ * the hook matches command text, so `$OPS ship-worktree` or `bash -c "…"` used to reach the merge
+ * with no approval at all.
+ */
+function assertShipMarker(absWtPath) {
+  const path = shipReviewMarkerPath(absWtPath);
+  const problem = shipMarkerProblem(path);
+  if (!problem) return;
+  const branch = inferBranchFromWorktreePath(absWtPath) ?? '<branch>';
+  const remake =
+    `  node .claude/scripts/mark-pre-ship-confirmed.mjs ${branch} --quality <agent_go|skill_review_pass|self_review_pass|trivial_skip>\n` +
+    `Run it as its own Bash call, then re-run ship-worktree with a literal --worktree path.`;
+  const why = {
+    missing: `No Pre-Ship marker: ${path}\nFinish the Pre-Ship steps (node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}), then create it:`,
+    label: `Pre-Ship marker has no valid quality_gate label: ${path}\nRe-create it with --quality:`,
+    stale: `Pre-Ship marker expired (${problem.ageMin} min old, limit ${SHIP_MARKER_TTL_MS / 60_000}): ${path}\nIf the approval and the diff are unchanged, re-create it (the marker CLI re-checks every step):`,
+  }[problem.reason];
+  throw new Error(`${why}\n${remake}`);
 }
 
 function cmdShipWorktree(args) {
@@ -1842,6 +1865,7 @@ function cmdShipWorktree(args) {
       : '';
     throw new Error(`Worktree does not exist: ${absWtPath}${candidateBlock}`);
   }
+  assertShipMarker(absWtPath);
 
   const planPath = resolveWorktreePlanPath(absWtPath);
   if (!existsSync(planPath)) {
