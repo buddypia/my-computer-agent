@@ -72,14 +72,14 @@ Configuration: `.claude/skills/create-pr/config.json` — `github_account`, `bas
 
 If any command returns `ok: false`, halt immediately, report the error, and invoke `finalize`.
 
-```bash
-OPS="node .claude/scripts/create-pr/ops.mjs"
+Like Mode B, ship-feature refuses to run without a fresh staged marker (`mark-pre-ship-confirmed.mjs --staged --quality <label>`, its own Bash call).
 
-$OPS init                                             # Step 1
-$OPS isolate --branch "$BRANCH"                       # Step 2 (AI determines BRANCH name)
-$OPS commit --message "$MSG"                          # Step 3 (use --files multiple times if needed)
-$OPS ship-feature --title "$FT" --body "$FB"          # Step 4 (waits up to 5 mins for CI completion)
-$OPS finalize                                         # Step 5
+```bash
+node .claude/scripts/create-pr/ops.mjs init                                    # Step 1
+node .claude/scripts/create-pr/ops.mjs isolate --branch <branch>               # Step 2 (AI determines the name)
+node .claude/scripts/create-pr/ops.mjs commit --message "<msg>"                # Step 3 (use --files multiple times if needed)
+node .claude/scripts/create-pr/ops.mjs ship-feature --title "<t>" --body-file <path>  # Step 4 (waits up to 5 mins for CI completion)
+node .claude/scripts/create-pr/ops.mjs finalize                                # Step 5
 # → If finalize returns sync_status !== 'synced', follow recovery guidance
 #   (local_changes: dirty base branch checkout → manually commit/stash and retry)
 ```
@@ -90,7 +90,7 @@ Used when shipping and cleaning up features developed inside `.worktrees/<branch
 
 > **Handling Cancelled PLAN.md Items**: Unchecked boxes (`- [ ]`) marked with `(cancelled)`, `(dropped)`, or `~~strikethrough~~` are ignored and passed. Checklists inside code blocks (```` ``` ````) and HTML comments (`<!-- -->`) are automatically stripped to eliminate false positives. Bypassed via `--force` / `--force-plan`.
 
-Write the ship command literally — `node .claude/scripts/create-pr/ops.mjs ship-worktree --worktree <literal path>`. pre-ship-review-guard cannot resolve `$OPS` / `$WT_PATH`, and ship-worktree refuses to run without a fresh Pre-Ship marker (`mark-pre-ship-confirmed.mjs <branch> --quality <label>`, its own Bash call, valid 10 min).
+Write the ship command literally — `node .claude/scripts/create-pr/ops.mjs ship-worktree --worktree <literal path>`. pre-ship-review-guard cannot resolve `$OPS` / `$WT_PATH`, and ship-worktree refuses to run without a fresh Pre-Ship marker (`mark-pre-ship-confirmed.mjs <branch> --quality <label>`, its own Bash call, valid 10 min). It also re-evaluates the Pre-Ship steps, so a marker does not stand in for an approval bound to the current diff.
 
 ```bash
 # 1. Validate PLAN.md (optional; auto-validated within ship-worktree)

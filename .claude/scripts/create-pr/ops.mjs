@@ -38,7 +38,7 @@ import {
   resolveWorktreePlanPath,
   safeBranchKey,
 } from '../../../.cli/lib/worktree-plan-path.mjs';
-import { answerStorePath, readAnswerStore, resolveReviewDiffId } from '../lib/pre-ship-steps.mjs';
+import { answerStorePath, evaluateSteps, readAnswerStore, resolveReviewDiffId } from '../lib/pre-ship-steps.mjs';
 // isAncestor: worktree-new.mjs 의 기존 export 재사용 (merge-base --is-ancestor boolean 화 SSOT)
 import { isAncestor } from '../worktree-new.mjs';
 import { classifyScale } from '../../../.cli/lib/ship-scale.mjs';
@@ -255,8 +255,7 @@ function ghToken() {
  * The pre-push hook runs the whole CI mirror inside this push, so this budget must contain the
  * *entire* gate, not one step. Measured 2026-08-24: a full 31-step run took 884.8s against the
  * old 900_000 — a 15-second margin, and `retry: 3` on that push would have silently re-run the
- * 15-minute gate three more times. Raised alongside the product-e2e step ceiling it must exceed
- * at the time, keeping the three-layer ordering intact.
+ * 15-minute gate three more times.
  */
 export const PUSH_TIMEOUT_MS = 1_800_000;
 
@@ -1011,6 +1010,7 @@ function cmdShipFeature(args) {
   const title = requireArg(args, 'title');
   const body = resolveBodyArg(args);
   const noMerge = args['no-merge'] === true;
+  assertShipMarker(null);
 
   // Taken before the push, like cmdShipWorktree: the label and scale describe what is being shipped.
   const qualitySnapshot = collectShipQualitySnapshot({ absWtPath: WT_DIR, branch, baseBranch: BASE_BRANCH });
@@ -1830,24 +1830,64 @@ export function assertApprovalFreshAfterBaseMerge(absWtPath, diffIdFn = resolveR
 }
 
 /**
- * ship-worktree checks the Pre-Ship marker itself instead of relying on pre-ship-review-guard alone:
+ * ship checks the Pre-Ship marker itself instead of relying on pre-ship-review-guard alone:
  * the hook matches command text, so `$OPS ship-worktree` or `bash -c "…"` used to reach the merge
  * with no approval at all.
+ *
+ * The marker is only a 10-minute receipt that mark-pre-ship-confirmed checked the steps; a file
+ * written by hand carries the same label. So ship re-evaluates the steps (the approval bound to the
+ * current diff among them) — the same evaluation the marker CLI runs. A `--force` marker is the
+ * human's explicit bypass and is not re-checked. Staged mode has no worktree steps (the marker CLI
+ * skips them too). Evaluation errors fail open, as in mark-pre-ship-confirmed.
+ *
+ * @param {string|null} absWtPath null for ship-feature (staged mode)
  */
-function assertShipMarker(absWtPath) {
+export function assertShipMarker(absWtPath, { evaluateFn = evaluateSteps } = {}) {
   const path = shipReviewMarkerPath(absWtPath);
   const problem = shipMarkerProblem(path);
-  if (!problem) return;
-  const branch = inferBranchFromWorktreePath(absWtPath) ?? '<branch>';
+  const branch = absWtPath ? inferBranchFromWorktreePath(absWtPath) ?? '<branch>' : '--staged';
   const remake =
     `  node .claude/scripts/mark-pre-ship-confirmed.mjs ${branch} --quality <agent_go|skill_review_pass|self_review_pass|trivial_skip>\n` +
-    `Run it as its own Bash call, then re-run ship-worktree with a literal --worktree path.`;
-  const why = {
-    missing: `No Pre-Ship marker: ${path}\nFinish the Pre-Ship steps (node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}), then create it:`,
-    label: `Pre-Ship marker has no valid quality_gate label: ${path}\nRe-create it with --quality:`,
-    stale: `Pre-Ship marker expired (${problem.ageMin} min old, limit ${SHIP_MARKER_TTL_MS / 60_000}): ${path}\nIf the approval and the diff are unchanged, re-create it (the marker CLI re-checks every step):`,
-  }[problem.reason];
-  throw new Error(`${why}\n${remake}`);
+    `Run it as its own Bash call, then re-run ship${absWtPath ? ' with a literal --worktree path' : ''}.`;
+  const steps = absWtPath
+    ? `node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}`
+    : 'the Pre-Ship Panel';
+  if (problem) {
+    const why = {
+      missing: `No Pre-Ship marker: ${path}\nFinish the Pre-Ship steps (${steps}), then create it:`,
+      label: `Pre-Ship marker has no valid quality_gate label: ${path}\nRe-create it with --quality:`,
+      stale: `Pre-Ship marker expired (${problem.ageMin} min old, limit ${SHIP_MARKER_TTL_MS / 60_000}): ${path}\nIf the approval and the diff are unchanged, re-create it (the marker CLI re-checks every step):`,
+    }[problem.reason];
+    throw new Error(`${why}\n${remake}`);
+  }
+  if (!absWtPath) return;
+  let marker = null;
+  try {
+    marker = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    /* label check above already read it */
+  }
+  if (marker?.approval_mode === 'forced') return;
+  let state;
+  try {
+    const gitBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath }).trim();
+    state = evaluateFn({
+      worktreeAbs: absWtPath,
+      branch: gitBranch,
+      projectDir: PROJECT_DIR,
+      baseBranch: BASE_BRANCH,
+      qualityLabel: marker?.quality_gate,
+    });
+  } catch (e) {
+    console.error(`[ship-worktree] Warning: Pre-Ship step evaluation failed: ${e?.message ?? e} — proceeding fail-open`);
+    return;
+  }
+  if (state.ready) return;
+  const n = state.next;
+  throw new Error(
+    `Pre-Ship marker exists but step [${n.index}/${n.total}] ${n.title} is ${n.status}: ${n.evidence}\n` +
+      `The marker does not stand in for the steps. Finish them (${steps}), then re-create it:\n${remake}`,
+  );
 }
 
 function cmdShipWorktree(args) {

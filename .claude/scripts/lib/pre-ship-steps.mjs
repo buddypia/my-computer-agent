@@ -472,8 +472,14 @@ export function recordAnswer({
   if (typeof value !== 'string' || !value.trim()) return { ok: false, error: 'Answer is empty' };
 
   const state = evaluation ?? evaluateSteps({ worktreeAbs, branch, ...evalOpts });
-  if (!state.next) return { ok: false, error: 'No steps remaining (all steps passed)' };
-  if (state.next.id !== stepId) {
+  const path = answerStorePath(worktreeAbs, branch);
+  const store = readAnswerStore(path);
+  // A human may still answer after `trust approve` filled the step (e.g. a rule trust does not
+  // measure needs a human exception). Without this the human's words were refused and the ledger
+  // recorded the ship as trust-approved only.
+  const overTrust = !state.next && stepId === 'approval' && store.approval?.source === 'trust';
+  if (!state.next && !overTrust) return { ok: false, error: 'No steps remaining (all steps passed)' };
+  if (!overTrust && state.next.id !== stepId) {
     return {
       ok: false,
       error: `Sequence violation — currently awaiting step ${state.next.index} "${state.next.id}" (requested: ${stepId})`,
@@ -493,9 +499,6 @@ export function recordAnswer({
         'answer would survive every later commit. Retry once the machine is less loaded.',
     };
   }
-
-  const path = answerStorePath(worktreeAbs, branch);
-  const store = readAnswerStore(path);
 
   // A revise/abort leaves this step pending, so without this an "approve" could be written over the
   // human's veto of the very same diff. Only a clear veto blocks: an answer the parser could not read

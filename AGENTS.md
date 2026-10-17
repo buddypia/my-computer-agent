@@ -76,6 +76,8 @@ G2「隔離」が単独・直列に強制する。
      ship の直前に `node .claude/scripts/mark-pre-ship-confirmed.mjs <branch> --quality <label>` を単独の
      Bash 呼び出しで実行し（マーカーの有効期限は 10 分）、`--worktree` にはリテラルの絶対パスを渡す。
      ship は main を取り込んだ head の CI を最大 30 分待ってからマージするので、background で実行する。
+     AUTO_MERGE でも trust が測らない規約（System One eval の改善など）を満たさないときは人間に聞き、
+     その回答も下の `answer` で記録する（trust の承認を上書きし、台帳に human として残る）。
    - exit 3（`HUMAN`）: 表示された理由（どの軸で致命的か）を Pre-Ship Panel に添えて人間の承認を待つ。
      回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する。
      台帳への取り込み（`trust.mjs reconcile`）は `ship-worktree` が push の前に行う。

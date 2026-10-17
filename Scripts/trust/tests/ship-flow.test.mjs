@@ -4,18 +4,19 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 globalThis.__HOOK_ORCHESTRATOR__ = true; // import the hook without running its stdin main
-const { assertApprovalFreshAfterBaseMerge, shipReviewMarkerPath } = await import(
+const { assertApprovalFreshAfterBaseMerge, assertShipMarker, shipReviewMarkerPath } = await import(
   '../../../.claude/scripts/create-pr/ops.mjs'
 );
 const { run: guard } = await import('../../../.cli/hooks/pre-ship-review-guard.mjs');
 const { shipMarkerProblem } = await import('../../../.cli/lib/quality-gate-labels.mjs');
 const { checkPreShipSteps } = await import('../../../.claude/scripts/mark-pre-ship-confirmed.mjs');
+const { recordAnswer, readAnswerStore, answerStorePath } = await import('../../../.claude/scripts/lib/pre-ship-steps.mjs');
 
 let root;
 let worktree;
@@ -121,4 +122,51 @@ test('shipMarkerProblem: missing, unlabelled, expired, fresh', () => {
 
 test('a --force marker is not recorded as a human approval', () => {
   assert.equal(checkPreShipSteps(root, branch, true).approval.mode, 'forced');
+});
+
+/** A fresh, labelled marker as a hand-written file would be; restored afterwards. */
+function withFreshMarker(payload, fn) {
+  writeFileSync(markerPath, JSON.stringify({ quality_gate: 'agent_go', ...payload }));
+  try {
+    return fn();
+  } finally {
+    writeFileSync(markerPath, JSON.stringify({ review_diff_id: 'D' }));
+  }
+}
+const pendingApproval = () => ({
+  ready: false,
+  next: { index: 4, total: 4, title: 'Human or Trust evaluator has approved', status: 'awaiting', evidence: 'No answer recorded' },
+});
+
+test('a hand-written marker does not ship without the approval the steps require', () => {
+  withFreshMarker({}, () => {
+    assert.throws(() => assertShipMarker(worktree, { evaluateFn: pendingApproval }), /does not stand in for the steps/);
+    assert.doesNotThrow(() => assertShipMarker(worktree, { evaluateFn: () => ({ ready: true, next: null }) }));
+  });
+});
+
+test('a --force marker is the human bypass and is not re-evaluated', () => {
+  withFreshMarker({ approval_mode: 'forced' }, () => {
+    assert.doesNotThrow(() => assertShipMarker(worktree, { evaluateFn: pendingApproval }));
+  });
+});
+
+test('ship-feature (staged) needs its own marker', (t) => {
+  // The staged marker is shared by the real checkout; never touch one another session made.
+  if (existsSync(shipReviewMarkerPath(null))) return t.skip('a staged marker exists in this checkout');
+  assert.throws(() => assertShipMarker(null), /No Pre-Ship marker[\s\S]*--staged/);
+});
+
+test('a human answer replaces a trust approval, so the ledger can record it as human', () => {
+  const head = g('rev-parse', 'HEAD');
+  writeState('pre-ship-answers.json', { approval: { value: 'approve', source: 'trust', head_sha: head } });
+  const done = { next: null, headSha: head, reviewDiffId: null, approvalChoices: undefined };
+  const r = recordAnswer({ worktreeAbs: worktree, branch, stepId: 'approval', value: '承認', evaluation: done });
+  assert.equal(r.ok, true, r.error);
+  const saved = readAnswerStore(answerStorePath(worktree, branch)).approval;
+  assert.equal(saved.value, '承認');
+  assert.equal(saved.source, undefined);
+  // A human answer already there is not overwritten once every step has passed.
+  const again = recordAnswer({ worktreeAbs: worktree, branch, stepId: 'approval', value: 'approve', evaluation: done });
+  assert.match(again.error, /No steps remaining/);
 });
