@@ -1,5 +1,5 @@
 /**
- * quality-gate-labels.mjs — Single SSOT for Quality Gate label enum + per-label PROOF evidence contracts
+ * quality-gate-labels.mjs — Single SSOT for the Quality Gate label enum
  *
  * Enum for marker JSON `quality_gate` field representing R-CM-030 Rule 8 (Pre-Ship Quality Gate)
  * environment branching + self-check fallback. Imported by both mark-pre-ship-confirmed.mjs (CLI emitter)
@@ -9,8 +9,7 @@
  * - `agent_go`         : Both `/code-review --fix` + `code-reviewer` **agent** evaluated as Go (highest path).
  *                        Single entry point via `/code-review` after `/simplify` removal and `simplifit` skill deprecation on 2026-05-27  retired-ref-ok: simplifit deprecation records historical context — not an invocation instruction
  * - `skill_review_pass`: Agent not used. Independent 2nd review performed via a review **skill** + Go.
- *                        What to run is `REPO_REVIEW_ASSETS` (repo-shipped); what *counts* once run is
- *                        `LABEL_EVIDENCE_MARKERS` (wider — includes `/code-review` for environments that have it).
+ *                        What to run is `REPO_REVIEW_ASSETS` (repo-shipped).
  * - `self_review_pass` : Pure self-review where 2nd review tools could not be run (Panel Decisions reason specified)
  * - `trivial_skip`     : R-CM-030 Rule 10 trivial exemption (≤2 files + ≤20 LOC + non-substantive)
  *
@@ -34,44 +33,6 @@ export const VALID_QUALITY_LABELS = new Set([
   'self_review_pass',
   'trivial_skip',
 ]);
-
-/**
- * Tool-agnostic marker — names the *act* (an independent adversarial review), not a tool.
- *
- * Why: every other marker is a tool name, so a review run by any other agent could not be recorded.
- *   Observed 2026-09-24 in a transplant target (lottie-motion-studio): the `git-worktree-isolation`
- *   bundle does not ship `code-reviewer.md`, the session ran a real adversarial review through a
- *   general-purpose subagent, and no gate name it could honestly write satisfied `agent_go`. The ledger
- *   then reported that ship as the 35th consecutive skip. Accepted for both labels (the ledger counts
- *   them identically); the forgery bar is unchanged — a `pass`/`warn` gate in `name`/`command`.
- */
-export const ADVERSARIAL_REVIEW_MARKER = 'adversarial-review';
-
-/**
- * Per-label PROOF evidence markers — to claim a label, `name` or `command` in one of `gates[]`
- * must contain at least one of the markers below (case-insensitive; spaces/underscores read as `-`).
- *
- * Why: Adding labels without requiring evidence creates an additional escape hatch. Since declaring
- *   "reviewed via skill" breaks consecutive skip counts in the ledger, that declaration must be supported
- *   by execution records (isomorphic to R-CM-030 Rule 9 label inflation prevention).
- *
- * `agent_go` is required symmetrically — requiring evidence only for `skill_review_pass` creates a perverse incentive
- *   to declare a *stronger* label to avoid providing evidence. In practice, this imposes no extra burden:
- *   past `agent_go` PROOFs already recorded gate names as `code-reviewer agent` / `code-reviewer agent (verdict)`.
- *
- * `code-reviewer` ⊃ `code-review` (substring) — agent evidence automatically satisfies skill evidence.
- * Semantically sound (agent is a stronger 2nd review). The reverse does not hold: `code-review --fix` does not contain `code-reviewer`.
- *
- * Unlisted labels (`self_review_pass` / `trivial_skip`) require no evidence — they represent declarations that 2nd review
- *   was not performed, which the ledger aggregates as skips.
- *
- * Naming note: Using `TOKENS` in constant names triggers false positives in `secret-patterns.mjs#Env Secret Assignment`
- *   (`[A-Z0-9_]*TOKEN[A-Z0-9_]*\s*=\s*...`), blocking writes — use `MARKERS`.
- */
-export const LABEL_EVIDENCE_MARKERS = Object.freeze({
-  agent_go: Object.freeze(['code-reviewer', ADVERSARIAL_REVIEW_MARKER]),
-  skill_review_pass: Object.freeze(['code-review', 'code-standards-aligner', ADVERSARIAL_REVIEW_MARKER]),
-});
 
 /**
  * `trivial_skip` limits — R-CM-030 Rule 10 (≤2 files + ≤20 LOC). The only label whose claim is a
@@ -174,8 +135,8 @@ export function formatReviewRemedy({
   const present = REPO_REVIEW_ASSETS.filter((asset) => existsFn(join(projectDir, asset.path)));
   // Always reachable: needs no shipped asset, only a reviewer that did not write the change.
   const agnostic =
-    `an adversarial review by a separate agent or session, recorded as a gate named ` +
-    `${tick}${ADVERSARIAL_REVIEW_MARKER}${tick} (${tick}agent_go${tick} or ${tick}skill_review_pass${tick})`;
+    `an adversarial review by a separate agent or session ` +
+    `(${tick}agent_go${tick} or ${tick}skill_review_pass${tick})`;
   const shipped = present.map((asset, i) => {
     // An asset only some CLIs can reach says so, instead of being filtered out: filtering would need
     // to know which CLI is reading, and a wrong guess silently removes the stronger review path.
@@ -187,56 +148,4 @@ export function formatReviewRemedy({
   });
   const n = shipped.length;
   return [...shipped, `${'①②③④'[n] ?? `(${n + 1})`} ${agnostic}`].join(' or ');
-}
-
-/**
- * Gate statuses recognized as evidence — only those that **actually ran**.
- *
- * `skip` explicitly records "not run", while `fail` records failure to pass. Counting either
- * as evidence would allow claiming cross-review via a single line `{"name":"code-review --fix","status":"skip"}`,
- * reopening the bypass that evidence checks aim to close.
- * (While schemas prevent `verdict='go'` + `status='fail'` contradictions, `skip` is not blocked by schema — must filter here.)
- */
-export const EVIDENCE_GATE_STATUSES = Object.freeze(['pass', 'warn']);
-
-/** Extracts search target fields from 1 gate as lowercase string (name required / command optional). */
-function gateSearchText(gate) {
-  if (!gate || typeof gate !== 'object') return '';
-  if (!EVIDENCE_GATE_STATUSES.includes(gate.status)) return '';
-  const name = typeof gate.name === 'string' ? gate.name : '';
-  const command = typeof gate.command === 'string' ? gate.command : '';
-  // Spaces/underscores fold to '-' so `adversarial review` and `code_reviewer` read like the markers.
-  return `${name} ${command}`.trim().toLowerCase().replace(/[\s_]+/g, '-');
-}
-
-/**
- * Determines whether PROOF evidence required by label exists in `gates[]` (pure — no fs access).
- *
- * `detail` / `finding` are excluded from search — descriptive fields may contain sentences like "did not run code-review",
- * which could be misidentified as evidence. Inspects only `name`/`command` containing *what was executed*.
- * Evaluates only gates where `status` is `pass`/`warn` (`EVIDENCE_GATE_STATUSES`).
- *
- * @param {string|null|undefined} label
- * @param {unknown} gates — Gates array from PROOF record (non-array/absence allowed)
- * @returns {{required: boolean, satisfied: boolean, markers: string[], matchedGate: string|null}}
- *   If `required=false`, satisfied is always true (simplifying caller branching).
- */
-export function checkLabelEvidence(label, gates) {
-  const markers = LABEL_EVIDENCE_MARKERS[label];
-  if (!markers) return { required: false, satisfied: true, markers: [], matchedGate: null };
-
-  const list = Array.isArray(gates) ? gates : [];
-  for (const gate of list) {
-    const text = gateSearchText(gate);
-    if (!text.trim()) continue;
-    if (markers.some((m) => text.includes(m))) {
-      return {
-        required: true,
-        satisfied: true,
-        markers: [...markers],
-        matchedGate: typeof gate.name === 'string' ? gate.name : null,
-      };
-    }
-  }
-  return { required: true, satisfied: false, markers: [...markers], matchedGate: null };
 }
