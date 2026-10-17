@@ -58,11 +58,8 @@ export function checkTrivialClaim(label, measured) {
 /**
  * Review assets **this repo ships** — the only tools operator-facing advice may tell someone to run.
  *
- * Deliberately narrower than `LABEL_EVIDENCE_MARKERS`, because the two answer different questions.
- * Markers answer *what counts as evidence*, and may legitimately name tools the repo does not own: a
- * session that has `/code-review` installed and runs it did perform a secondary review, so the record
- * should count. This list answers *what do we tell the operator to run* — and an answer the repo does
- * not ship is not an answer.
+ * It answers *what do we tell the operator to run* — and an answer the repo does not ship is not an
+ * answer.
  *
  * Conflating the two cost a ship cycle on 2026-08-26. Every advice site named `/code-review --fix` as a
  * primary path; `code-review@claude-plugins-official` was absent from `enabledPlugins`, so the command

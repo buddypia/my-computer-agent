@@ -50,15 +50,15 @@ after(() => {
 });
 
 test('a base-only merge keeps the approval; the CI run the merge waits for certifies the tree', () => {
-  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, false, () => 'D'));
+  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, () => 'D'));
 });
 
 test('a merge that changed the branch diff invalidates the approval', () => {
-  assert.throws(() => assertApprovalFreshAfterBaseMerge(worktree, false, () => 'other'), /approval is stale/);
+  assert.throws(() => assertApprovalFreshAfterBaseMerge(worktree, () => 'other'), /approval is stale/);
 });
 
 test('an unmeasurable diff does not block (markers predating the stamp)', () => {
-  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, false, () => null));
+  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, () => null));
 });
 
 async function denyText(approval) {

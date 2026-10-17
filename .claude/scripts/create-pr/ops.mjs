@@ -886,7 +886,6 @@ export function settleMergeable({ prNumber, repo, headSha, ciGated, required = [
 
 function createAndMergePr({
   base, head, title, body, deleteBranch = null, noMerge = false, worktreeDir = null,
-  forceQualityGate = false,
 }) {
   const repo = resolveRepo();
   const { prNumber, prUrl, existing } = getOrCreatePr({ base, head, title, body, repo });
@@ -959,7 +958,7 @@ function createAndMergePr({
   // failures into a console line, and a swallowed violation would merge anyway. Pushing the merged
   // tree to the feature branch is harmless — nothing consumes it — whereas landing it on the trunk is
   // not, and this throws before the merge call below. CI on the re-pushed head is awaited below.
-  if (worktreeDir) assertApprovalFreshAfterBaseMerge(worktreeDir, forceQualityGate);
+  if (worktreeDir) assertApprovalFreshAfterBaseMerge(worktreeDir);
   // After the assert, so a merge that rewrote this branch's diff fails now rather than after a CI wait.
   if (synced) {
     console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
@@ -1811,12 +1810,12 @@ function contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) {
  * Fail-open when either id is absent: markers written before this stamp existed, and worktrees where
  * no base ref resolves, must not become unshippable.
  *
+ * No override flag: a stale approval is fixed by re-approving, which a human records in one step.
+ *
  * @param {string} absWtPath
- * @param {boolean} force
  * @param {(wt: string, base: string) => string|null} [diffIdFn] Test-injectable.
  */
-export function assertApprovalFreshAfterBaseMerge(absWtPath, force, diffIdFn = resolveReviewDiffId) {
-  if (force) return;
+export function assertApprovalFreshAfterBaseMerge(absWtPath, diffIdFn = resolveReviewDiffId) {
   if (contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) !== 'changed') return;
   const path = shipReviewMarkerPath(absWtPath);
   throw new Error(
@@ -1824,8 +1823,7 @@ export function assertApprovalFreshAfterBaseMerge(absWtPath, force, diffIdFn = r
       `Merging origin/${BASE_BRANCH} changed the diff this branch contributes, so the change that ` +
       `lands is no longer the change the human approved.\n` +
       `Re-review the updated diff and record a fresh answer:\n` +
-      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}\n` +
-      `※ User override: --force-quality-gate (reason required in Panel Decisions section)`,
+      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}`,
   );
 }
 
@@ -1935,7 +1933,7 @@ function cmdShipWorktree(args) {
 
   // The merge may have rewritten the branch's own diff, which invalidates the human approval.
   // A base-only move is certified by the CI run createAndMergePr waits for on the merged head.
-  assertApprovalFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true);
+  assertApprovalFreshAfterBaseMerge(absWtPath);
 
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath });
   if (!branch || branch === 'HEAD') throw new Error(`Failed to determine branch: ${wtPath}`);
@@ -1960,7 +1958,6 @@ function cmdShipWorktree(args) {
     deleteBranch: noMerge ? null : branch,
     noMerge,
     worktreeDir: absWtPath,
-    forceQualityGate: args['force-quality-gate'] === true,
   });
 
   supersetWarnings.push(
@@ -2391,7 +2388,6 @@ const USAGE = {
       'no-cleanup (flag)',
       'preserve-run (flag)',
       'force-plan (flag)',
-      'force-quality-gate (flag — justification required in Panel Decisions)',
     ],
   },
   'cleanup-worktree': {
