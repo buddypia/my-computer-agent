@@ -1838,7 +1838,7 @@ export function assertApprovalFreshAfterBaseMerge(absWtPath, diffIdFn = resolveR
  * written by hand carries the same label. So ship re-evaluates the steps (the approval bound to the
  * current diff among them) — the same evaluation the marker CLI runs. A `--force` marker is the
  * human's explicit bypass and is not re-checked. Staged mode has no worktree steps (the marker CLI
- * skips them too). Evaluation errors fail open, as in mark-pre-ship-confirmed.
+ * skips them too). An evaluator error fails closed (INC-015); the way past it is a human's --force.
  *
  * @param {string|null} absWtPath null for ship-feature (staged mode)
  */
@@ -1867,7 +1867,10 @@ export function assertShipMarker(absWtPath, { evaluateFn = evaluateSteps } = {})
   } catch {
     /* label check above already read it */
   }
-  if (marker?.approval_mode === 'forced') return;
+  if (marker?.approval_mode === 'forced') {
+    console.error('[ship-worktree] Warning: forced Pre-Ship marker — steps not re-evaluated (human bypass)');
+    return;
+  }
   let state;
   try {
     const gitBranch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath }).trim();
@@ -1879,8 +1882,10 @@ export function assertShipMarker(absWtPath, { evaluateFn = evaluateSteps } = {})
       qualityLabel: marker?.quality_gate,
     });
   } catch (e) {
-    console.error(`[ship-worktree] Warning: Pre-Ship step evaluation failed: ${e?.message ?? e} — proceeding fail-open`);
-    return;
+    throw new Error(
+      `Pre-Ship step evaluation failed: ${e?.message ?? e}\n` +
+        `Fix the evaluator, or ask the human to approve a forced marker (mark-pre-ship-confirmed.mjs --force).`,
+    );
   }
   if (state.ready) return;
   const n = state.next;
@@ -1905,7 +1910,6 @@ function cmdShipWorktree(args) {
       : '';
     throw new Error(`Worktree does not exist: ${absWtPath}${candidateBlock}`);
   }
-  assertShipMarker(absWtPath);
 
   const planPath = resolveWorktreePlanPath(absWtPath);
   if (!existsSync(planPath)) {
@@ -1934,6 +1938,9 @@ function cmdShipWorktree(args) {
     };
     throw err;
   }
+  // After the PLAN and clean-tree checks, so their actionable errors (commit_required) are not
+  // pre-empted by the worktree-clean step of the re-evaluation.
+  assertShipMarker(absWtPath);
 
   const supersetWarnings = [];
   try {

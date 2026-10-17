@@ -72,7 +72,7 @@ Configuration: `.claude/skills/create-pr/config.json` — `github_account`, `bas
 
 If any command returns `ok: false`, halt immediately, report the error, and invoke `finalize`.
 
-Like Mode B, ship-feature refuses to run without a fresh staged marker (`mark-pre-ship-confirmed.mjs --staged --quality <label>`, its own Bash call).
+ship-feature refuses to run without a fresh staged marker (`mark-pre-ship-confirmed.mjs --staged --quality <label>`, its own Bash call). Staged mode has no worktree steps, so only the marker's presence, label and age are checked — unlike Mode B, the steps are not re-evaluated.
 
 ```bash
 node .claude/scripts/create-pr/ops.mjs init                                    # Step 1

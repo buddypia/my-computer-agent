@@ -142,6 +142,8 @@ test('a hand-written marker does not ship without the approval the steps require
   withFreshMarker({}, () => {
     assert.throws(() => assertShipMarker(worktree, { evaluateFn: pendingApproval }), /does not stand in for the steps/);
     assert.doesNotThrow(() => assertShipMarker(worktree, { evaluateFn: () => ({ ready: true, next: null }) }));
+    const broken = () => { throw new Error('boom'); };
+    assert.throws(() => assertShipMarker(worktree, { evaluateFn: broken }), /evaluation failed: boom[\s\S]*--force/);
   });
 });
 
