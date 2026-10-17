@@ -565,7 +565,10 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         let kindIsEvidence = !Self.outcomeMarksName(trimmedExpected)
         let contentTokens = kindIsEvidence ? expectedTokens : expectedTokens.filter { token in
             // Also drops CJK n-grams cut from a kind word: "タン" of ボタン would hit "キャンセルボタン".
-            !Self.outcomeKindWords.contains { $0.contains(token) }
+            // Latin tokens are whole words, so "id" stays even though "slider" contains it.
+            token.unicodeScalars.allSatisfy(\.isASCII)
+                ? !Self.outcomeKindWords.contains(token)
+                : !Self.outcomeKindWords.contains { $0.contains(token) }
         }
 
         var matchedSignals: [String] = []

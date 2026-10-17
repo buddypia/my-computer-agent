@@ -560,6 +560,8 @@ struct UIStateDiffTests {
         // The specific word decides; the kind word next to it neither helps nor hurts.
         #expect(outcome("Click the Save button", added: [button("save", "Save")]).isVerified)
         #expect(outcome("「保存」ボタンが表示される", added: [button("save", "保存")]).isVerified)
+        let idField = UIElementCandidate(id: "f1", role: "AXTextField", label: "User ID", bounds: CGRect(x: 10, y: 60, width: 200, height: 24))
+        #expect(outcome("Enter the ID", added: [idField]).isVerified)
     }
 
     @Test("An outcome that names only a kind still verifies on an element of that kind")
