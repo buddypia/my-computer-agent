@@ -421,8 +421,7 @@ struct AutonomousLoopReplanAndEscalationTests {
     @Test("Mid-subgoal screen diff progress resets consecutiveEscalations before subsequent low confidence")
     func testConsecutiveEscalationsResetOnStateDiffProgressDuringSubgoalStep() async throws {
         let cand1 = makeCandidate(id: "c1", role: "AXButton", label: "Alpha", x: 10, y: 10)
-        // AXLink, not AXButton: the verifier would match the outcome token "to" inside "axbutton".
-        let cand2 = makeCandidate(id: "c2", role: "AXLink", label: "Beta", x: 10, y: 50)
+        let cand2 = makeCandidate(id: "c2", role: "AXButton", label: "Beta", x: 10, y: 50)
 
         let s0 = makeSnapshot(title: "Initial", candidates: [cand1])
         // Same title: the swapped element is progress, but not the expected outcome.

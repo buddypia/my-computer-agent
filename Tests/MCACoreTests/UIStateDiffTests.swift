@@ -502,4 +502,54 @@ struct UIStateDiffTests {
         #expect(!diff.removedElements.isEmpty)
         #expect(diff.hasSignificantChange)
     }
+
+    // MARK: - 12. Outcome Tokens Match Whole Words
+
+    private func outcome(_ expected: String, title: String = "Mail", added: [UIElementCandidate] = []) -> StateVerificationResult {
+        let home = UIElementCandidate(id: "home", role: "AXButton", label: "Home", bounds: CGRect(x: 10, y: 10, width: 80, height: 30))
+        func snap(_ title: String, _ extra: [UIElementCandidate]) -> UIStateSnapshot {
+            UIStateSnapshot(windowTitle: title, appBundleId: "com.apple.mail", appName: "Mail", focusedElementId: nil,
+                            focusedElementRole: nil, focusedElementBounds: nil, visibleCandidates: [home] + extra,
+                            timestamp: Date(timeIntervalSince1970: 1700000000), frameHash: "\(title)-\(extra.count)")
+        }
+        return UIStateDiff.compute(before: snap("Mail", []), after: snap(title, added)).verifyOutcome(expected: expected)
+    }
+
+    private func button(_ id: String, _ label: String) -> UIElementCandidate {
+        UIElementCandidate(id: id, role: "AXButton", label: label, bounds: CGRect(x: 10, y: 60, width: 80, height: 30))
+    }
+
+    @Test("A word inside another word is not evidence: 'to' is not in AXButton, Photos or Desktop")
+    func testFunctionWordsDoNotVerifyUnrelatedChanges() {
+        // A false .verified completes the subgoal before the task is done.
+        #expect(!outcome("Navigate to the Settings page", added: [button("cancel", "Cancel")]).isVerified)
+        #expect(!outcome("Navigate to the Settings page", title: "Photos").isVerified)
+        #expect(!outcome("title changed to Downloads", title: "Desktop").isVerified)
+        #expect(!outcome("Open the address book", added: [button("ok", "OK")]).isVerified)
+    }
+
+    @Test("Real matches still verify: title word, camelCase id, Japanese title")
+    func testWholeWordMatchesStillVerify() {
+        #expect(outcome("Navigate to the Settings page", title: "Settings").isVerified)
+        #expect(outcome("save dialog appears", added: [button("saveDialog", "Save changes?")]).isVerified)
+        #expect(outcome("設定画面が開く", title: "設定").isVerified)
+        #expect(outcome("Open GitHub", title: "GitHub - Pull requests").isVerified)
+    }
+
+    @Test("outcomeMatch splits camelCase and the AX role prefix into words")
+    func testOutcomeMatchWordSplitting() {
+        #expect(UIStateDiff.outcomeMatch("button", in: "AXButton"))
+        #expect(UIStateDiff.outcomeMatch("save", in: "saveButton"))
+        #expect(UIStateDiff.outcomeMatch("url", in: "URLField"))
+        #expect(!UIStateDiff.outcomeMatch("to", in: "Photos"))
+        #expect(!UIStateDiff.outcomeMatch("tab", in: "Table"))
+        #expect(UIStateDiff.outcomeMatch("設定", in: "システム設定"))
+        // The unsplit run still counts, and only ASCII letters and digits form a Latin word.
+        #expect(UIStateDiff.outcomeMatch("github", in: "GitHub - Pull requests"))
+        #expect(UIStateDiff.outcomeMatch("gmail", in: "Gmailの受信トレイ"))
+        #expect(!UIStateDiff.outcomeMatch("hub", in: "Hubble"))
+        #expect(UIStateDiff.outcomeMatch("youtube", in: "YouTube"))
+        #expect(UIStateDiff.outcomeMatch("macos", in: "macOS Settings"))
+        #expect(!UIStateDiff.outcomeMatch("sum", in: "Résumé"))
+    }
 }

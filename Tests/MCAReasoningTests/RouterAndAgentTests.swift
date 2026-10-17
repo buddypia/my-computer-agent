@@ -1283,4 +1283,16 @@ struct AgentToolLoopTests {
         #expect(capturedInstructions.text.contains("# Autonomous goal execution"))
         #expect(capturedInstructions.text.contains("Suggested triage plan"))
     }
+
+    @Test("Triage confidence 0.79 hands off to the agent; 0.80 starts the autonomous loop")
+    func testAutonomousLoopConfidenceBoundary() {
+        // A lower cut would start operating the computer on weaker evidence.
+        func route(_ confidence: Float) -> RequestRoute {
+            RequestRoute.decide(
+                question: "Safariで検索ボタンを押して",
+                triage: ComputerActionTriage(needsComputerAction: true, confidence: confidence, intentCategory: "gui_interaction"))
+        }
+        #expect(route(0.79) == .agentWithComputer)
+        #expect(route(0.80) == .autonomousLoop)
+    }
 }
