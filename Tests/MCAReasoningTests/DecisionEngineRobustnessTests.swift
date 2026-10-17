@@ -666,6 +666,11 @@ struct DecisionEngineRobustnessTests {
         #expect(named.action == .click)
         #expect(named.targetElementId == "tab_escape_key")
 
+        // The pressed key is the commanded one, not another key word later in the goal.
+        let tabToEscape = engine.fallbackLocalDecision(goal: "Press Tab to select the Escape tab", candidates: [escapeTab])
+        #expect(tabToEscape.action == .keyPress)
+        #expect(tabToEscape.keyCombination == ["Tab"])
+
         let jaEnter = engine.fallbackLocalDecision(goal: "エンターキーを押して候補を選択", candidates: [browserTab, suggestion])
         #expect(jaEnter.action == .keyPress)
         #expect(jaEnter.keyCombination == ["Return"])
