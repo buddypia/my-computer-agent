@@ -49,9 +49,9 @@ struct CancellableToolProcessTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         let cancelElapsed = clock.now - begin
         #expect(descendant.timedOut && resistant.timedOut)
-        // TERM, a 0.25 s grace, then KILL: about 0.35 s. A missed escalation runs the 5 s sleep out, so the
-        // budget leaves room for a stalled CI VM (0.72 s observed) and still tells the two apart.
-        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(1500) : .seconds(10)
+        // TERM, a 0.25 s grace, then KILL: about 0.35 s. A missed escalation runs the 5 s sleep out and a
+        // grace stretched to 1 s lands past the budget, while a stalled CI VM (0.72 s observed) stays under.
+        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(1000) : .seconds(10)
         let cancelBudget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(10)
         #expect(descendant.supervisorElapsed < supervisorBudget)
         #expect(resistant.supervisorElapsed < supervisorBudget)
