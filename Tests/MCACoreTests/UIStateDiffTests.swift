@@ -542,14 +542,16 @@ struct UIStateDiffTests {
         let discard = UIElementCandidate(id: "dialog_discard", role: "AXWindow", label: "Discard changes?",
                                          bounds: CGRect(x: 10, y: 60, width: 300, height: 200))
         #expect(!outcome("Click the Save button", added: [cancel]).isVerified)
-        #expect(!outcome("保存ボタンが表示される", added: [cancel]).isVerified)
-        #expect(!outcome("Settings page opens", title: "Home page").isVerified)
-        #expect(!outcome("Save dialog appears", added: [discard]).isVerified)
+        #expect(!outcome("「保存」ボタンが表示される", added: [cancel]).isVerified)
+        #expect(!outcome("「保存」ボタンが表示される", added: [button("cancel", "キャンセルボタン")]).isVerified)
+        #expect(!outcome("Sign In button appears", added: [cancel]).isVerified)
+        #expect(!outcome("Open the Settings page", title: "Home page").isVerified)
+        #expect(!outcome("The Save dialog appears", added: [discard]).isVerified)
         // Still a partial match, so the loop keeps trying rather than treating the step as a miss.
         #expect(outcome("Click the Save button", added: [cancel]).status == .indeterminate)
         // The specific word decides; the kind word next to it neither helps nor hurts.
         #expect(outcome("Click the Save button", added: [button("save", "Save")]).isVerified)
-        #expect(outcome("保存ボタンが表示される", added: [button("save", "保存")]).isVerified)
+        #expect(outcome("「保存」ボタンが表示される", added: [button("save", "保存")]).isVerified)
     }
 
     @Test("An outcome that names only a kind still verifies on an element of that kind")
@@ -559,19 +561,24 @@ struct UIStateDiffTests {
         #expect(outcome("A new dialog appears", added: [window]).isVerified)
         #expect(outcome("ダイアログが表示される", added: [window]).isVerified)
         #expect(outcome("modal appears", added: [button("btn_confirm", "Confirm Modal")]).isVerified)
+        // A word before the kind is not a name marker, so these keep verifying on their kind.
+        #expect(outcome("Error dialog appears", added: [window]).isVerified)
+        #expect(outcome("Opens dialog", added: [window]).isVerified)
+        #expect(outcome("エラーダイアログが表示される", added: [window]).isVerified)
+        let menu = UIElementCandidate(id: "m1", role: "AXMenu", label: "", bounds: CGRect(x: 10, y: 60, width: 120, height: 200))
+        #expect(outcome("Context menu appears", added: [menu]).isVerified)
     }
 
-    @Test("outcomeNamesKind: a word directly before the kind word names it, an article or particle does not")
-    func testOutcomeNamesKind() {
-        #expect(UIStateDiff.outcomeNamesKind("click the save button"))
-        #expect(UIStateDiff.outcomeNamesKind("settings page opens"))
-        #expect(UIStateDiff.outcomeNamesKind("保存ボタンを押す"))
-        #expect(UIStateDiff.outcomeNamesKind("確認ダイアログが表示される"))
-        #expect(!UIStateDiff.outcomeNamesKind("a dialog appears"))
-        #expect(!UIStateDiff.outcomeNamesKind("the new window opens"))
-        #expect(!UIStateDiff.outcomeNamesKind("modal appears"))
-        #expect(!UIStateDiff.outcomeNamesKind("ダイアログが表示される"))
-        #expect(!UIStateDiff.outcomeNamesKind("画面にダイアログが出る"))
+    @Test("outcomeMarksName: a capitalised word after the sentence start or a quoted span marks a name")
+    func testOutcomeMarksName() {
+        #expect(UIStateDiff.outcomeMarksName("Click the Save button"))
+        #expect(UIStateDiff.outcomeMarksName("Sign In button appears"))
+        #expect(UIStateDiff.outcomeMarksName("「保存」ボタンを押す"))
+        #expect(UIStateDiff.outcomeMarksName("click the 'save' button"))
+        #expect(!UIStateDiff.outcomeMarksName("Context menu appears"))
+        #expect(!UIStateDiff.outcomeMarksName("Don't close the dialog. Wait until it isn't busy"))
+        #expect(!UIStateDiff.outcomeMarksName("Typed text. Dialog appears"))
+        #expect(!UIStateDiff.outcomeMarksName("保存ボタンを押す"))
     }
 
     @Test("Focus on an element of the expected kind but the wrong name is not verified")

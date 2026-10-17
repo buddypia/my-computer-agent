@@ -559,10 +559,14 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         let lowerExpected = trimmedExpected.lowercased()
         let expectedTokens = Self.extractOutcomeTokens(from: lowerExpected)
-        // Once the outcome names which button or page it means, the kind word fits every element of
-        // that kind and stops being evidence; a match on it alone only keeps the result indeterminate.
-        let kindIsEvidence = !Self.outcomeNamesKind(lowerExpected)
-        let contentTokens = kindIsEvidence ? expectedTokens : expectedTokens.filter { !Self.outcomeKindWords.contains($0) }
+        // Once the outcome marks which element it means ("the Save button", "「保存」ボタン"), a kind word
+        // fits every element of that kind and stops being evidence; a match on it alone stays indeterminate.
+        // Unmarked outcomes ("a dialog appears", "保存ボタン") keep the kind word as evidence.
+        let kindIsEvidence = !Self.outcomeMarksName(trimmedExpected)
+        let contentTokens = kindIsEvidence ? expectedTokens : expectedTokens.filter { token in
+            // Also drops CJK n-grams cut from a kind word: "タン" of ボタン would hit "キャンセルボタン".
+            !Self.outcomeKindWords.contains { $0.contains(token) }
+        }
 
         var matchedSignals: [String] = []
         var matchScore: Float = 0.0
@@ -833,36 +837,25 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         (token.contains("ボタン") && (role.contains("button") || id.contains("btn") || label.contains("ボタン")))
     }
 
-    /// Whether the outcome says which element of a kind it means — a word directly before the kind word,
-    /// as in "Save button" or "保存ボタン" — rather than only the kind, as in "a dialog appears".
-    static func outcomeNamesKind(_ lowerExpected: String) -> Bool {
-        let words = lowerExpected.split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) }).map(String.init)
-        for (i, word) in words.enumerated().dropFirst() where outcomeKindWords.contains(word) {
-            let previous = words[i - 1]
-            if previous.count >= 2, !outcomeStopWords.contains(previous), !outcomeKindWords.contains(previous),
-               !outcomeDeterminers.contains(previous) { return true }
-        }
-        for kind in outcomeKindWords where !kind.unicodeScalars.allSatisfy(\.isASCII) {
-            var searchStart = lowerExpected.startIndex
-            while let range = lowerExpected.range(of: kind, range: searchStart..<lowerExpected.endIndex) {
-                // A kanji, katakana or Latin word right before it qualifies it; a hiragana particle does not.
-                if range.lowerBound > lowerExpected.startIndex {
-                    let previous = lowerExpected[lowerExpected.index(before: range.lowerBound)]
-                    let isHiragana = previous.unicodeScalars.first.map { (0x3040...0x309F).contains($0.value) } ?? false
-                    if (previous.isLetter || previous.isNumber) && !isHiragana { return true }
-                }
-                searchStart = range.upperBound
+    /// Whether the outcome marks a name explicitly: a capitalised word after the start of a sentence
+    /// ("Click the Save button", "Sign In button appears") or a quoted span ("「保存」ボタン", "'Save'").
+    static func outcomeMarksName(_ expected: String) -> Bool {
+        if expected.contains(where: { "\"“”「」『』".contains($0) }) { return true }
+        if expected.range(of: #"(^|\s)'[^']+'(\s|$|[.,!?])"#, options: .regularExpression) != nil { return true }
+        let words = expected.split(whereSeparator: \.isWhitespace)
+        for (previous, word) in zip(words, words.dropFirst()) {
+            if let first = word.first, first.isASCII, first.isUppercase, !(previous.last.map { ".!?:".contains($0) } ?? false) {
+                return true
             }
         }
         return false
     }
 
-    private static let outcomeDeterminers: Set<String> = ["new", "another", "any", "some", "each", "every", "first", "next"]
-
     /// Words that name a kind of element rather than which one.
     private static let outcomeKindWords: Set<String> = [
-        "button", "buttons", "btn", "dialog", "window", "page", "screen", "field", "textfield", "menu",
-        "item", "tab", "link", "icon", "view", "panel", "popup", "modal", "sheet", "alert", "list", "element",
+        "button", "buttons", "btn", "dialog", "dialogs", "window", "windows", "page", "pages", "screen", "field",
+        "fields", "textfield", "menu", "menus", "item", "items", "tab", "tabs", "link", "links", "icon", "view",
+        "panel", "popup", "popover", "modal", "sheet", "alert", "list", "element", "checkbox", "toggle", "toolbar",
         "ボタン", "ダイアログ", "ウィンドウ", "画面", "ページ", "フィールド", "メニュー", "タブ", "リンク", "アイコン"
     ]
 
