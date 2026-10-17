@@ -651,7 +651,7 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             let lowerLabel = added.label.lowercased()
             let labelIsKind = added.label == added.role || (Self.outcomeKindWords.contains(lowerLabel) && (
                 Self.outcomeMatch(lowerLabel, in: added.role) ||
-                Self.addedKindMatch(lowerLabel, role: added.role.lowercased(), id: added.id.lowercased(), label: "")))
+                Self.addedKindMatch(lowerLabel, role: added.role.lowercased(), id: "", label: "")))
             let nameLabel = (kindIsEvidence || !labelIsKind) ? added.label : ""
             let label = nameLabel.lowercased()
             let role = added.role.lowercased()

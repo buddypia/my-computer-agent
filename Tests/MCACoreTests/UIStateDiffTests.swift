@@ -577,6 +577,7 @@ struct UIStateDiffTests {
         // A name that happens to be a kind word still names the element when it is not that element's kind.
         let viewMenu = UIElementCandidate(id: "m2", role: "AXMenu", label: "View", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
         #expect(outcome("Click the \"View\" menu", added: [viewMenu]).isVerified)
+        #expect(outcome("Click the \"Dialog\" button", added: [button("dialog_button", "Dialog")]).isVerified)
     }
 
     /// Mirrors `UIStateDiff.outcomeKindWords`; every entry must keep a wrong element of its kind unverified.
