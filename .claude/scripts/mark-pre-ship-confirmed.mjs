@@ -229,7 +229,8 @@ function resolveApprovalMode(state) {
 }
 
 export function checkPreShipSteps(mainRoot, branch, force, quality = undefined, evaluateFn = evaluateSteps) {
-  if (force) return { ok: true, skipped: 'force' };
+  // `forced`, not the 'human' default: a skipped check must not read as a human approval in the ledger.
+  if (force) return { ok: true, skipped: 'force', approval: { mode: 'forced', tier: null } };
   // !branch, not === 'staged': resolveBranch('--staged') returns *null*, so the string comparison
   // never matched and resolveWorktreeDir(mainRoot, null) crashed with a TypeError — the Mode A
   // (--staged) marker path was undeliverable without --force (empirical reproduction 2026-08-26).

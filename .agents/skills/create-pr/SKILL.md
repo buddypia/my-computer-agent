@@ -90,23 +90,23 @@ Used when shipping and cleaning up features developed inside `.worktrees/<branch
 
 > **Handling Cancelled PLAN.md Items**: Unchecked boxes (`- [ ]`) marked with `(cancelled)`, `(dropped)`, or `~~strikethrough~~` are ignored and passed. Checklists inside code blocks (```` ``` ````) and HTML comments (`<!-- -->`) are automatically stripped to eliminate false positives. Bypassed via `--force` / `--force-plan`.
 
-```bash
-OPS="node .claude/scripts/create-pr/ops.mjs"
-WT_PATH=".worktrees/feature/add-login"
+Write the ship command literally — `node .claude/scripts/create-pr/ops.mjs ship-worktree --worktree <literal path>`. pre-ship-review-guard cannot resolve `$OPS` / `$WT_PATH`, and ship-worktree refuses to run without a fresh Pre-Ship marker (`mark-pre-ship-confirmed.mjs <branch> --quality <label>`, its own Bash call, valid 10 min).
 
+```bash
 # 1. Validate PLAN.md (optional; auto-validated within ship-worktree)
-$OPS verify-plan --worktree "$WT_PATH"
+node .claude/scripts/create-pr/ops.mjs verify-plan --worktree .worktrees/feature/add-login
 
 # 2. Quality check and commit (mandatory: uncommitted changes trigger commit_required error)
-# cd $WT_PATH && $QUALITY_GATE_CMD && git add . && git commit -m "..." && cd -
+# git -C .worktrees/feature/add-login add <files> && git -C .worktrees/feature/add-login commit -m "..."
 
 # 3. Push and create PR (squash merge; reuses existing PR idempotently)
 # Default: On merge success, delegates to cleanup-worktree to remove worktree/branch,
 # drop auto-checkpoint stashes, clean CONTEXT.json, and sync the base branch.
-$OPS ship-worktree --worktree "$WT_PATH" --title "$FT" --body "$FB"
+node .claude/scripts/mark-pre-ship-confirmed.mjs feature/add-login --quality agent_go   # own Bash call
+node .claude/scripts/create-pr/ops.mjs ship-worktree --worktree .worktrees/feature/add-login --title "<title>" --body-file <path>
 
 # 4. (Only required if shipped with --no-cleanup) Cleanup worktree, branch, stash, and sync the base branch
-$OPS cleanup-worktree --worktree "$WT_PATH"
+node .claude/scripts/create-pr/ops.mjs cleanup-worktree --worktree .worktrees/feature/add-login
 ```
 
 AI Decision Scope: BRANCH name (Conventional Commits, ≤30 characters), commit messages, PR title/body, evaluating cancelled PLAN.md items.

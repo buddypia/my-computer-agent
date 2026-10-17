@@ -65,7 +65,7 @@ When `detectExternalSupersetRisk()` detects overlapping files modified in origin
 1. `git fetch origin` to retrieve latest origin/main.
 2. `git merge origin/main` into the current worktree branch — apply this 5-step protocol if conflicts occur.
 3. **Do NOT use `git reset --hard`, `git checkout .`, or `git clean -f` to clear conflicts** — these are blocked by `destructive-git-guard` and violate the core principle of intent preservation.
-4. After resolution, re-run `Pre-Ship Quality Gate` to confirm verification checks pass.
+4. After resolution, re-run the project's quality gate (`make q.check`, or `Scripts/gate.sh` where present) to confirm verification checks pass.
 
 ## Do Not (Prohibited Actions)
 
