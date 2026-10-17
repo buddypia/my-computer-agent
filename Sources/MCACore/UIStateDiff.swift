@@ -849,16 +849,21 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
     /// ("Saveボタン"), or a quoted span ("「保存」ボタン", "'Save'").
     static func outcomeMarksName(_ expected: String) -> Bool {
         for (open, close) in outcomeQuotePairs {
-            if let start = expected.firstIndex(of: open),
-               let end = expected[expected.index(after: start)...].firstIndex(of: close),
-               end > expected.index(after: start) {
-                return true
+            // An empty pair ("") quotes nothing, so keep looking past it.
+            var rest = expected[...]
+            while let start = rest.firstIndex(of: open) {
+                let inner = rest[rest.index(after: start)...]
+                guard let end = inner.firstIndex(of: close) else { break }
+                if end > inner.startIndex { return true }
+                rest = rest[rest.index(after: end)...]
             }
         }
         // A straight ' quotes only from a word start to a word end, so "Bob's" and "don't" quote nothing.
         if expected.range(of: #"(^|[^\p{L}\p{N}])'[^'\s][^']*'([^A-Za-z0-9]|$)"#, options: .regularExpression) != nil { return true }
-        // Japanese does not capitalise, so a capitalised Latin word next to it is a name wherever it stands.
-        if expected.range(of: #"[^\x00-\x7F][A-Z][A-Za-z]+|[A-Z][A-Za-z]+[^\x00-\x7F]"#, options: .regularExpression) != nil {
+        // Japanese and Korean do not capitalise, so a capitalised Latin word touching their letters is a
+        // name wherever it stands. Other non-ASCII (no-break space, …, é) says nothing.
+        let cjk = #"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]"#
+        if expected.range(of: "\(cjk)[A-Z][A-Za-z]+|[A-Z][A-Za-z]+\(cjk)", options: .regularExpression) != nil {
             return true
         }
         // A sentence starts on a new line, after . ! ? : 。 and after a bullet or number such as "-" or "1.".

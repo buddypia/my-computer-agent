@@ -568,6 +568,7 @@ struct UIStateDiffTests {
         #expect(!outcome("【保存】ボタンが表示される", added: [cancel]).isVerified)
         #expect(!outcome("'保存'ボタンが表示される", added: [cancel]).isVerified)
         #expect(!outcome("Click «Save» button", added: [cancel]).isVerified)
+        #expect(!outcome("click the \"\" placeholder then \"save\" button", added: [cancel]).isVerified)
         // A label that is only a kind word names no element.
         #expect(!outcome("Click the Save button", added: [button("b1", "Button")]).isVerified)
         let menuButton = UIElementCandidate(id: "m1", role: "AXMenuButton", label: "Menu", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
@@ -632,6 +633,9 @@ struct UIStateDiffTests {
         #expect(!UIStateDiff.outcomeMarksName("click the button in bob's inbox"))
         #expect(!UIStateDiff.outcomeMarksName("Dialog appears\nButton visible"))
         #expect(!UIStateDiff.outcomeMarksName("click the \"\" button"))
+        #expect(UIStateDiff.outcomeMarksName("click the \"\" placeholder then \"save\" button"))
+        #expect(!UIStateDiff.outcomeMarksName("Dialog\u{00A0}appears"))
+        #expect(!UIStateDiff.outcomeMarksName("Dialog appears…"))
     }
 
     @Test("outcomeMarksName: every quote pair marks a name", arguments: [
