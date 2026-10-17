@@ -573,6 +573,10 @@ struct UIStateDiffTests {
         #expect(!outcome("Click the Save button", added: [button("b1", "Button")]).isVerified)
         let menuButton = UIElementCandidate(id: "m1", role: "AXMenuButton", label: "Menu", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
         #expect(!outcome("Click the File menu", added: [menuButton]).isVerified)
+        #expect(!outcome("「保存」ボタンが表示される", added: [button("b2", "ボタン")]).isVerified)
+        // A name that happens to be a kind word still names the element when it is not that element's kind.
+        let viewMenu = UIElementCandidate(id: "m2", role: "AXMenu", label: "View", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
+        #expect(outcome("Click the \"View\" menu", added: [viewMenu]).isVerified)
     }
 
     /// Mirrors `UIStateDiff.outcomeKindWords`; every entry must keep a wrong element of its kind unverified.

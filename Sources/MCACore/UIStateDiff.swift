@@ -646,8 +646,12 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         // 4. Added elements matching (appearance / dialog / popup / window)
         for added in addedElements {
             // AccessibilityInspector falls back to the role for an unlabelled element; a role is not a name,
-            // and neither is a label that is only a kind word ("Menu", "ボタン").
-            let labelIsKind = added.label == added.role || Self.outcomeKindWords.contains(added.label.lowercased())
+            // and neither is a label that only restates the element's own kind ("Menu" on AXMenuButton).
+            // A kind word naming another kind stays a name: "View" on AXMenu.
+            let lowerLabel = added.label.lowercased()
+            let labelIsKind = added.label == added.role || (Self.outcomeKindWords.contains(lowerLabel) && (
+                Self.outcomeMatch(lowerLabel, in: added.role) ||
+                Self.addedKindMatch(lowerLabel, role: added.role.lowercased(), id: added.id.lowercased(), label: "")))
             let nameLabel = (kindIsEvidence || !labelIsKind) ? added.label : ""
             let label = nameLabel.lowercased()
             let role = added.role.lowercased()
