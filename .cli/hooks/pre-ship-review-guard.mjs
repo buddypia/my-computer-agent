@@ -326,7 +326,6 @@ export function buildDenyMessage(branch, safeKey, projectDir, cwd, showChainHint
           '    self_review_pass  — Pure self-review without secondary review tools (specify reason in Panel Decisions)',
           '    trivial_skip      — R-CM-030 Rule 10 trivial (≤2 files + ≤20 LOC + non-substantive)',
           `  To earn one of the first two, run: ${formatReviewRemedy()}`,
-          '  Both require execution records in PROOF gates[] before marker creation.',
           '',
           'To retry (marker CLI passes only after every pre-ship-steps step passes — R-CM-030 Rule 13):',
           `  node .claude/scripts/pre-ship-steps.mjs next --worktree <path>   # Check remaining steps`,

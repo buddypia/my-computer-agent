@@ -49,9 +49,7 @@ export const LEDGER_FILENAME = 'ship-quality-ledger.jsonl';
  *   proper reviews via `/code-review` / `code-standards-aligner` **skills** were downgraded to `self_review_pass`,
  *   indistinguishable from doing nothing.
  *
- *   Forgery prevention is handled on the PROOF evidence side rather than label vocabulary —
- *   `quality-gate-labels.mjs#checkLabelEvidence` refuses marker creation during `mark-pre-ship-confirmed`
- *   if gates[] lacks execution records.
+ *   A label is a claim; auto-merge does not trust it — the trust evaluator requires its own review.json.
  */
 export const CROSS_REVIEWED_LABELS = new Set(['agent_go', 'skill_review_pass']);
 
@@ -443,11 +441,11 @@ export function formatStreakWarning(
     : `Secondary review has been skipped for ${streak} consecutive PRs${list ? ` (${list})` : ''}. `;
   const tools = streakRemedyTools();
   const remedy = projected
-    ? `Running ${tools} now and re-recording PROOF will break this streak here. ` +
+    ? `Running ${tools} now and confirming it with \`--quality\` will break this streak here. ` +
       `The skill path is available even in sessions without Agent invocation permissions.`
     : `On the next substantial change, actually run ${tools}. ` +
       `The skill path is available even in sessions without Agent invocation permissions, ` +
-      `and leaving execution records in PROOF gates[] will reset this streak.`;
+      `and confirming it with \`--quality\` on the Pre-Ship marker will reset this streak.`;
   return opening + bypassNote + STREAK_RATIONALE + remedy;
 }
 
@@ -455,22 +453,21 @@ export function formatStreakWarning(
  * What the ledger could not credit on the ship just recorded ('' when nothing), so the reason sits
  * next to the count instead of being inferred from it.
  *
- * Why: the ledger reads the label from PROOF only. A ship with no PROOF label is recorded as a skip
- * even when a review really ran — observed 2026-09-24 in a transplant target, whose session ran an
- * adversarial review through a subagent, never wrote it to PROOF, and was told "35 consecutive
+ * Why: the ledger reads the label from the Pre-Ship marker only. A ship with no label is recorded as
+ * a skip even when a review really ran — observed 2026-09-24 in a transplant target, whose session
+ * ran an adversarial review through a subagent, never recorded it, and was told "35 consecutive
  * skips" with no hint that the missing record, not the missing review, was the cause. A
  * `trivial_skip` on a measured medium/large diff is the other silent case (a label that bypassed the
  * marker-time scale check, e.g. `--force`).
  *
  * @param {{quality_label: string|null, scale: string|null}} record the row just appended
- * @param {{proofPath?: string|null}} [opts]
  */
-export function formatCurrentShipNote(record, { proofPath = null } = {}) {
+export function formatCurrentShipNote(record) {
   if (!record || !COUNTED_SCALES.has(record.scale)) return '';
   if (record.quality_label === null || record.quality_label === undefined) {
     return (
-      `This ship was recorded with quality_label=null: no label was found in the PROOF` +
-      `${proofPath ? ` (${proofPath})` : ''} or on the Pre-Ship marker, so it counts as a skipped secondary ` +
+      `This ship was recorded with quality_label=null: no label was found on the Pre-Ship marker, ` +
+      `so it counts as a skipped secondary ` +
       `review whether or not one ran. Confirm the review with \`mark-pre-ship-confirmed.mjs --quality <label>\`.`
     );
   }
@@ -543,7 +540,7 @@ export function buildShipRecord({
     at,
     pr: pr ?? null,
     branch: typeof branch === 'string' ? branch : null,
-    // Missing label (PROOF unrecorded) is treated as review skipped — without records there is no basis for verification.
+    // Missing label (none confirmed on the marker) is treated as review skipped — without records there is no basis for verification.
     quality_label: typeof quality_label === 'string' ? quality_label : null,
     scale: typeof scale === 'string' ? scale : null,
     milestone_deck: milestone_deck === true,

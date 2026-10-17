@@ -78,7 +78,7 @@ export function inferBranchFromWorktreePath(wtPath) {
 /**
  * Relative path to worktree mailbox file (relative to worktree root) — single assembly point.
  * `.tmp/worktree-<safeBranch>/<filename>`. Modifying mailbox naming conventions changes only this function
- * (PLAN.md / handoff.md / quality-gate.json / .session-owner all delegate here —
+ * (PLAN.md / handoff.md / .session-owner all delegate here —
  * preventing per-file drift, Phase 2 code-review finding).
  */
 function mailboxRelPath(branch, filename) {
@@ -140,32 +140,6 @@ export function handoffRelPath(branch) {
  */
 export function resolveWorktreeHandoffPath(worktreePath, branch = null) {
   return resolveMailboxFile(worktreePath, branch, 'handoff.md');
-}
-
-/**
- * Relative path to quality-gate.json inside worktree (relative to worktree root) — PROOF persistence
- * for Pre-Ship Quality Gate verdict (teamwork-preview transplant Phase 2, R-CM-030 Rule 8/9).
- * `.tmp/worktree-<safeBranch>/quality-gate.json`.
- *
- * Emitter: `record-quality-gate.mjs` (schema validation + atomic write).
- * Consumers: `mark-pre-ship-confirmed.mjs` (refuses marker creation on verdict=no_go) +
- *            `create-pr/ops.mjs#assertQualityGateNotNoGo` (re-verification at ship time).
- *
- * **Caution on branch override / multi-segment branches**:
- * If emitter (record-quality-gate.mjs uses raw branch string) and consumer (create-pr/ops.mjs uses
- * `inferBranchFromWorktreePath` — 2 segments after `.worktrees/`) use divergent branch values,
- * read/write mailbox directories diverge. Identical under standard 2-segment GitHub Flow (`feature/foo`).
- */
-export function qualityGateRelPath(branch) {
-  return mailboxRelPath(branch, 'quality-gate.json');
-}
-
-/**
- * Returns absolute path to quality-gate.json from worktree absolute path.
- * Infers branch from worktree path if unspecified.
- */
-export function resolveWorktreeQualityGatePath(worktreePath, branch = null) {
-  return resolveMailboxFile(worktreePath, branch, 'quality-gate.json');
 }
 
 /**

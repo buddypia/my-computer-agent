@@ -34,7 +34,6 @@ import {
   readTrunkRefMovedAge,
   trunkRef,
 } from '../../../.cli/lib/ship-quality-ledger.mjs';
-import { readQualityGateRecord, resolveHeadSha } from './worktree-quality-gate.mjs';
 import { APPROVAL_CHOICES, normalizeApproval } from '../../../.cli/lib/approval-vocabulary.mjs';
 import { loadReviewPanelConfig } from '../../../.cli/lib/worktree-ship-report.mjs';
 
@@ -269,8 +268,17 @@ function projectCrossReview(ctx, readLedgerFn, readLandingsFn) {
       refMovedAge: readTrunkRefMovedAge(ctx.baseBranch, ctx.git),
       baseBranch: ctx.baseBranch ?? null,
       scale: ctx.scale?.scale ?? null,
-      qualityLabel: ctx.readQualityFn(ctx.worktreeAbs, ctx.branch)?.record?.quality_label ?? null,
+      qualityLabel: ctx.qualityLabel ?? null,
     });
+  } catch {
+    return null;
+  }
+}
+
+/** Fail-open: null when git cannot answer, which recordAnswer then refuses to bind to. */
+function resolveHeadSha(worktreeAbs, gitFn) {
+  try {
+    return String(gitFn(worktreeAbs, ['rev-parse', 'HEAD'])).trim() || null;
   } catch {
     return null;
   }
@@ -304,7 +312,6 @@ function withStepDefaults(opts) {
     gitFn: or(opts.gitFn, () => defaultGit),
     existsFn: or(opts.existsFn, () => existsSync),
     readFn: or(opts.readFn, () => readFileSync),
-    readQualityFn: or(opts.readQualityFn, () => readQualityGateRecord),
     readLedgerFn: or(opts.readLedgerFn, () => readLedger),
   };
 }
@@ -320,7 +327,6 @@ export function evaluateSteps(opts) {
     readFn,
     readdirFn,
     statFn,
-    readQualityFn,
     readLedgerFn,
     landings,
     settings,
@@ -341,7 +347,6 @@ export function evaluateSteps(opts) {
     readFn,
     readdirFn,
     statFn,
-    readQualityFn,
     readLedgerFn,
     landings,
     settings,
@@ -379,7 +384,6 @@ function buildStepContext({
   readFn,
   readdirFn,
   statFn,
-  readQualityFn,
   readLedgerFn,
   readBranchContractFn,
   landings,
@@ -390,7 +394,7 @@ function buildStepContext({
   autoApproval,
   qualityLabel,
 }) {
-  const resolvedHead = injected(headSha, () => resolveHeadSha(worktreeAbs));
+  const resolvedHead = injected(headSha, () => resolveHeadSha(worktreeAbs, gitFn));
   const resolvedDiffId = injected(reviewDiffId, () => resolveReviewDiffId(worktreeAbs, baseBranch, gitFn));
   const store = injected(answers, () => readAnswerStore(answerStorePath(worktreeAbs, branch), { existsFn, readFn }));
   const ctx = {
@@ -404,8 +408,8 @@ function buildStepContext({
     readFn,
     readdirFn,
     statFn,
-    readQualityFn,
     readBranchContractFn,
+    qualityLabel,
     answers: store,
     headSha: resolvedHead,
     reviewDiffId: resolvedDiffId,

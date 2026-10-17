@@ -1,6 +1,6 @@
 /**
- * The two places ship meets trust: a base merge that only moved the base is certified by the CI run
- * the merge waits for, and a trust-recorded approval gets the short marker hint, not the Panel.
+ * The two places ship meets trust: a base merge that rewrote the branch's diff invalidates the
+ * approval, and a trust-recorded approval gets the short marker hint, not the Panel.
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 globalThis.__HOOK_ORCHESTRATOR__ = true; // import the hook without running its stdin main
-const { assertQualityGateFreshAfterBaseMerge, shipReviewMarkerPath } = await import(
+const { assertApprovalFreshAfterBaseMerge, shipReviewMarkerPath } = await import(
   '../../../.claude/scripts/create-pr/ops.mjs'
 );
 const { run: guard } = await import('../../../.cli/hooks/pre-ship-review-guard.mjs');
@@ -37,13 +37,8 @@ before(() => {
   worktree = join(root, '.worktrees', branch);
   mkdirSync(worktree, { recursive: true });
   g('init', '-q', '-b', branch);
-  const certified = commit('a');
-  writeState('quality-gate.json', {
-    verdict: 'go', quality_label: 'agent_go', head_sha: certified, branch,
-    recorded_at: new Date().toISOString(),
-    gates: [{ name: 'gate', status: 'pass', detail: 'PASS' }],
-  });
-  commit('b'); // stands in for ship's `git merge origin/main`: HEAD moves past the PROOF
+  commit('a');
+  commit('b'); // stands in for ship's `git merge origin/main`
   markerPath = shipReviewMarkerPath(worktree);
   mkdirSync(dirname(markerPath), { recursive: true });
   writeFileSync(markerPath, JSON.stringify({ review_diff_id: 'D' }));
@@ -54,23 +49,16 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test('a base-only merge is left to the CI run the merge waits for', () => {
-  assert.doesNotThrow(() =>
-    assertQualityGateFreshAfterBaseMerge(worktree, false, { diffIdFn: () => 'D', ciGated: true }));
+test('a base-only merge keeps the approval; the CI run the merge waits for certifies the tree', () => {
+  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, () => 'D'));
 });
 
-test('without CI or a re-verification runner, the stale PROOF still blocks', () => {
-  assert.throws(
-    () => assertQualityGateFreshAfterBaseMerge(worktree, false, { diffIdFn: () => 'D', ciGated: false }),
-    /stale|HEAD/i,
-  );
+test('a merge that changed the branch diff invalidates the approval', () => {
+  assert.throws(() => assertApprovalFreshAfterBaseMerge(worktree, () => 'other'), /approval is stale/);
 });
 
-test('a merge that changed the branch diff is not waved through by CI', () => {
-  assert.throws(
-    () => assertQualityGateFreshAfterBaseMerge(worktree, false, { diffIdFn: () => 'other', ciGated: true }),
-    /stale|HEAD/i,
-  );
+test('an unmeasurable diff does not block (markers predating the stamp)', () => {
+  assert.doesNotThrow(() => assertApprovalFreshAfterBaseMerge(worktree, () => null));
 });
 
 async function denyText(approval) {

@@ -38,8 +38,6 @@ import {
   resolveWorktreePlanPath,
   safeBranchKey,
 } from '../../../.cli/lib/worktree-plan-path.mjs';
-import { readQualityGateRecord, checkQualityGateStaleness } from '../lib/worktree-quality-gate.mjs';
-import { recordQualityGate } from '../record-quality-gate.mjs';
 import { answerStorePath, readAnswerStore, resolveReviewDiffId } from '../lib/pre-ship-steps.mjs';
 // isAncestor: worktree-new.mjs 의 기존 export 재사용 (merge-base --is-ancestor boolean 화 SSOT)
 import { isAncestor } from '../worktree-new.mjs';
@@ -888,7 +886,6 @@ export function settleMergeable({ prNumber, repo, headSha, ciGated, required = [
 
 function createAndMergePr({
   base, head, title, body, deleteBranch = null, noMerge = false, worktreeDir = null,
-  forceQualityGate = false,
 }) {
   const repo = resolveRepo();
   const { prNumber, prUrl, existing } = getOrCreatePr({ base, head, title, body, repo });
@@ -954,14 +951,14 @@ function createAndMergePr({
     }
   }
 
-  // Second site where ship mutates the branch tree after the PROOF was validated — the sync above
-  // runs when GitHub reports BEHIND/DIRTY/BLOCKED and merges the base in exactly like cmdShipWorktree does.
+  // Second site where ship merges the base in — the sync above runs when GitHub reports
+  // BEHIND/DIRTY/BLOCKED, exactly like cmdShipWorktree does — so the approval is re-checked here too.
   //
   // Asserted *after* the try/catch rather than before the sync push: that catch deliberately swallows
-  // failures into a console line, and a swallowed PROOF violation would merge anyway. Pushing an
-  // uncertified tree to the feature branch is harmless — nothing consumes it — whereas landing it on
-  // the trunk is not, and this throws before the merge call below.
-  if (worktreeDir) assertQualityGateFreshAfterBaseMerge(worktreeDir, forceQualityGate);
+  // failures into a console line, and a swallowed violation would merge anyway. Pushing the merged
+  // tree to the feature branch is harmless — nothing consumes it — whereas landing it on the trunk is
+  // not, and this throws before the merge call below. CI on the re-pushed head is awaited below.
+  if (worktreeDir) assertApprovalFreshAfterBaseMerge(worktreeDir);
   // After the assert, so a merge that rewrote this branch's diff fails now rather than after a CI wait.
   if (synced) {
     console.log(`[create-pr] Updated branch pushed. Re-checking PR status...`);
@@ -1353,7 +1350,7 @@ export function recordShipQualityAndDetectStreak({
   if (writeFailure) warnings.push(writeFailure);
   if (prior !== undefined) warnings.push(...detectStreakOverTrunk(prior, record, readLandingsFn));
   // Kept branch-free on purpose: this function sits at the complexity ratchet's ceiling.
-  warnings.push(formatCurrentShipNote(record, { proofPath: snapshot?.proof_path }));
+  warnings.push(formatCurrentShipNote(record));
   return warnings.filter(Boolean);
 }
 
@@ -1408,15 +1405,6 @@ function detectStreakOverTrunk(prior, record, readLandingsFn) {
   return warnings;
 }
 
-function readProofLabel(absWtPath) {
-  try {
-    const proof = readQualityGateRecord(absWtPath);
-    return { quality_label: proof.record?.quality_label ?? null, proof_path: proof.path ?? null };
-  } catch {
-    return { quality_label: null, proof_path: null }; /* Missing PROOF */
-  }
-}
-
 export function collectShipQualitySnapshot({
   absWtPath,
   branch,
@@ -1432,12 +1420,10 @@ export function collectShipQualitySnapshot({
   } catch {
     /* Scale determination failure */
   }
-  const { quality_label, proof_path } = readProofLabel(absWtPath);
   const { quality_gate, ...approval } = readMarkerApproval(absWtPath);
-  // PROOF is optional (the trust evaluator verifies the evidence it used to self-report), so the
-  // label the human confirmed on the marker stands in when there is none.
-  // proof_path is not a ledger field — it only names where a null label was looked for.
-  return { scale, quality_label: quality_label ?? quality_gate, milestone_deck: false, proof_path, ...approval };
+  // The ledger label is the one confirmed on the Pre-Ship marker; the evidence behind it is the
+  // trust evaluator's, not a self-reported record.
+  return { scale, quality_label: quality_gate, milestone_deck: false, ...approval };
 }
 
 /**
@@ -1789,212 +1775,10 @@ function cmdVerifyPlan(args) {
 }
 
 /**
- * PROOF freshness message shown when ship itself moved HEAD by merging the base branch in.
- *
- * Kept distinct from the default wording because the two read as opposite accusations: the default
- * says "you committed after recording", which is bewildering to a human who committed nothing.
- * Here the mutator is this script.
- *
- * This path is machine-only. The human approval is bound to the branch's contributed diff
- * (`pre-ship-steps.mjs#resolveReviewDiffId`), which a base merge leaves untouched, so re-verifying
- * does not re-ask the human. That separation exists because it once did: with the approval bound to
- * HEAD, this same merge invalidated it and one ship consumed four approvals (observed 2026-08-27).
- */
-const BASE_MERGE_STALE_REASON =
-  `ship merged origin/${BASE_BRANCH} into the branch, so the tree that lands is no longer the tree ` +
-  `the PROOF certified. The merge is intentionally kept — rolling it back would re-merge and ` +
-  `re-stale on every attempt. Re-verify and retry; the human approval is unaffected.`;
-
-/**
- * @param {string} absWtPath
- * @param {boolean} [force]
- * @param {string|null} [staleReason] Prepended to the staleness error to name what moved HEAD.
- * @param {(worktreePath: string) => string} [execFn] Test-injectable HEAD resolver.
- */
-export function assertQualityGateNotNoGo(absWtPath, force = false, staleReason = null, execFn = undefined) {
-  if (force) return;
-  const { record, path } = readQualityGateRecord(absWtPath);
-  if (!record) return;
-  if (record.verdict === 'no_go') {
-    throw new Error(
-      `Pre-Ship Quality Gate verdict=no_go recorded: ${path}\n` +
-      `Fix issues → re-evaluate verdict → re-record via record-quality-gate.mjs and retry.\n` +
-      `※ User override: --force-quality-gate (reason required in Panel Decisions section)`
-    );
-  }
-  const staleness = execFn
-    ? checkQualityGateStaleness(record, absWtPath, execFn)
-    : checkQualityGateStaleness(record, absWtPath);
-  if (staleness.checked && staleness.stale) {
-    throw new Error(
-      `Pre-Ship Quality Gate PROOF is stale: ${path}\n` +
-      (staleReason ? `${staleReason}\n` : '') +
-      `New commit occurred after recorded HEAD ${staleness.recordedSha?.slice(0, 7) ?? '?'} ` +
-      `(current HEAD ${staleness.currentSha?.slice(0, 7) ?? '?'}).\n` +
-      `Re-evaluate verdict → re-record via record-quality-gate.mjs and retry.\n` +
-      `※ User override: --force-quality-gate (reason required in Panel Decisions section)`
-    );
-  }
-  // `checked && stale` silently passed every unresolved lookup — the one branch with no warning at
-  // all. Since `mark-pre-ship-confirmed` shares this resolver, a load spike took both defences down
-  // together and a stale PROOF would have shipped. Unresolved is not fresh; refuse it.
-  if (staleness.unresolved === 'timeout') {
-    throw new Error(
-      `Pre-Ship Quality Gate PROOF freshness could not be verified: ${path}\n` +
-      (staleReason ? `${staleReason}\n` : '') +
-      `git HEAD lookup kept timing out, so the recorded HEAD ` +
-      `${staleness.recordedSha?.slice(0, 7) ?? '?'} could not be compared against the current tree.\n` +
-      `This is machine load, not a defect in the change — wait for load to drop (uptime) and retry. ` +
-      `No re-recording needed.\n` +
-      `※ User override: --force-quality-gate (reason required in Panel Decisions section)`
-    );
-  }
-}
-
-/**
- * Re-asserts PROOF freshness after a base-branch merge has mutated the worktree tree.
- *
- * Why this exists (observed 2026-08-25): `assertQualityGateNotNoGo` enforced the HEAD-sha binding
- * *before* `git merge origin/<base>`, and nothing re-checked afterwards — so ship invalidated the
- * very PROOF it had just enforced and shipped anyway. 3 of the last 30 merges landed a tree no gate
- * had seen; #1184's head commit is the literal evidence
- * (`Merge remote-tracking branch 'origin/main' into fix/skill-audit-round-1`).
- *
- * This is GitHub's "Require branches to be up to date before merging" enforced locally: Actions are
- * disabled repo-wide and a private free plan cannot set branch protection, so the merge-initiating
- * point is the only place the rule can live (same reasoning as `.husky/pre-push`).
- *
- * No-op when the merge changed nothing (`Already up to date`), which is the common case.
- *
- * Also run before ship's own merge, with `staleReason` null: a retry starts from the merge commit
- * the stopped attempt left, and the stale error must not claim this run merged the base.
- */
-export function assertQualityGateFreshAfterBaseMerge(absWtPath, force, deps = {}, staleReason = BASE_MERGE_STALE_REASON) {
-  if (force) return;
-  const { record } = readQualityGateRecord(absWtPath);
-  if (record && record.verdict !== 'no_go') {
-    const staleness = checkQualityGateStaleness(record, absWtPath);
-    const diffStatus = contributedDiffStatusAfterBaseMerge(
-      absWtPath,
-      deps.diffIdFn ?? resolveReviewDiffId,
-    );
-    // R-CM-028: scaffolded targets receive this bundle but may not carry the CI mirror. Without the
-    // runner there is nothing to measure, so they keep the original strict block rather than
-    // silently shipping an unverified merged tree.
-    const runnerPresent = deps.runCiMirror ? true : existsSync(join(absWtPath, CI_MIRROR_SCRIPT));
-    const ciGated = deps.ciGated ?? hasWorkflows(absWtPath);
-    if (staleness.checked && staleness.stale && diffStatus === 'same' && ciGated) {
-      // Only the base moved, and createAndMergePr merges this exact head only after its CI passed
-      // (waitChecks under the same hasWorkflows predicate, merge pinned to the sha). That run is the
-      // gate on the merged tree, from a clean machine — re-running it here only added minutes, and
-      // without the CI mirror script it demanded a hand-written record for a tree nobody had seen.
-      console.log('[ship-worktree] Only the base moved past the PROOF; CI certifies the merged tree before merge.');
-      return;
-    }
-    if (staleness.checked && staleness.stale && diffStatus === 'same' && runnerPresent) {
-      reverifyMergedTree(absWtPath, record, deps);
-      return;
-    }
-  }
-  assertQualityGateNotNoGo(absWtPath, force, staleReason);
-}
-
-/**
- * Command that certifies a tree. SSOT is `.husky/pre-push` — the same runner that gates the push a
- * few lines later, so a merged tree is judged by one standard rather than two.
- * `tests/unit/create-pr-reverify.test.mjs` fails if the two drift apart.
- */
-const CI_MIRROR_SCRIPT = '.claude/scripts/ci-local-status.mjs';
-export const CI_MIRROR_CMD = ['node', CI_MIRROR_SCRIPT, '--all', '--strikes'];
-
-/** Fixed name so repeated re-verifications replace the entry instead of stacking duplicates. */
-const SELF_REVERIFY_GATE = 'ship self re-verification after base merge';
-
-/**
- * Budget for one full gate run. Deliberately its own constant rather than borrowing
- * `PUSH_TIMEOUT_MS`: the two happen to be equal today, but they bound unrelated things (a network
- * push vs. the whole local suite), so a future change to either must not silently move the other.
- * Measured range for `./.husky/pre-push` on this repo: 81s idle → 233s at 5.3x load.
- */
-const CI_MIRROR_TIMEOUT_MS = 1_800_000;
-
-function tailLines(text, n = 40) {
-  return String(text || '').trimEnd().split('\n').slice(-n).join('\n');
-}
-
-/**
- * Earns the PROOF back on the tree the base merge just produced, instead of demanding that someone
- * had already certified a tree that did not exist yet.
- *
- * The old contract was unsatisfiable in one pass: ship merges the base, which moves HEAD, and then
- * required a PROOF bound to that new HEAD. The only way through was to pre-merge by hand and beat
- * every other session to the push — observed 2026-09-01, three ship attempts and four full suite
- * runs lost to a base that advanced every ~18 minutes while re-verification took ~7.
- *
- * This does not relax the rule; it satisfies it with a measurement. The gate is the *same* runner
- * `.husky/pre-push` uses on the push that follows, so nothing lands on weaker evidence than before,
- * and the record is stamped from an actual run rather than hand-written.
- *
- * Only reachable when the branch's contributed diff is byte-identical across the merge
- * (`contributedDiffStatusAfterBaseMerge === 'same'`), i.e. the base is provably the only thing that
- * moved. A conflict resolution that touched this branch's files reports `changed` and still throws.
- */
-function reverifyMergedTree(absWtPath, record, deps = {}) {
-  const runner =
-    deps.runCiMirror ?? ((wt) => exec(CI_MIRROR_CMD, { cwd: wt, timeout: CI_MIRROR_TIMEOUT_MS }));
-  const writer = deps.recordFn ?? recordQualityGate;
-  console.log(
-    `[ship-worktree] Base merge moved HEAD. Re-verifying the merged tree (${CI_MIRROR_CMD.join(' ')})...`,
-  );
-  let output;
-  try {
-    output = runner(absWtPath);
-  } catch (e) {
-    throw new Error(
-      `Pre-Ship Quality Gate re-verification failed on the merged tree.\n` +
-        `The branch's own diff is unchanged, so this is an interaction with newly landed ` +
-        `origin/${BASE_BRANCH} commits. Fix it in the worktree and retry.\n` +
-        `${tailLines(`${e.stdout || ''}\n${e.stderr || e.message}`)}`,
-    );
-  }
-  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath });
-  const gates = (Array.isArray(record.gates) ? record.gates : []).filter(
-    (g) => g?.name !== SELF_REVERIFY_GATE,
-  );
-  gates.push({
-    name: SELF_REVERIFY_GATE,
-    status: 'pass',
-    command: CI_MIRROR_CMD.join(' '),
-    detail: tailLines(output, 6),
-  });
-  const res = writer(absWtPath, branch, { ...record, gates });
-  if (!res.ok) {
-    // The record is read with `rejectUnknownKeys: false` and written with `true`, so a *pre-existing*
-    // stray key on a record this code did not author lands here — and a live worktree carries exactly
-    // one (`reviewer`, documented at `worktree-quality-gate.mjs#RECORD_KEYS`). Blaming "re-recording"
-    // would point the reader at the measurement that just passed instead of at the drifted record.
-    // Not silently stripped: an unread key is still someone's data, and dropping it to unblock a ship
-    // is the same silent-repair habit this gate exists to prevent.
-    const unknownKey = (res.errors || []).some((e) => /unknown key/i.test(String(e)));
-    throw new Error(
-      `Merged tree PASSED re-verification (${CI_MIRROR_CMD.join(' ')}), but the PROOF could not be ` +
-        `written back: ${(res.errors || []).join('; ')}\n` +
-        (unknownKey
-          ? `This is pre-existing schema drift on the stored record, not a failure of the change ` +
-            `being shipped. Re-record it without the stray key(s):\n` +
-            `  node .claude/scripts/record-quality-gate.mjs ${branch} --json '<record>'`
-          : `Fix the record and retry.`),
-    );
-  }
-  console.log(`[ship-worktree] Merged tree verified. PROOF re-recorded at ${res.headSha?.slice(0, 7)}.`);
-}
-
-/**
  * Did the base merge change what this branch contributes?
  *
  * `same` / `changed` / `unknown` rather than a boolean: absence of an approved id is not evidence of
- * sameness, and the two consumers need opposite defaults for it — the approval check must not block
- * on `unknown` (markers predating the stamp exist), while re-verification must not proceed on it.
+ * sameness, so only a measured `changed` blocks (markers predating the stamp exist).
  */
 function contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) {
   const path = shipReviewMarkerPath(absWtPath);
@@ -2020,18 +1804,18 @@ function contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) {
  * approved something the merge then rewrote.
  *
  * Nothing re-checked it. `mark-pre-ship-confirmed` verified the approval once, before ship ran, and
- * ship only re-checked the machine PROOF afterwards — so the one case the binding is *supposed* to
+ * ship only re-checked the machine record afterwards — so the one case the binding is *supposed* to
  * catch was the one case nobody looked at (found in adversarial review, 2026-08-27).
  *
  * Fail-open when either id is absent: markers written before this stamp existed, and worktrees where
  * no base ref resolves, must not become unshippable.
  *
+ * No override flag: a stale approval is fixed by re-approving, which a human records in one step.
+ *
  * @param {string} absWtPath
- * @param {boolean} force
  * @param {(wt: string, base: string) => string|null} [diffIdFn] Test-injectable.
  */
-export function assertApprovalFreshAfterBaseMerge(absWtPath, force, diffIdFn = resolveReviewDiffId) {
-  if (force) return;
+export function assertApprovalFreshAfterBaseMerge(absWtPath, diffIdFn = resolveReviewDiffId) {
   if (contributedDiffStatusAfterBaseMerge(absWtPath, diffIdFn) !== 'changed') return;
   const path = shipReviewMarkerPath(absWtPath);
   throw new Error(
@@ -2039,8 +1823,7 @@ export function assertApprovalFreshAfterBaseMerge(absWtPath, force, diffIdFn = r
       `Merging origin/${BASE_BRANCH} changed the diff this branch contributes, so the change that ` +
       `lands is no longer the change the human approved.\n` +
       `Re-review the updated diff and record a fresh answer:\n` +
-      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}\n` +
-      `※ User override: --force-quality-gate (reason required in Panel Decisions section)`,
+      `  node .claude/scripts/pre-ship-steps.mjs next --worktree ${absWtPath}`,
   );
 }
 
@@ -2087,11 +1870,6 @@ function cmdShipWorktree(args) {
     };
     throw err;
   }
-
-  // Same rule as after the merge below: a merge commit left by an earlier attempt that stopped later
-  // moved HEAD past the PROOF without touching the approved diff. After the dirty check, so any
-  // re-verification it runs measures committed content only.
-  assertQualityGateFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true, {}, null);
 
   const supersetWarnings = [];
   try {
@@ -2154,12 +1932,8 @@ function cmdShipWorktree(args) {
   }
 
   // The merge may have rewritten the branch's own diff, which invalidates the human approval.
-  // Checked first: it is a string comparison, and failing it makes the minutes-long machine
-  // re-verification below pointless work.
-  assertApprovalFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true);
-  // The merge also added a commit, which invalidates the PROOF asserted before it. Re-earned by
-  // measurement when the base is provably the only thing that moved.
-  assertQualityGateFreshAfterBaseMerge(absWtPath, args['force-quality-gate'] === true);
+  // A base-only move is certified by the CI run createAndMergePr waits for on the merged head.
+  assertApprovalFreshAfterBaseMerge(absWtPath);
 
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: absWtPath });
   if (!branch || branch === 'HEAD') throw new Error(`Failed to determine branch: ${wtPath}`);
@@ -2184,7 +1958,6 @@ function cmdShipWorktree(args) {
     deleteBranch: noMerge ? null : branch,
     noMerge,
     worktreeDir: absWtPath,
-    forceQualityGate: args['force-quality-gate'] === true,
   });
 
   supersetWarnings.push(
@@ -2615,7 +2388,6 @@ const USAGE = {
       'no-cleanup (flag)',
       'preserve-run (flag)',
       'force-plan (flag)',
-      'force-quality-gate (flag — justification required in Panel Decisions)',
     ],
   },
   'cleanup-worktree': {

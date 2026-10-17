@@ -44,17 +44,11 @@ import {
 import {
   TRIVIAL_SKIP_LIMITS,
   VALID_QUALITY_LABELS,
-  checkLabelEvidence,
   checkTrivialClaim,
   formatReviewRemedy,
 } from '../../.cli/lib/quality-gate-labels.mjs';
 import { measureShipScale } from '../../.cli/lib/ship-scale.mjs';
 import { parseUncheckedPlanItems } from '../../.cli/lib/worktree-plan-status.mjs';
-import {
-  readQualityGateRecord,
-  checkQualityGateStaleness,
-  persistQualityLabel,
-} from './lib/worktree-quality-gate.mjs';
 import { evaluateSteps, resolveReviewDiffId } from './lib/pre-ship-steps.mjs';
 import { resolveShipBaseBranch } from '../../.cli/lib/ship-base-branch.mjs';
 
@@ -199,119 +193,6 @@ export function checkPlanCheckboxes(mainRoot, branch, force) {
 }
 
 /**
- * Checks mailbox quality-gate.json PROOF verdict.
- *
- * @param {string} mainRoot
- * @param {string|null} branch
- * @param {boolean} force
- * @param {string|null} [cliLabel]
- * @param {(worktreePath: string) => string} [execFn] — Test-injectable HEAD resolver
- * @returns {{ok: boolean, skipped?: string, reason?: string, verdict?: string, proofLabel?: string, evidenceMarkers?: string[], proofPath?: string, warning?: string, recordedSha?: string, currentSha?: string, stalenessChecked?: boolean, stalenessSkipped?: 'head_sha_absent'|'head_sha_unresolvable'}}
- */
-/**
- * Staleness-related denial reasons (stale HEAD, or an unresolved timeout on the staleness check).
- * @returns {object|null} a denial result, or null if staleness does not block the marker.
- */
-function checkQualityGateStalenessVerdict(record, path, staleness) {
-  if (staleness.checked && staleness.stale) {
-    return {
-      ok: false,
-      reason: 'stale',
-      verdict: record.verdict,
-      proofPath: path,
-      recordedSha: staleness.recordedSha,
-      currentSha: staleness.currentSha,
-    };
-  }
-  // Previously a stderr warning that still issued the marker. A timeout means the tree may have
-  // moved while we were unable to look, and the ship-side check shares this same resolver — so
-  // warning here left both defences down at once. R-CM-008 Rule 6 already settled the direction
-  // for this exact shape: unresolved → deny, never passthrough.
-  if (staleness.unresolved === 'timeout') {
-    return {
-      ok: false,
-      reason: 'staleness_unresolved',
-      verdict: record.verdict,
-      proofPath: path,
-      recordedSha: staleness.recordedSha,
-    };
-  }
-  return null;
-}
-
-/**
- * Label-related denial reasons (CLI/PROOF label mismatch, or a claimed label lacking gates[] evidence).
- * @returns {object|null} a denial result, or null if the label checks out.
- */
-function checkQualityGateLabelVerdict(record, path, cliLabel) {
-  if (record.quality_label && cliLabel && record.quality_label !== cliLabel) {
-    return {
-      ok: false,
-      reason: 'label_mismatch',
-      verdict: record.verdict,
-      proofLabel: record.quality_label,
-      proofPath: path,
-    };
-  }
-  const claimedLabel = record.quality_label || cliLabel;
-  const evidence = checkLabelEvidence(claimedLabel, record.gates);
-  if (evidence.required && !evidence.satisfied) {
-    return {
-      ok: false,
-      reason: 'label_evidence_missing',
-      verdict: record.verdict,
-      proofLabel: claimedLabel,
-      evidenceMarkers: evidence.markers,
-      proofPath: path,
-    };
-  }
-  return null;
-}
-
-export function checkQualityGateVerdict(
-  mainRoot,
-  branch,
-  force,
-  cliLabel = null,
-  execFn = undefined,
-) {
-  if (!branch) return { ok: true, skipped: 'staged_mode' };
-  if (force) return { ok: true, skipped: 'force_flag' };
-
-  const wtPath = resolveWorktreeDir(mainRoot, branch);
-  if (!wtPath) return { ok: true, skipped: 'worktree_absent' };
-
-  const { record, path, error } = readQualityGateRecord(wtPath, branch);
-  if (error) return { ok: true, skipped: 'proof_invalid', warning: `${path} — ${error}` };
-  if (!record) return { ok: true, skipped: 'proof_absent' };
-  if (record.verdict === 'no_go') {
-    return { ok: false, reason: 'no_go', verdict: record.verdict, proofPath: path };
-  }
-  const staleness = execFn
-    ? checkQualityGateStaleness(record, wtPath, execFn)
-    : checkQualityGateStaleness(record, wtPath);
-
-  const stalenessVerdict = checkQualityGateStalenessVerdict(record, path, staleness);
-  if (stalenessVerdict) return stalenessVerdict;
-
-  const labelVerdict = checkQualityGateLabelVerdict(record, path, cliLabel);
-  if (labelVerdict) return labelVerdict;
-
-  const stalenessSkipped = staleness.checked
-    ? null
-    : staleness.recordedSha
-      ? 'head_sha_unresolvable'
-      : 'head_sha_absent';
-  return {
-    ok: true,
-    verdict: record.verdict,
-    proofPath: path,
-    stalenessChecked: staleness.checked,
-    ...(stalenessSkipped ? { stalenessSkipped } : {}),
-  };
-}
-
-/**
  * Checks a `trivial_skip` claim against the measured `<base>...HEAD` diff.
  *
  * The label is a size claim (R-CM-030 Rule 10), so it is measured rather than trusted — unlike the
@@ -330,23 +211,6 @@ export function checkTrivialScale(mainRoot, branch, quality, force, measureFn = 
   const measured = measureFn(wtPath);
   if (!measured) return { ok: true, skipped: 'unmeasurable' };
   return checkTrivialClaim(quality, measured);
-}
-
-/**
- * Backfills confirmed quality label to PROOF.
- *
- * @returns {string|null} Warning string for stderr (null if none)
- */
-export function backfillProofLabel(mainRoot, branch, quality, force) {
-  if (!branch || force) return null;
-  const wtPath = resolveWorktreeDir(mainRoot, branch);
-  if (!wtPath) return null;
-  const persist = persistQualityLabel(wtPath, quality, branch);
-  if (persist.persisted || persist.reason === 'already_set') return null;
-  return (
-    `[mark-pre-ship-confirmed] Warning: PROOF label recording skipped (${persist.reason}) — ` +
-    `ship ledger will record this ship as 'review skipped'. PROOF: ${persist.path}\n`
-  );
 }
 
 /**
@@ -369,7 +233,7 @@ export function checkPreShipSteps(mainRoot, branch, force, quality = undefined, 
   // !branch, not === 'staged': resolveBranch('--staged') returns *null*, so the string comparison
   // never matched and resolveWorktreeDir(mainRoot, null) crashed with a TypeError — the Mode A
   // (--staged) marker path was undeliverable without --force (empirical reproduction 2026-08-26).
-  // Mirrors the !branch skip in checkPlanCheckboxes / checkQualityGateVerdict.
+  // Mirrors the !branch skip in checkPlanCheckboxes.
   if (!branch) return { ok: true, skipped: 'staged_mode' };
   const worktreeAbs = resolveWorktreeDir(mainRoot, branch);
   if (!worktreeAbs || !existsSync(worktreeAbs)) return { ok: true, skipped: 'no_worktree' };
@@ -402,50 +266,6 @@ export function validateUnknownFlags(args) {
   return null;
 }
 
-/**
- * Converts checkQualityGateVerdict failure reason into human-readable message.
- *
- * @param {ReturnType<typeof checkQualityGateVerdict>} gate
- * @param {string} quality
- * @returns {string}
- */
-function describeGateFailure(gate, quality) {
-  if (gate.reason === 'label_evidence_missing') {
-    return (
-      `PROOF gates[] lacks execution evidence for ${gate.proofLabel} (required markers: ${gate.evidenceMarkers?.join(' | ') ?? '?'}).\n` +
-      `  ${gate.proofLabel} asserts secondary review was executed, resetting skip counter on ship-quality-ledger — declarations alone are insufficient.\n` +
-      `  Resolution A: Run ${formatReviewRemedy()} and record it in gates[]\n` +
-      `               (e.g. {"name":"adversarial-review (subagent)","status":"pass","detail":"..."}).\n` +
-      `               Markers above are wider than that list on purpose — they also accept tools this repo\n` +
-      `               does not ship (e.g. /code-review), which count if you have them but cannot be advised.\n` +
-      `  Resolution B: If not run, downgrade to --quality self_review_pass and document reason in Panel Decisions.\n`
-    );
-  }
-  if (gate.reason === 'label_mismatch') {
-    return (
-      `PROOF quality_label=${gate.proofLabel} ≠ --quality ${quality} — preventing label inflation.\n` +
-      `  Resolution: Match --quality to PROOF label, or re-record PROOF with record-quality-gate.mjs if verification level increased.\n`
-    );
-  }
-  if (gate.reason === 'stale') {
-    return (
-      `PROOF is stale (recorded HEAD ${gate.recordedSha?.slice(0, 7) ?? '?'} ≠ current HEAD ${gate.currentSha?.slice(0, 7) ?? '?'}) — new commits occurred after recording so verdict does not cover current code.\n` +
-      `  Procedure: Re-run verdict → re-record via node .claude/scripts/record-quality-gate.mjs → retry this CLI.\n`
-    );
-  }
-  if (gate.reason === 'staleness_unresolved') {
-    return (
-      `PROOF records HEAD ${gate.recordedSha?.slice(0, 7) ?? '?'} but git HEAD lookup kept timing out, so staleness could not be evaluated.\n` +
-      `  This is a machine-load symptom, not a defect in the change: the ship-side check uses the same resolver, so proceeding would leave both defences down at once.\n` +
-      `  Procedure: wait for load to drop (uptime), then retry this CLI. No re-recording needed.\n`
-    );
-  }
-  return (
-    `verdict=no_go.\n` +
-    `  Procedure: Fix findings → re-run verdict → re-record via node .claude/scripts/record-quality-gate.mjs → retry this CLI.\n`
-  );
-}
-
 /** Splits argv into the flags this CLI knows and its single positional target. */
 function parseCliArgs(args) {
   const qualityIdx = args.indexOf('--quality');
@@ -460,21 +280,6 @@ function parseCliArgs(args) {
     qualityRaw: qualityIdx >= 0 ? args[qualityIdx + 1] : null,
     arg: positional[0],
   };
-}
-
-/** Fail-open conditions of the PROOF check that deserve a line on stderr but never reject. */
-function reportGateWarnings(gate) {
-  if (gate.warning) {
-    process.stderr.write(
-      `[mark-pre-ship-confirmed] Warning: quality-gate.json invalid — proceeding fail-open (${gate.warning})\n`,
-    );
-  }
-  if (gate.stalenessSkipped === 'head_sha_unresolvable') {
-    process.stderr.write(
-      `[mark-pre-ship-confirmed] Warning: PROOF has head_sha but worktree HEAD query failed — ` +
-        `skipped staleness check (fail-open). Check git status.\n`,
-    );
-  }
 }
 
 function main(argv) {
@@ -510,7 +315,7 @@ function main(argv) {
         '    trivial_skip      : R-CM-030 Rule 10 trivial exemption (≤2 files + ≤20 LOC + non-substantive)\n' +
         '\n' +
         `  To earn one of the first two, run: ${formatReviewRemedy()}\n` +
-        '  Both require execution evidence in PROOF gates[] before marker creation.\n',
+        '  Auto-merge additionally requires a review.json the trust evaluator accepts.\n',
     );
     process.exit(1);
   }
@@ -548,17 +353,6 @@ function main(argv) {
     process.exit(1);
   }
 
-  const gate = checkQualityGateVerdict(mainRoot, branch, force, quality);
-  reportGateWarnings(gate);
-  if (!gate.ok) {
-    process.stderr.write(
-      `[mark-pre-ship-confirmed] Pre-Ship Quality Gate marker creation rejected (R-CM-030 Rule 9): ${describeGateFailure(gate, quality)}` +
-        `  PROOF: ${gate.proofPath}\n` +
-        `  Explicit user bypass: --force (mandatory reason in Panel Decisions section).\n`,
-    );
-    process.exit(1);
-  }
-
   const steps = checkPreShipSteps(mainRoot, branch, force, quality);
   if (steps.warning) {
     process.stderr.write(`[mark-pre-ship-confirmed] Warning: ${steps.warning} — proceeding fail-open\n`);
@@ -575,9 +369,6 @@ function main(argv) {
     );
     process.exit(1);
   }
-
-  const backfillWarning = backfillProofLabel(mainRoot, branch, quality, force);
-  if (backfillWarning) process.stderr.write(backfillWarning);
 
   const path = markerPath(mainRoot, branch);
   const payload = JSON.stringify(buildMarkerPayload(mainRoot, branch, quality, null, steps.approval));
