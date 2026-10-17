@@ -671,6 +671,15 @@ struct DecisionEngineRobustnessTests {
         #expect(tabToEscape.action == .keyPress)
         #expect(tabToEscape.keyCombination == ["Tab"])
 
+        // ...but a spelled-out chord is kept whole, and a quoted tab title is a name, not a command.
+        let chord = engine.fallbackLocalDecision(goal: "Shift+Enter（Shiftを押しながらEnterキーを押す）で改行", candidates: [browserTab])
+        #expect(chord.keyCombination == ["shift", "enter"])
+        let quotedTab = makeCandidate(id: "tab_continue", role: "AXTab", label: "Press Enter to Continue")
+        let quoted = engine.fallbackLocalDecision(goal: "Open the \"Press Enter to Continue\" tab", candidates: [quotedTab])
+        // (The "enter" in the title still reads as typing intent; that predates this guard.)
+        #expect(quoted.action != .keyPress)
+        #expect(quoted.targetElementId == "tab_continue")
+
         let jaEnter = engine.fallbackLocalDecision(goal: "エンターキーを押して候補を選択", candidates: [browserTab, suggestion])
         #expect(jaEnter.action == .keyPress)
         #expect(jaEnter.keyCombination == ["Return"])

@@ -1232,9 +1232,13 @@ public struct TypeSafeDecisionEngine: Sendable {
         let keyCommandPattern = "\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:return|enter|escape|esc|tab|space|spacebar|backspace|delete|up|down|cmd|command|ctrl|control|alt|opt|option|shift)\\b"
             + "|(?:エンター|リターン|エスケープ|タブ|スペース|バックスペース|enter|return|esc|tab)(?:キー)?を押"
         // The key comes from the command itself: in "press Tab to select the Escape tab" a goal-wide
-        // scan finds the bare word "escape" first.
-        let commandedKeys = normalizedGoal.range(of: keyCommandPattern, options: .regularExpression)
-            .flatMap { Self.extractKeyCombination(from: String(normalizedGoal[$0])) }
+        // scan finds the bare word "escape" first. Quoted text is a name ("Press Enter to Continue" tab),
+        // not a command, and a chord the goal spells out ("Shift+Enter") stays whole.
+        let unquotedGoal = normalizedGoal.replacingOccurrences(
+            of: "[\"“「『'][^\"”」』']*[\"”」』']", with: " ", options: .regularExpression
+        )
+        let commandedKeys = unquotedGoal.range(of: keyCommandPattern, options: .regularExpression)
+            .flatMap { Self.extractKeyCombination(from: String(unquotedGoal[$0])) }
         let namesKeyWithVerb = hasExplicitKey && commandedKeys != nil
         let isTabSelectionGoal = (!namesKeyWithVerb && (
                 normalizedGoal.contains("select")
@@ -1252,7 +1256,8 @@ public struct TypeSafeDecisionEngine: Sendable {
             && !normalizedGoal.contains("click")
             && !normalizedGoal.contains("クリック")
             && !shouldSkipKeyPressForTabElement {
-            let keys = commandedKeys ?? explicitKeys ?? ["Return"]
+            let isChord = (explicitKeys?.count ?? 0) > 1
+            let keys = (isChord ? explicitKeys : commandedKeys) ?? explicitKeys ?? ["Return"]
             return ComputerActionDecision(
                 targetElementId: nil,
                 action: .keyPress,
