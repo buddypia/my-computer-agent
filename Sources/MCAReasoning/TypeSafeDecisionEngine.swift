@@ -585,7 +585,8 @@ public struct TypeSafeDecisionEngine: Sendable {
             || trimmed == "return" || trimmed == "enter"
             || lower.contains("エンターキー") || lower.contains("リターンキー")
             || lower.contains("エンターを押") || lower.contains("リターンを押")
-            || lower.contains("enterキー") || lower.contains("returnキー") {
+            || lower.contains("enterキー") || lower.contains("returnキー")
+            || lower.contains("enterを押") || lower.contains("returnを押") {
             return ["Return"]
         }
 
@@ -594,7 +595,8 @@ public struct TypeSafeDecisionEngine: Sendable {
             || hasRegexPattern("\\b(?:escape|esc)\\s+key\\b")
             || hasRegexPattern("\\bescape\\b")
             || trimmed == "esc"
-            || lower.contains("エスケープキー") || lower.contains("エスケープを押") || lower.contains("escキー") {
+            || lower.contains("エスケープキー") || lower.contains("エスケープを押")
+            || lower.contains("escキー") || lower.contains("escを押") {
             return ["Escape"]
         }
 
@@ -607,6 +609,15 @@ public struct TypeSafeDecisionEngine: Sendable {
             return ["Tab"]
         }
 
+        // Backspace / Delete (before Space: "バックスペースキー" contains "スペースキー")
+        if hasRegexPattern("\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:backspace|delete)\\b")
+            || hasRegexPattern("\\b(?:backspace|delete)\\s+key\\b")
+            || hasRegexPattern("\\bbackspace\\b")
+            || trimmed == "backspace"
+            || lower.contains("バックスペース") || lower.contains("deleteキー") {
+            return ["Backspace"]
+        }
+
         // Space
         if hasRegexPattern("\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:space|spacebar)\\b")
             || hasRegexPattern("\\b(?:space|spacebar)\\s+key\\b")
@@ -616,21 +627,12 @@ public struct TypeSafeDecisionEngine: Sendable {
             return ["Space"]
         }
 
-        // Backspace / Delete
-        if hasRegexPattern("\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:backspace|delete)\\b")
-            || hasRegexPattern("\\b(?:backspace|delete)\\s+key\\b")
-            || hasRegexPattern("\\bbackspace\\b")
-            || trimmed == "backspace"
-            || lower.contains("バックスペース") || lower.contains("deleteキー") {
-            return ["Backspace"]
-        }
-
         // Arrow keys
-        if hasRegexPattern("\\b(?:arrow\\s+down|down\\s+arrow|press\\s+down)\\b")
+        if hasRegexPattern("\\b(?:arrow\\s+down|down\\s+arrow|(?:press|hit|tap)\\s+(?:the\\s+)?down)\\b")
             || lower.contains("下矢印") || lower.contains("下キー") {
             return ["Down"]
         }
-        if hasRegexPattern("\\b(?:arrow\\s+up|up\\s+arrow|press\\s+up)\\b")
+        if hasRegexPattern("\\b(?:arrow\\s+up|up\\s+arrow|(?:press|hit|tap)\\s+(?:the\\s+)?up)\\b")
             || lower.contains("上矢印") || lower.contains("上キー") {
             return ["Up"]
         }
@@ -1144,14 +1146,8 @@ public struct TypeSafeDecisionEngine: Sendable {
 
             // Only an unchanged screen proves the scroll went nowhere. An unverified outcome after a
             // scroll that moved the content means the target is further away, not that the page ended.
-            let isStagnant: Bool = {
-                if hasStagnantEscalation { return true }
-                if lastActionWasScroll && isStateUnchanged { return true }
-                if isStateUnchanged && (lastActionWasScroll || lastActionWasKeyPress) { return true }
-                let recentScrolls = history.suffix(2).filter { $0.action.action == .scroll }
-                if recentScrolls.count >= 2 && isStateUnchanged { return true }
-                return false
-            }()
+            let isStagnant = hasStagnantEscalation
+                || (isStateUnchanged && (lastActionWasScroll || lastActionWasKeyPress))
 
             if isStagnant {
                 let triedKeyboardNav = history.contains(where: { step in
@@ -1229,18 +1225,19 @@ public struct TypeSafeDecisionEngine: Sendable {
         // A key the goal names with a key verb ("press Enter to select the suggestion") is honored even
         // when the screen has tabs. A key word without one ("Select the Escape tab", "ショートカット" tab)
         // names the tab, so it yields to the tab element.
-        let keyCommandPattern = "\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:return|enter|escape|esc|tab|space|spacebar|backspace|delete|up|down|cmd|command|ctrl|control|alt|opt|option|shift)\\b"
+        let keyCommandPattern = "\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:(?:cmd|command|ctrl|control|alt|opt|option|shift)(?:\\s*\\+\\s*\\w+)+|return|enter|escape|esc|tab|space|spacebar|backspace|delete|up|down)\\b"
             + "|(?:エンター|リターン|エスケープ|タブ|スペース|バックスペース|enter|return|esc|tab)(?:キー)?を押"
         // The key comes from the command itself: in "press Tab to select the Escape tab" a goal-wide
         // scan finds the bare word "escape" first. Quoted text is a name ("Press Enter to Continue" tab),
-        // not a command, and a chord the goal spells out ("Shift+Enter") stays whole.
+        // not a command, and a chord the goal spells out ("Shift+Enter") stays whole. A straight single
+        // quote only quotes at word edges, so the apostrophes in "Bob's ... Alice's" are not a pair.
         let unquotedGoal = normalizedGoal.replacingOccurrences(
-            of: "[\"“「『'][^\"”」』']*[\"”」』']", with: " ", options: .regularExpression
+            of: "[\"“「『][^\"”」』]*[\"”」』]|(?<![\\p{L}\\p{N}])'.*?'(?![\\p{L}\\p{N}])",
+            with: " ", options: .regularExpression
         )
         let commandedKeys = unquotedGoal.range(of: keyCommandPattern, options: .regularExpression)
             .flatMap { Self.extractKeyCombination(from: String(unquotedGoal[$0])) }
-        let namesKeyWithVerb = hasExplicitKey && commandedKeys != nil
-        let isTabSelectionGoal = (!namesKeyWithVerb && (
+        let isTabSelectionGoal = (commandedKeys == nil && (
                 normalizedGoal.contains("select")
                 || normalizedGoal.contains("switch")
                 || normalizedGoal.contains("choose")

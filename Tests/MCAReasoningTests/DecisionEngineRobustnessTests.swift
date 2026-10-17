@@ -690,4 +690,60 @@ struct DecisionEngineRobustnessTests {
         #expect(numbered.action == .click)
         #expect(numbered.targetElementId == "tab_2")
     }
+
+    @Test("Every key the verb pattern names is pressed over a tab on screen, in English and Japanese")
+    func testKeyVocabularyIsPressedDespiteTabsOnScreen() {
+        let engine = TypeSafeDecisionEngine()
+        let browserTab = makeCandidate(id: "tab_1", role: "AXTab", label: "Inbox")
+        let suggestion = makeCandidate(id: "suggestion", role: "AXMenuItem", label: "tokyo weather")
+        // "select" makes each goal a tab-selection goal, so only a recognised key command beats the tab.
+        let cases: [(String, [String])] = [
+            ("Press Enter to select the suggestion", ["Return"]),
+            ("Hit return to select the suggestion", ["Return"]),
+            ("Tap the Enter to select the suggestion", ["Return"]),
+            ("Press Escape to select nothing", ["Escape"]),
+            ("Hit Esc to select nothing", ["Escape"]),
+            ("Press Tab to select the next field", ["Tab"]),
+            ("Press Space to select the suggestion", ["Space"]),
+            ("Tap the spacebar to select the suggestion", ["Space"]),
+            ("Press Backspace to select less", ["Backspace"]),
+            ("Tap Delete to select less", ["Backspace"]),
+            ("Hit Up to select the previous suggestion", ["Up"]),
+            ("Tap the down to select the next suggestion", ["Down"]),
+            ("Press Cmd+A to select everything", ["cmd", "a"]),
+            ("Hit Shift+Tab to select the previous field", ["shift", "tab"]),
+            ("エンターキーを押して候補を選択", ["Return"]),
+            ("リターンを押して候補を選択", ["Return"]),
+            ("Enterを押して候補を選択", ["Return"]),
+            ("returnキーを押して候補を選択", ["Return"]),
+            ("エスケープキーを押して選択を解除", ["Escape"]),
+            ("escを押して選択を解除", ["Escape"]),
+            ("タブキーを押して次の欄を選択", ["Tab"]),
+            ("tabを押して次の欄を選択", ["Tab"]),
+            ("スペースキーを押して候補を選択", ["Space"]),
+            ("バックスペースキーを押して選択を縮める", ["Backspace"]),
+        ]
+        for (goal, keys) in cases {
+            let decision = engine.fallbackLocalDecision(goal: goal, candidates: [browserTab, suggestion])
+            #expect(decision.action == .keyPress, "\(goal)")
+            #expect(decision.keyCombination == keys, "\(goal)")
+        }
+    }
+
+    @Test("Apostrophes are not quotes, so a key command between two possessives still counts")
+    func testApostrophesDoNotHideKeyCommand() {
+        let engine = TypeSafeDecisionEngine()
+        let browserTab = makeCandidate(id: "tab_1", role: "AXTab", label: "Inbox")
+        let possessive = engine.fallbackLocalDecision(
+            goal: "In Bob's inbox, press Enter to select Alice's message", candidates: [browserTab]
+        )
+        #expect(possessive.action == .keyPress)
+        #expect(possessive.keyCombination == ["Return"])
+
+        // A single-quoted title is still a name, not a command.
+        let quotedTab = makeCandidate(id: "tab_continue", role: "AXTab", label: "Press Enter to Continue")
+        let quoted = engine.fallbackLocalDecision(goal: "Open the 'Press Enter to Continue' tab", candidates: [quotedTab])
+        #expect(quoted.action != .keyPress)
+        #expect(quoted.targetElementId == "tab_continue")
+    }
 }
