@@ -318,7 +318,7 @@ struct TwoTierAutonomousLoopCoordinatorTests {
         let subgoal2 = Subgoal(
             id: "sg_2",
             description: "Click Submit button to finalize",
-            expectedOutcome: "element_added_dialog",
+            expectedOutcome: "Confirmation dialog appears",
             maxSteps: 5
         )
 

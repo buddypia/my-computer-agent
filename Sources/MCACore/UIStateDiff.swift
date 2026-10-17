@@ -559,6 +559,10 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         let lowerExpected = trimmedExpected.lowercased()
         let expectedTokens = Self.extractOutcomeTokens(from: lowerExpected)
+        // Once the outcome names which button or page it means, the kind word fits every element of
+        // that kind and stops being evidence; a match on it alone only keeps the result indeterminate.
+        let kindIsEvidence = !Self.outcomeNamesKind(lowerExpected)
+        let contentTokens = kindIsEvidence ? expectedTokens : expectedTokens.filter { !Self.outcomeKindWords.contains($0) }
 
         var matchedSignals: [String] = []
         var matchScore: Float = 0.0
@@ -591,10 +595,12 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         // 2. Focus change matching
         if focusChanged {
-            let roleMatch = expectedTokens.contains { token in
+            let roleMatch = contentTokens.contains { token in
                 Self.outcomeMatch(token, in: after?.focusedElementRole ?? "") ||
                 Self.outcomeMatch(token, in: after?.focusedElementId ?? "") ||
-                (token.contains("submit") && after?.focusedElementId?.lowercased().contains("submit") == true) ||
+                (token.contains("submit") && after?.focusedElementId?.lowercased().contains("submit") == true)
+            }
+            let kindMatch = !kindIsEvidence && expectedTokens.contains { token in
                 (token.contains("button") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
                 (token.contains("ボタン") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
                 (token.contains("入力") && (after?.focusedElementRole?.lowercased().contains("textfield") == true || after?.focusedElementRole?.lowercased().contains("text") == true))
@@ -606,13 +612,15 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             if expectsFocus || roleMatch {
                 matchedSignals.append("focus_changed_to_\(after?.focusedElementRole ?? "element")")
                 matchScore += (roleMatch && expectsFocus) ? 0.60 : 0.45
+            } else if kindMatch {
+                matchedSignals.append("focus_changed_to_kind_\(after?.focusedElementRole ?? "element")")
             }
         }
 
         // 3. Window title / app navigation matching
         if titleChanged, let rawTitle = after?.windowTitle {
             let newTitle = rawTitle.lowercased()
-            let matchingTitleTokens = expectedTokens.filter { token in
+            let matchingTitleTokens = contentTokens.filter { token in
                 Self.outcomeMatch(token, in: rawTitle) || (newTitle.count >= 2 && Self.outcomeMatch(newTitle, in: token))
             }
             let directTitleMatch = newTitle.count >= 2 && Self.outcomeMatch(newTitle, in: lowerExpected)
@@ -633,18 +641,16 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             let label = added.label.lowercased()
             let role = added.role.lowercased()
             let id = added.id.lowercased()
-            let matchedWord = expectedTokens.first { token in
+            let matchedWord = contentTokens.first { token in
                 Self.outcomeMatch(token, in: added.label) ||
                 (label.count >= 2 && Self.outcomeMatch(label, in: token)) ||
                 Self.outcomeMatch(token, in: added.role) ||
                 Self.outcomeMatch(token, in: added.id) ||
                 (id.count >= 2 && Self.outcomeMatch(id, in: token)) ||
                 (label.count >= 2 && Self.outcomeMatch(label, in: lowerExpected)) ||
-                (token.contains("dialog") && (id.contains("dialog") || role.contains("window"))) ||
+                (kindIsEvidence && Self.addedKindMatch(token, role: role, id: id, label: label)) ||
                 (token.contains("confirm") && (id.contains("confirm") || label.contains("proceed") || label.contains("sure"))) ||
-                (token.contains("ダイアログ") && (id.contains("dialog") || role.contains("window") || label.contains("ダイアログ"))) ||
                 (token.contains("確認") && (id.contains("confirm") || label.contains("確認") || label.contains("proceed") || label.contains("sure"))) ||
-                (token.contains("ボタン") && (role.contains("button") || id.contains("btn") || label.contains("ボタン"))) ||
                 (token.contains("閉じる") && (id.contains("close") || label.contains("閉じる"))) ||
                 (token.contains("保存") && (id.contains("save") || label.contains("保存")))
             }
@@ -659,11 +665,20 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
                 break
             }
         }
+        if !kindIsEvidence, !matchedSignals.contains(where: { $0.hasPrefix("element_added_") }),
+           let added = addedElements.first(where: { added in
+               expectedTokens.contains { token in
+                   Self.outcomeMatch(token, in: added.role) || Self.outcomeMatch(token, in: added.id) ||
+                   Self.addedKindMatch(token, role: added.role.lowercased(), id: added.id.lowercased(), label: added.label.lowercased())
+               }
+           }) {
+            matchedSignals.append("element_added_kind_\(added.role)")
+        }
 
         // 5. Modified elements matching (typed text, updated value, toggled state)
         for mod in modifiedElements {
             if let val = mod.newValue?.lowercased(), !val.isEmpty {
-                let matchingVal = expectedTokens.first { token in
+                let matchingVal = contentTokens.first { token in
                     Self.outcomeMatch(token, in: val) || (val.count >= 2 && Self.outcomeMatch(val, in: token)) ||
                     (val.count >= 2 && Self.outcomeMatch(val, in: lowerExpected))
                 }
@@ -680,7 +695,7 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             }
             if mod.labelChanged {
                 let newLabel = mod.newLabel.lowercased()
-                let matchingLabel = expectedTokens.first { token in
+                let matchingLabel = contentTokens.first { token in
                     Self.outcomeMatch(token, in: mod.newLabel) || (newLabel.count >= 2 && Self.outcomeMatch(newLabel, in: token)) ||
                     (newLabel.count >= 2 && Self.outcomeMatch(newLabel, in: lowerExpected))
                 }
@@ -810,6 +825,45 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
     private static let outcomeStopWords: Set<String> = [
         "to", "the", "an", "of", "in", "on", "at", "is", "be", "or", "and", "for", "with", "by",
         "as", "it", "its", "from", "into", "onto", "that", "this", "then", "are", "was", "will", "should"
+    ]
+
+    private static func addedKindMatch(_ token: String, role: String, id: String, label: String) -> Bool {
+        (token.contains("dialog") && (id.contains("dialog") || role.contains("window"))) ||
+        (token.contains("ダイアログ") && (id.contains("dialog") || role.contains("window") || label.contains("ダイアログ"))) ||
+        (token.contains("ボタン") && (role.contains("button") || id.contains("btn") || label.contains("ボタン")))
+    }
+
+    /// Whether the outcome says which element of a kind it means — a word directly before the kind word,
+    /// as in "Save button" or "保存ボタン" — rather than only the kind, as in "a dialog appears".
+    static func outcomeNamesKind(_ lowerExpected: String) -> Bool {
+        let words = lowerExpected.split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) }).map(String.init)
+        for (i, word) in words.enumerated().dropFirst() where outcomeKindWords.contains(word) {
+            let previous = words[i - 1]
+            if previous.count >= 2, !outcomeStopWords.contains(previous), !outcomeKindWords.contains(previous),
+               !outcomeDeterminers.contains(previous) { return true }
+        }
+        for kind in outcomeKindWords where !kind.unicodeScalars.allSatisfy(\.isASCII) {
+            var searchStart = lowerExpected.startIndex
+            while let range = lowerExpected.range(of: kind, range: searchStart..<lowerExpected.endIndex) {
+                // A kanji, katakana or Latin word right before it qualifies it; a hiragana particle does not.
+                if range.lowerBound > lowerExpected.startIndex {
+                    let previous = lowerExpected[lowerExpected.index(before: range.lowerBound)]
+                    let isHiragana = previous.unicodeScalars.first.map { (0x3040...0x309F).contains($0.value) } ?? false
+                    if (previous.isLetter || previous.isNumber) && !isHiragana { return true }
+                }
+                searchStart = range.upperBound
+            }
+        }
+        return false
+    }
+
+    private static let outcomeDeterminers: Set<String> = ["new", "another", "any", "some", "each", "every", "first", "next"]
+
+    /// Words that name a kind of element rather than which one.
+    private static let outcomeKindWords: Set<String> = [
+        "button", "buttons", "btn", "dialog", "window", "page", "screen", "field", "textfield", "menu",
+        "item", "tab", "link", "icon", "view", "panel", "popup", "modal", "sheet", "alert", "list", "element",
+        "ボタン", "ダイアログ", "ウィンドウ", "画面", "ページ", "フィールド", "メニュー", "タブ", "リンク", "アイコン"
     ]
 
     /// Whether `needle` occurs in `haystack`. A Latin needle must be a whole word of `haystack`, so "to"

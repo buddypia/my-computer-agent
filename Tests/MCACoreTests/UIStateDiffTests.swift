@@ -536,6 +536,57 @@ struct UIStateDiffTests {
         #expect(outcome("Open GitHub", title: "GitHub - Pull requests").isVerified)
     }
 
+    @Test("A kind of element alone is not evidence: 'button', 'page' or 'dialog' match any of their kind")
+    func testKindWordsAloneDoNotVerify() {
+        let cancel = button("cancel", "Cancel")
+        let discard = UIElementCandidate(id: "dialog_discard", role: "AXWindow", label: "Discard changes?",
+                                         bounds: CGRect(x: 10, y: 60, width: 300, height: 200))
+        #expect(!outcome("Click the Save button", added: [cancel]).isVerified)
+        #expect(!outcome("保存ボタンが表示される", added: [cancel]).isVerified)
+        #expect(!outcome("Settings page opens", title: "Home page").isVerified)
+        #expect(!outcome("Save dialog appears", added: [discard]).isVerified)
+        // Still a partial match, so the loop keeps trying rather than treating the step as a miss.
+        #expect(outcome("Click the Save button", added: [cancel]).status == .indeterminate)
+        // The specific word decides; the kind word next to it neither helps nor hurts.
+        #expect(outcome("Click the Save button", added: [button("save", "Save")]).isVerified)
+        #expect(outcome("保存ボタンが表示される", added: [button("save", "保存")]).isVerified)
+    }
+
+    @Test("An outcome that names only a kind still verifies on an element of that kind")
+    func testKindOnlyOutcomeStillVerifies() {
+        let window = UIElementCandidate(id: "w1", role: "AXWindow", label: "", bounds: CGRect(x: 10, y: 60, width: 300, height: 200))
+        #expect(outcome("A dialog appears", added: [window]).isVerified)
+        #expect(outcome("A new dialog appears", added: [window]).isVerified)
+        #expect(outcome("ダイアログが表示される", added: [window]).isVerified)
+        #expect(outcome("modal appears", added: [button("btn_confirm", "Confirm Modal")]).isVerified)
+    }
+
+    @Test("outcomeNamesKind: a word directly before the kind word names it, an article or particle does not")
+    func testOutcomeNamesKind() {
+        #expect(UIStateDiff.outcomeNamesKind("click the save button"))
+        #expect(UIStateDiff.outcomeNamesKind("settings page opens"))
+        #expect(UIStateDiff.outcomeNamesKind("保存ボタンを押す"))
+        #expect(UIStateDiff.outcomeNamesKind("確認ダイアログが表示される"))
+        #expect(!UIStateDiff.outcomeNamesKind("a dialog appears"))
+        #expect(!UIStateDiff.outcomeNamesKind("the new window opens"))
+        #expect(!UIStateDiff.outcomeNamesKind("modal appears"))
+        #expect(!UIStateDiff.outcomeNamesKind("ダイアログが表示される"))
+        #expect(!UIStateDiff.outcomeNamesKind("画面にダイアログが出る"))
+    }
+
+    @Test("Focus on an element of the expected kind but the wrong name is not verified")
+    func testFocusKindWordAloneDoesNotVerify() {
+        func focus(_ id: String) -> UIStateSnapshot {
+            UIStateSnapshot(windowTitle: "Form", appBundleId: "com.example", appName: "Example", focusedElementId: id,
+                            focusedElementRole: "AXButton", focusedElementBounds: nil, visibleCandidates: [],
+                            timestamp: Date(timeIntervalSince1970: 1700000000), frameHash: id)
+        }
+        let diff = UIStateDiff.compute(before: focus("name"), after: focus("cancel"))
+        #expect(!diff.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
+        let hit = UIStateDiff.compute(before: focus("name"), after: focus("save"))
+        #expect(hit.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
+    }
+
     @Test("outcomeMatch splits camelCase and the AX role prefix into words")
     func testOutcomeMatchWordSplitting() {
         #expect(UIStateDiff.outcomeMatch("button", in: "AXButton"))
