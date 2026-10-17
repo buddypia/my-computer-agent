@@ -645,8 +645,14 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         // 4. Added elements matching (appearance / dialog / popup / window)
         for added in addedElements {
-            // AccessibilityInspector falls back to the role for an unlabelled element; a role is not a name.
-            let nameLabel = (kindIsEvidence || added.label != added.role) ? added.label : ""
+            // AccessibilityInspector falls back to the role for an unlabelled element; a role is not a name,
+            // and neither is a label that only restates the element's own kind ("Menu" on AXMenuButton).
+            // A kind word naming another kind stays a name: "View" on AXMenu.
+            let lowerLabel = added.label.lowercased()
+            let labelIsKind = added.label == added.role || (Self.outcomeKindWords.contains(lowerLabel) && (
+                Self.outcomeMatch(lowerLabel, in: added.role) ||
+                Self.addedKindMatch(lowerLabel, role: added.role.lowercased(), id: "", label: "")))
+            let nameLabel = (kindIsEvidence || !labelIsKind) ? added.label : ""
             let label = nameLabel.lowercased()
             let role = added.role.lowercased()
             let id = added.id.lowercased()
@@ -843,28 +849,53 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
     }
 
     /// Whether the outcome marks a name explicitly: a capitalised word after the start of a sentence
-    /// ("Click the Save button", "Sign In button appears") or a quoted span ("「保存」ボタン", "'Save'").
+    /// ("Click the Save button", "Sign In button appears"), a Latin capitalised word inside Japanese
+    /// ("Saveボタン"), or a quoted span ("「保存」ボタン", "'Save'").
     static func outcomeMarksName(_ expected: String) -> Bool {
-        if expected.contains(where: { "\"“”‘’「」『』".contains($0) }) { return true }
-        if expected.range(of: #"(^|\s)'[^']+'(\s|$|[.,!?])"#, options: .regularExpression) != nil { return true }
-        // A sentence starts after . ! ? : 。 and after a bullet or number such as "-" or "1.".
-        let words = expected.split(whereSeparator: \.isWhitespace)
-        for (previous, word) in zip(words, words.dropFirst()) {
-            let previousEndsSentence = previous.last.map { ".!?:。".contains($0) } ?? false
-            let previousIsMarker = !previous.contains(where: \.isLetter)
-            if let first = word.first, first.isASCII, first.isUppercase, !previousEndsSentence, !previousIsMarker {
-                return true
+        for (open, close) in outcomeQuotePairs {
+            // An empty pair ("") quotes nothing, so keep looking past it.
+            var rest = expected[...]
+            while let start = rest.firstIndex(of: open) {
+                let inner = rest[rest.index(after: start)...]
+                guard let end = inner.firstIndex(of: close) else { break }
+                if end > inner.startIndex { return true }
+                rest = rest[rest.index(after: end)...]
+            }
+        }
+        // A straight ' quotes only from a word start to a word end, so "Bob's" and "don't" quote nothing.
+        if expected.range(of: #"(^|[^\p{L}\p{N}])'[^'\s][^']*'([^A-Za-z0-9]|$)"#, options: .regularExpression) != nil { return true }
+        // Japanese and Korean do not capitalise, so a capitalised Latin word touching their letters is a
+        // name wherever it stands. Other non-ASCII (no-break space, …, é) says nothing.
+        let cjk = #"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]"#
+        if expected.range(of: "\(cjk)[A-Z][A-Za-z]+|[A-Z][A-Za-z]+\(cjk)", options: .regularExpression) != nil {
+            return true
+        }
+        // A sentence starts on a new line, after . ! ? : 。 and after a bullet or number such as "-" or "1.".
+        for line in expected.split(whereSeparator: \.isNewline) {
+            let words = line.split(whereSeparator: \.isWhitespace)
+            for (previous, word) in zip(words, words.dropFirst()) {
+                let previousEndsSentence = previous.last.map { ".!?:。".contains($0) } ?? false
+                let previousIsMarker = !previous.contains(where: \.isLetter)
+                if let first = word.first, first.isASCII, first.isUppercase, !previousEndsSentence, !previousIsMarker {
+                    return true
+                }
             }
         }
         return false
     }
+
+    /// Opening and closing marks of a quoted span. A lone ’ is an apostrophe ("don’t"), so it needs its ‘.
+    private static let outcomeQuotePairs: [(Character, Character)] = [
+        ("\"", "\""), ("“", "”"), ("‘", "’"), ("「", "」"), ("『", "』"), ("【", "】"), ("«", "»")
+    ]
 
     /// Words that name a kind of element rather than which one.
     private static let outcomeKindWords: Set<String> = [
         "button", "buttons", "btn", "dialog", "dialogs", "window", "windows", "page", "pages", "screen", "field",
         "fields", "textfield", "menu", "menus", "item", "items", "tab", "tabs", "link", "links", "icon", "view",
         "panel", "popup", "popover", "modal", "sheet", "alert", "list", "element", "checkbox", "toggle", "toolbar",
-        "radio", "image", "row", "cell", "table", "option", "input", "slider", "switch", "group",
+        "radio", "image", "row", "cell", "table", "option", "input", "slider", "switch", "group", "dropdown",
+        "combo", "combobox", "picker", "sidebar", "banner",
         "ボタン", "ダイアログ", "ウィンドウ", "画面", "ページ", "フィールド", "メニュー", "タブ", "リンク", "アイコン"
     ]
 

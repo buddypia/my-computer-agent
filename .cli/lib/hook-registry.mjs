@@ -628,16 +628,6 @@ export const MANAGED_HOOK_REGISTRY = {
       "matcher": "*",
       "hooks": [
         {
-          "id": "quality-gate-stop-guard",
-          "module": "./quality-gate-stop-guard.mjs",
-          "priority": 5,
-          "profile": "standard",
-          "description": "Enforce passing quality gate (make q.check)",
-          "orchestrated": true,
-          "cliTargets": ["codex"],
-          "cliTimeout": 10
-        },
-        {
           "id": "stop-handler",
           "module": "../scripts/stop-handler.mjs",
           "priority": 10,

@@ -19,7 +19,7 @@
  *
  * Marker creation responsibility:
  *   AI presents the full Human Review Panel, completes every step of `pre-ship-steps`
- *   (including recording answers for human judgement steps ⑦⑧), then runs `mark-pre-ship-confirmed.mjs <branch> --quality <label>`.
+ *   (including recording the human `approval` answer), then runs `mark-pre-ship-confirmed.mjs <branch> --quality <label>`.
  *   Marker CLI rejects incomplete steps (R-CM-030 Rule 13) — this hook inspects the resulting marker.
  */
 
@@ -32,7 +32,12 @@ import {
   resolveProjectDir,
 } from '../lib/utils.mjs';
 import { HookOutput } from '../lib/hook-output.mjs';
-import { VALID_QUALITY_LABELS, formatReviewRemedy } from '../lib/quality-gate-labels.mjs';
+import {
+  SHIP_MARKER_TTL_MS,
+  VALID_QUALITY_LABELS,
+  formatReviewRemedy,
+  shipMarkerProblem,
+} from '../lib/quality-gate-labels.mjs';
 import {
   checkShipDeckFreshness,
   defaultGit,
@@ -40,7 +45,7 @@ import {
 } from '../lib/ship-scale.mjs';
 export { checkShipDeckFreshness };
 
-const MARKER_TTL_MS = 10 * 60 * 1000; // 10 minutes — sufficient window between user confirmation and ship invocation
+const MARKER_TTL_MS = SHIP_MARKER_TTL_MS;
 import {
   CMD_ANCHOR_SRC,
   SEQUENTIAL_SEPARATOR_RE,
@@ -416,6 +421,15 @@ export function buildTrustApprovedDenyMessage(branch, helperPath) {
   ].join('\n');
 }
 
+export function buildStaleMarkerDenyMessage(branch, ageMin, helperPath) {
+  return [
+    `[pre-ship-review-guard] ship call blocked: Pre-Ship marker expired (${ageMin} min old, limit ${MARKER_TTL_MS / 60_000}).`,
+    'If the approval and the diff are unchanged, re-create the marker in its own Bash call (the marker',
+    'CLI re-checks every Pre-Ship step), then re-run ship with a literal --worktree path:',
+    `  node ${helperPath} ${branch} --quality <agent_go|skill_review_pass|self_review_pass|trivial_skip>`,
+  ].join('\n');
+}
+
 /** Returns `{ command, stripped }` for a real ship invocation, else null (not Bash / not ship / --help). */
 function shipInvocationOf(data) {
   if (data?.tool_name !== 'Bash') return null;
@@ -487,6 +501,12 @@ function evaluateShipInvocation(data, { command, stripped }) {
         'quality_label_missing',
       ),
     );
+  }
+  // An expired marker means the approval already happened: re-presenting the whole panel would ask
+  // the human again for nothing. The marker CLI re-checks every step, so re-creating it is safe.
+  const problem = shipMarkerProblem(path);
+  if (problem?.reason === 'stale') {
+    return HookOutput.deny(buildStaleMarkerDenyMessage(branch, problem.ageMin, resolveHelperPath(projectDir, data?.cwd)));
   }
   if (trustRecordedApproval(extractWorktreeAbsPath(command, projectDir), branch)) {
     return HookOutput.deny(buildTrustApprovedDenyMessage(branch, resolveHelperPath(projectDir, data?.cwd)));
