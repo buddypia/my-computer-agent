@@ -1,6 +1,6 @@
 /**
- * ship-worktree itself, retried over the base merge its stopped attempt left: it gets past the
- * up-front PROOF check when CI gates the merge, and refuses a dirty tree before anything else.
+ * ship-worktree itself, retried over the base merge its stopped attempt left: it refuses a dirty tree
+ * before anything else.
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -43,15 +43,10 @@ before(() => {
   wt = join(root, '.worktrees', branch);
   git(root, 'worktree', 'add', '-q', '-b', branch, wt, 'main');
   commit(wt, '.github/workflows/ci.yml', 'on: push\n');
-  const certified = commit(wt, 'feature.txt');
+  commit(wt, 'feature.txt');
   const state = join(wt, '.tmp', `worktree-${branch.replace('/', '__')}`);
   mkdirSync(state, { recursive: true });
   writeFileSync(join(state, 'PLAN.md'), '# PLAN\n- [x] done\n');
-  writeFileSync(join(state, 'quality-gate.json'), JSON.stringify({
-    verdict: 'go', quality_label: 'agent_go', head_sha: certified, branch,
-    recorded_at: new Date().toISOString(),
-    gates: [{ name: 'gate', status: 'pass', detail: 'PASS' }],
-  }));
   // The stopped attempt: main moved, ship merged it, then failed later. Only the base moved.
   commit(root, 'base.txt');
   git(root, 'update-ref', 'refs/remotes/origin/main', 'main');
@@ -63,15 +58,9 @@ before(() => {
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
-test('a retry over the leftover merge gets past the PROOF check when CI gates the merge', () => {
-  const out = ship();
-  assert.doesNotMatch(out, /PROOF is stale/);
-  assert.match(out, /Only the base moved past the PROOF/); // reached the check, and passed it
-});
-
-test('a dirty tree is refused before the PROOF check', () => {
-  rmSync(join(wt, '.github'), { recursive: true }); // dirty, and no longer CI-gated
+test('a dirty tree is refused before anything else', () => {
+  rmSync(join(wt, '.github'), { recursive: true });
   const out = ship();
   assert.match(out, /uncommitted changes/);
-  assert.doesNotMatch(out, /PROOF is stale/);
+  assert.doesNotMatch(out, /stale/);
 });

@@ -35,9 +35,9 @@ struct CancellableToolProcessTests {
     @Test("Timeout and cancellation finish within their wall-clock budget")
     func processTerminationPromptnessIsolated() async throws {
         let descendant = try await CancellableToolProcess.run(executable: "/bin/sh",
-            arguments: ["-c", "sleep 1; printf late"], timeout: 0.1)
+            arguments: ["-c", "sleep 5; printf late"], timeout: 0.1)
         let resistant = try await CancellableToolProcess.run(executable: "/bin/sh",
-            arguments: ["-c", "trap '' TERM; sleep 1"], timeout: 0.1)
+            arguments: ["-c", "trap '' TERM; sleep 5"], timeout: 0.1)
         let started = AsyncStream<Void>.makeStream()
         let clock = ContinuousClock(), begin = ContinuousClock.now
         let task = Task {
@@ -49,7 +49,9 @@ struct CancellableToolProcessTests {
         await #expect(throws: CancellationError.self) { try await task.value }
         let cancelElapsed = clock.now - begin
         #expect(descendant.timedOut && resistant.timedOut)
-        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(700) : .seconds(10)
+        // TERM, a 0.25 s grace, then KILL: about 0.35 s. A missed escalation runs the 5 s sleep out and a
+        // grace stretched to 1 s lands past the budget, while a stalled CI VM (0.72 s observed) stays under.
+        let supervisorBudget: Duration = IsolatedTiming.enabled ? .milliseconds(1000) : .seconds(10)
         let cancelBudget: Duration = IsolatedTiming.enabled ? .seconds(3) : .seconds(10)
         #expect(descendant.supervisorElapsed < supervisorBudget)
         #expect(resistant.supervisorElapsed < supervisorBudget)

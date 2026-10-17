@@ -7,9 +7,8 @@
  *       against `main` while `ops.mjs#assertApprovalFreshAfterBaseMerge` compared against the
  *       configured base, so on any project whose base is not `main` the two sides measured
  *       different diffs and every ship reported "Pre-Ship human approval is stale". The only way
- *       past was `--force-quality-gate`, which also disables `assertQualityGateNotNoGo` and
- *       `assertQualityGateFreshAfterBaseMerge` — a false alarm that trains operators to silence two
- *       checks that were never wrong. Reproduced on a transplant target shipping onto `develop`:
+ *       past was an override flag (since removed) — a false alarm that trains operators to silence a
+ *       check that was never wrong. Reproduced on a transplant target shipping onto `develop`:
  *       the contributed diff was byte-identical before and after the base
  *       merge, yet the marker carried the `origin/main` id and the ship refused.
  *   (b) Existing gap: no module owned this value, so each caller re-derived it.
