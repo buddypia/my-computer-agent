@@ -1433,8 +1433,11 @@ export function collectShipQualitySnapshot({
     /* Scale determination failure */
   }
   const { quality_label, proof_path } = readProofLabel(absWtPath);
+  const { quality_gate, ...approval } = readMarkerApproval(absWtPath);
+  // PROOF is optional (the trust evaluator verifies the evidence it used to self-report), so the
+  // label the human confirmed on the marker stands in when there is none.
   // proof_path is not a ledger field — it only names where a null label was looked for.
-  return { scale, quality_label, milestone_deck: false, proof_path, ...readMarkerApproval(absWtPath) };
+  return { scale, quality_label: quality_label ?? quality_gate, milestone_deck: false, proof_path, ...approval };
 }
 
 /**
@@ -1477,9 +1480,13 @@ export function reconcileTrustLedger(absWtPath, branch, {
 function readMarkerApproval(absWtPath) {
   try {
     const marker = JSON.parse(readFileSync(shipReviewMarkerPath(absWtPath), 'utf-8'));
-    return { approval: marker?.approval_mode ?? null, risk_tier: marker?.risk_tier ?? null };
+    return {
+      approval: marker?.approval_mode ?? null,
+      risk_tier: marker?.risk_tier ?? null,
+      quality_gate: marker?.quality_gate ?? null,
+    };
   } catch {
-    return { approval: null, risk_tier: null };
+    return { approval: null, risk_tier: null, quality_gate: null };
   }
 }
 

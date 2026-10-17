@@ -21,7 +21,6 @@ import { writeJsonAtomicSync } from './atomic-fs.mjs';
 import { defaultGit, measureShipScale } from '../../../.cli/lib/ship-scale.mjs';
 import { resolveWorktreePlanPath } from '../../../.cli/lib/worktree-plan-path.mjs';
 import { parseUncheckedPlanItems } from '../../../.cli/lib/worktree-plan-status.mjs';
-import { parseObligationDecisions } from '../../../.cli/lib/plan-obligation.mjs';
 import { resolveShipBaseBranch } from '../../../.cli/lib/ship-base-branch.mjs';
 import {
   COUNTED_SCALES,
@@ -38,7 +37,6 @@ import {
 import { readQualityGateRecord, resolveHeadSha } from './worktree-quality-gate.mjs';
 import { APPROVAL_CHOICES, normalizeApproval } from '../../../.cli/lib/approval-vocabulary.mjs';
 import { loadReviewPanelConfig } from '../../../.cli/lib/worktree-ship-report.mjs';
-import { checkLabelEvidence } from '../../../.cli/lib/quality-gate-labels.mjs';
 
 export const STEP_STATUS = {
   OK: 'ok',
@@ -149,14 +147,6 @@ function resolveQuestion(def, ctx) {
   return def.question ?? null;
 }
 
-function formatCrossReviewEvidence(crossReview) {
-  if (!crossReview) return 'Cross-review skip streak undetermined';
-  if (!crossReview.counted) {
-    return `Cross-review skip streak not counted (Scale: ${crossReview.scale ?? 'undetermined'})`;
-  }
-  return `Cross-review skip streak: ${crossReview.streak} consecutive (including current ship)`;
-}
-
 export function resolveReviewDiffId(worktreeAbs, baseBranch, gitFn = defaultGit) {
   for (const ref of [`origin/${baseBranch}`, baseBranch]) {
     try {
@@ -225,43 +215,6 @@ export const PRE_SHIP_STEPS = [
           evidence: `${unchecked.length} unchecked items: ${unchecked.slice(0, 3).map((s) => s.trim()).join(' | ')}`,
           remedy: 'Mark completed items with [x], or append (dropped: reason) to non-applicable items',
         };
-  }),
-
-  machine('quality-gate-proof', 'Quality Gate verdict proof is recorded for current HEAD', (ctx) => {
-    const rec = ctx.readQualityFn(ctx.worktreeAbs, ctx.branch);
-    if (!rec?.record) {
-      const dropped = ctx.obligations?.get('quality-gate-proof');
-      return {
-        status: STEP_STATUS.BLOCKED,
-        evidence: dropped?.dropped
-          ? 'Exemption declared in PLAN but no PROOF record exists — declaration contradicts facts'
-          : 'quality-gate.json missing or corrupted',
-        remedy:
-          'Execute Quality Gate and record proof: node .claude/scripts/record-quality-gate.mjs <branch> --json ...',
-      };
-    }
-    const r = rec.record;
-    if (r.verdict !== 'go') {
-      return {
-        status: STEP_STATUS.BLOCKED,
-        evidence: `verdict=${r.verdict}`,
-        remedy: 'Fix issues and re-record Quality Gate verdict (R-CM-030 Rule 9)',
-      };
-    }
-    if (r.head_sha && ctx.headSha && r.head_sha !== ctx.headSha) {
-      return {
-        status: STEP_STATUS.BLOCKED,
-        evidence: `stale — recorded at ${String(r.head_sha).slice(0, 8)} ≠ current HEAD ${String(ctx.headSha).slice(0, 8)}`,
-        remedy: 'New commits added since recording. Re-run verification and record PROOF again',
-      };
-    }
-    const gates = Array.isArray(r.gates) ? r.gates : [];
-    return {
-      status: STEP_STATUS.OK,
-      evidence:
-        `verdict=go, label=${r.quality_label ?? '(none)'}, gates=${gates.length}, head match` +
-        `, ${formatCrossReviewEvidence(ctx.crossReview)}`,
-    };
   }),
 
   human(
@@ -340,21 +293,6 @@ function measureScaleSafely(worktreeAbs, gitFn) {
     return measureShipScale(worktreeAbs, gitFn);
   } catch {
     return null;
-  }
-}
-
-export function evidencedProofLabel(record) {
-  const label = record?.quality_label ?? null;
-  return label && checkLabelEvidence(label, record.gates).satisfied ? label : null;
-}
-
-function readObligationDecisions(worktreeAbs, branch, existsFn, readFn) {
-  try {
-    const planPath = resolveWorktreePlanPath(worktreeAbs, branch);
-    if (!existsFn(planPath)) return new Map();
-    return parseObligationDecisions(readFn(planPath, 'utf-8'));
-  } catch {
-    return new Map();
   }
 }
 
@@ -474,7 +412,6 @@ function buildStepContext({
     scale: null,
     crossReview: null,
     autoApproval: null,
-    obligations: readObligationDecisions(worktreeAbs, branch, existsFn, readFn),
     ...projectSettings(projectDir, settings),
   };
   ctx.scale = measureScaleSafely(worktreeAbs, gitFn);

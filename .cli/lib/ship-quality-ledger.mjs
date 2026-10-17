@@ -34,7 +34,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolveSystemFile } from './layout-resolver.mjs';
 import {
-  ADVERSARIAL_REVIEW_MARKER,
   TRIVIAL_SKIP_LIMITS,
   formatReviewRemedy,
 } from './quality-gate-labels.mjs';
@@ -471,10 +470,8 @@ export function formatCurrentShipNote(record, { proofPath = null } = {}) {
   if (record.quality_label === null || record.quality_label === undefined) {
     return (
       `This ship was recorded with quality_label=null: no label was found in the PROOF` +
-      `${proofPath ? ` (${proofPath})` : ''}, so it counts as a skipped secondary review whether or not ` +
-      `one ran. Before the next ship, record the review in PROOF gates[] via ` +
-      `\`node .claude/scripts/record-quality-gate.mjs\` (a review by any agent counts when its gate is ` +
-      `named \`${ADVERSARIAL_REVIEW_MARKER}\`) and confirm with \`mark-pre-ship-confirmed.mjs --quality <label>\`.`
+      `${proofPath ? ` (${proofPath})` : ''} or on the Pre-Ship marker, so it counts as a skipped secondary ` +
+      `review whether or not one ran. Confirm the review with \`mark-pre-ship-confirmed.mjs --quality <label>\`.`
     );
   }
   if (record.quality_label === 'trivial_skip') {
