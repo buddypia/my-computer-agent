@@ -642,11 +642,13 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         // 4. Added elements matching (appearance / dialog / popup / window)
         for added in addedElements {
-            let label = added.label.lowercased()
+            // AccessibilityInspector falls back to the role for an unlabelled element; a role is not a name.
+            let nameLabel = (kindIsEvidence || added.label != added.role) ? added.label : ""
+            let label = nameLabel.lowercased()
             let role = added.role.lowercased()
             let id = added.id.lowercased()
             let matchedWord = contentTokens.first { token in
-                Self.outcomeMatch(token, in: added.label) ||
+                Self.outcomeMatch(token, in: nameLabel) ||
                 (label.count >= 2 && Self.outcomeMatch(label, in: token)) ||
                 (kindIsEvidence && Self.outcomeMatch(token, in: added.role)) ||
                 Self.outcomeMatch(token, in: added.id) ||
@@ -859,6 +861,7 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
         "button", "buttons", "btn", "dialog", "dialogs", "window", "windows", "page", "pages", "screen", "field",
         "fields", "textfield", "menu", "menus", "item", "items", "tab", "tabs", "link", "links", "icon", "view",
         "panel", "popup", "popover", "modal", "sheet", "alert", "list", "element", "checkbox", "toggle", "toolbar",
+        "radio", "image", "row", "cell", "table", "option", "input", "slider", "switch", "group",
         "ボタン", "ダイアログ", "ウィンドウ", "画面", "ページ", "フィールド", "メニュー", "タブ", "リンク", "アイコン"
     ]
 

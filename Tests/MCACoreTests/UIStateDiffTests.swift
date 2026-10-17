@@ -549,6 +549,12 @@ struct UIStateDiffTests {
         #expect(!outcome("The Save dialog appears", added: [discard]).isVerified)
         let radio = UIElementCandidate(id: "r1", role: "AXRadioButton", label: "Light", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
         #expect(!outcome("The Dark radio is selected", added: [radio]).isVerified)
+        let unlabelled = UIElementCandidate(id: "r2", role: "AXRadioButton", label: "AXRadioButton", bounds: CGRect(x: 10, y: 90, width: 80, height: 20))
+        #expect(!outcome("Select the Dark radio", added: [unlabelled]).isVerified)
+        // The inspector labels an unlabelled element with its role, which names no element either.
+        let triangle = UIElementCandidate(id: "t1", role: "AXDisclosureTriangle", label: "AXDisclosureTriangle",
+                                          bounds: CGRect(x: 10, y: 120, width: 20, height: 20))
+        #expect(!outcome("Expand the Details disclosure triangle", added: [triangle]).isVerified)
         // Still a partial match, so the loop keeps trying rather than treating the step as a miss.
         #expect(outcome("Click the Save button", added: [cancel]).status == .indeterminate)
         // The specific word decides; the kind word next to it neither helps nor hurts.
