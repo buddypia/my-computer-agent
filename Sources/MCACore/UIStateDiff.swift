@@ -599,15 +599,15 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
 
         // 2. Focus change matching
         if focusChanged {
-            let roleMatch = contentTokens.contains { token in
+            let kindMatch = expectedTokens.contains { token in
                 Self.outcomeMatch(token, in: after?.focusedElementRole ?? "") ||
-                Self.outcomeMatch(token, in: after?.focusedElementId ?? "") ||
-                (token.contains("submit") && after?.focusedElementId?.lowercased().contains("submit") == true)
-            }
-            let kindMatch = !kindIsEvidence && expectedTokens.contains { token in
                 (token.contains("button") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
                 (token.contains("ボタン") && after?.focusedElementRole?.lowercased().contains("button") == true) ||
                 (token.contains("入力") && (after?.focusedElementRole?.lowercased().contains("textfield") == true || after?.focusedElementRole?.lowercased().contains("text") == true))
+            }
+            let roleMatch = (kindIsEvidence && kindMatch) || contentTokens.contains { token in
+                Self.outcomeMatch(token, in: after?.focusedElementId ?? "") ||
+                (token.contains("submit") && after?.focusedElementId?.lowercased().contains("submit") == true)
             }
             let focusKeywords = ["focus", "focused", "active", "cursor", "selected", "shifts", "shift", "フォーカス", "アクティブ", "選択"]
             let expectsFocus = expectedTokens.contains { focusKeywords.contains($0) } ||
@@ -648,7 +648,7 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
             let matchedWord = contentTokens.first { token in
                 Self.outcomeMatch(token, in: added.label) ||
                 (label.count >= 2 && Self.outcomeMatch(label, in: token)) ||
-                Self.outcomeMatch(token, in: added.role) ||
+                (kindIsEvidence && Self.outcomeMatch(token, in: added.role)) ||
                 Self.outcomeMatch(token, in: added.id) ||
                 (id.count >= 2 && Self.outcomeMatch(id, in: token)) ||
                 (label.count >= 2 && Self.outcomeMatch(label, in: lowerExpected)) ||
@@ -840,11 +840,14 @@ public struct UIStateDiff: Sendable, Codable, Equatable {
     /// Whether the outcome marks a name explicitly: a capitalised word after the start of a sentence
     /// ("Click the Save button", "Sign In button appears") or a quoted span ("「保存」ボタン", "'Save'").
     static func outcomeMarksName(_ expected: String) -> Bool {
-        if expected.contains(where: { "\"“”「」『』".contains($0) }) { return true }
+        if expected.contains(where: { "\"“”‘’「」『』".contains($0) }) { return true }
         if expected.range(of: #"(^|\s)'[^']+'(\s|$|[.,!?])"#, options: .regularExpression) != nil { return true }
+        // A sentence starts after . ! ? : 。 and after a bullet or number such as "-" or "1.".
         let words = expected.split(whereSeparator: \.isWhitespace)
         for (previous, word) in zip(words, words.dropFirst()) {
-            if let first = word.first, first.isASCII, first.isUppercase, !(previous.last.map { ".!?:".contains($0) } ?? false) {
+            let previousEndsSentence = previous.last.map { ".!?:。".contains($0) } ?? false
+            let previousIsMarker = !previous.contains(where: \.isLetter)
+            if let first = word.first, first.isASCII, first.isUppercase, !previousEndsSentence, !previousIsMarker {
                 return true
             }
         }

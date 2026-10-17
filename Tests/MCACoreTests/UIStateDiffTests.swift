@@ -547,6 +547,8 @@ struct UIStateDiffTests {
         #expect(!outcome("Sign In button appears", added: [cancel]).isVerified)
         #expect(!outcome("Open the Settings page", title: "Home page").isVerified)
         #expect(!outcome("The Save dialog appears", added: [discard]).isVerified)
+        let radio = UIElementCandidate(id: "r1", role: "AXRadioButton", label: "Light", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
+        #expect(!outcome("The Dark radio is selected", added: [radio]).isVerified)
         // Still a partial match, so the loop keeps trying rather than treating the step as a miss.
         #expect(outcome("Click the Save button", added: [cancel]).status == .indeterminate)
         // The specific word decides; the kind word next to it neither helps nor hurts.
@@ -579,6 +581,9 @@ struct UIStateDiffTests {
         #expect(!UIStateDiff.outcomeMarksName("Don't close the dialog. Wait until it isn't busy"))
         #expect(!UIStateDiff.outcomeMarksName("Typed text. Dialog appears"))
         #expect(!UIStateDiff.outcomeMarksName("保存ボタンを押す"))
+        #expect(!UIStateDiff.outcomeMarksName("- Dialog appears"))
+        #expect(!UIStateDiff.outcomeMarksName("1. Dialog appears"))
+        #expect(UIStateDiff.outcomeMarksName("Click ‘Save’ button"))
     }
 
     @Test("Focus on an element of the expected kind but the wrong name is not verified")
@@ -592,6 +597,8 @@ struct UIStateDiffTests {
         #expect(!diff.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
         let hit = UIStateDiff.compute(before: focus("name"), after: focus("save"))
         #expect(hit.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
+        // Without a marked name the kind still verifies, as before.
+        #expect(diff.verifyOutcome(expected: "ボタンにフォーカスが移る").isVerified)
     }
 
     @Test("outcomeMatch splits camelCase and the AX role prefix into words")
