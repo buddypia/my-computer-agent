@@ -23,3 +23,5 @@
 {"at":"2026-10-17T04:34:13.531Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 2: key verb must be adjacent to the key"}
 {"at":"2026-10-17T04:41:38.746Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 3: press the commanded key"}
 {"at":"2026-10-17T04:49:33.681Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 4: keep chords, ignore quoted names"}
+{"at":"2026-10-17T08:02:26.108Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"PR3: #47 LOW5/6/8 key-directive cleanup"}
+{"at":"2026-10-17T15:37:44.396Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"PR3: review fixes (ASCII quote edges, multiline, no tap/hit arrows)"}
