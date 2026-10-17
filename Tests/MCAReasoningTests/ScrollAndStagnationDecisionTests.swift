@@ -659,4 +659,77 @@ struct ScrollAndStagnationDecisionTests {
         #expect(decision.confidence < 0.80)
         #expect(!decision.isCompleted)
     }
+
+    // MARK: - 4. Progress Versus Boundary
+
+    @Test("A scroll that keeps moving the screen is not stagnant even while the expected outcome is unverified")
+    func testMovingScrollWithUnverifiedOutcomeKeepsScrolling() {
+        let engine = TypeSafeDecisionEngine()
+        let candidates = makeContainerCandidates()
+        let moved = UIStateDiff(
+            titleChanged: false,
+            focusChanged: false,
+            addedElements: [makeCandidate(id: "post_9", role: "AXStaticText", label: "Post 9", isActionable: false)]
+        )
+        #expect(!moved.isStateUnchanged)
+        let notYet = StateVerificationResult(status: .unverified, confidence: 0.10, rationale: "Load more not visible yet")
+        let goal = "Scroll down the timeline feed until the Load more button"
+
+        // Before the fix, the second step switched to PageDown and the fourth concluded
+        // "page boundary reached", which the coordinator turned into an abort.
+        var history: [LoopStepRecord] = []
+        for step in 0..<5 {
+            let decision = engine.fallbackLocalDecision(
+                goal: goal,
+                candidates: candidates,
+                history: history,
+                lastDiff: history.isEmpty ? nil : moved
+            )
+            #expect(decision.action == .scroll, "step \(step) must keep scrolling while the screen moves")
+            #expect(!decision.isCompleted)
+            history.append(LoopStepRecord(stepNumber: step, subgoalId: "sg1", action: decision, verificationResult: notYet))
+        }
+    }
+
+    @Test("Every keyboard navigation key counts as already tried, so the next unchanged scroll concludes")
+    func testEachNavigationKeyCountsAsTriedKeyboardNavigation() {
+        let engine = TypeSafeDecisionEngine()
+        let candidates = makeContainerCandidates()
+        let unchanged = UIStateDiff(titleChanged: false, focusChanged: false)
+
+        for key in ["PageDown", "PageUp", "Down", "Up"] {
+            let scroll = engine.fallbackLocalDecision(goal: "Scroll the timeline feed", candidates: candidates)
+            let press = ComputerActionDecision(action: .keyPress, confidence: 0.85, isCompleted: false, keyCombination: [key])
+            let history = [
+                LoopStepRecord(stepNumber: 0, subgoalId: "sg1", action: scroll),
+                LoopStepRecord(stepNumber: 1, subgoalId: "sg1", action: press),
+                LoopStepRecord(stepNumber: 2, subgoalId: "sg1", action: scroll)
+            ]
+            let decision = engine.fallbackLocalDecision(
+                goal: "Scroll the timeline feed",
+                candidates: candidates,
+                history: history,
+                lastDiff: unchanged
+            )
+            #expect(decision.action == .none, "\(key) was already tried; pressing a key again cannot help")
+            #expect(decision.isCompleted)
+        }
+    }
+
+    @Test("A collapsed zero-width scroll area is never chosen as the scroll target")
+    func testZeroWidthScrollAreaIsNeverResolved() {
+        let collapsed = makeCandidate(id: "collapsed_sidebar", role: "AXScrollArea", label: "Sidebar", bounds: CGRect(x: 0, y: 0, width: 0, height: 900))
+        // Scores below the collapsed area's role priority, so only the bounds filter keeps it out.
+        let list = makeCandidate(id: "files", role: "AXList", label: "Files", bounds: CGRect(x: 200, y: 100, width: 300, height: 300))
+
+        let resolved = TypeSafeDecisionEngine.resolveScrollContainer(candidates: [collapsed, list], goal: "Scroll down")
+        #expect(resolved?.id == "files")
+    }
+
+    @Test("\"down\" decides the direction even when the target's name contains \"up\"")
+    func testDownWinsOverUpInTargetName() {
+        #expect(TypeSafeDecisionEngine.extractScrollDelta(from: "Scroll down to the Sign up button").dy < 0)
+        #expect(TypeSafeDecisionEngine.extractScrollDelta(from: "Scroll down to the Back up settings").dy < 0)
+        #expect(TypeSafeDecisionEngine.extractScrollDelta(from: "Scroll up to the top").dy > 0)
+    }
 }

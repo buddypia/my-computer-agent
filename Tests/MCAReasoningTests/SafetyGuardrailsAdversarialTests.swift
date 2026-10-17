@@ -1072,6 +1072,31 @@ struct SafetyGuardrailsAdversarialTests {
     }
 }
 
+
+    @Test("Different keys are different actions, so varied key presses never count as repetition")
+    func testDifferentKeyPressesAreNotEquivalent() {
+        let tab = ComputerActionDecision(action: .keyPress, confidence: 0.9, isCompleted: false, keyCombination: ["Tab"])
+        let enter = ComputerActionDecision(action: .keyPress, confidence: 0.9, isCompleted: false, keyCombination: ["Return"])
+        #expect(!TwoFactorLoopDetector.areActionsEquivalent(tab, enter))
+        #expect(TwoFactorLoopDetector.areActionsEquivalent(tab, tab))
+    }
+
+    @Test("An identical-action threshold below 2 is clamped, so the first action never trips the detector")
+    func testIdenticalActionThresholdBelowTwoIsClamped() throws {
+        var detector = TwoFactorLoopDetector(config: TwoFactorLoopDetector.Configuration(identicalActionThreshold: 1))
+        let click = ComputerActionDecision(targetElementId: "btn", action: .click, confidence: 0.9, isCompleted: false)
+        try detector.recordAction(decision: click)
+    }
+
+    @Test("A plan whose index is negative has no current subgoal instead of trapping")
+    func testNegativeSubgoalIndexHasNoCurrentSubgoal() {
+        let plan = SubgoalPlan(
+            goal: "g",
+            subgoals: [Subgoal(id: "s1", description: "d", expectedOutcome: "", maxSteps: 3)],
+            currentSubgoalIndex: -1
+        )
+        #expect(plan.currentSubgoal == nil)
+    }
 // MARK: - Thread-safe Counter Helper
 private final class Counter: @unchecked Sendable {
     private let lock = NSLock()

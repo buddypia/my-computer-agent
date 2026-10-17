@@ -601,4 +601,93 @@ struct DecisionEngineRobustnessTests {
         #expect(decision.confidence >= 0.80)
         #expect(ms < 100, "500 candidate evaluation took \(ms)ms of CPU; must be < 100ms")
     }
+
+    // MARK: - Word Boundaries, Partial-Match Confidence & Explicit Keys
+
+    @Test("Latin needles need a word boundary on the right too, and a single kanji matches only itself")
+    func testWordBoundaryOnBothSidesAndSingleKanji() {
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "okay", needle: "ok"))
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "saved drafts", needle: "save"))
+        #expect(TypeSafeDecisionEngine.containsWordOrPhrase(in: "save as", needle: "save"))
+        #expect(!TypeSafeDecisionEngine.isDirectMatch(target: "okay", query: "ok"))
+
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "開発者ツール", needle: "開"))
+        #expect(TypeSafeDecisionEngine.containsWordOrPhrase(in: "開", needle: "開"))
+    }
+
+    @Test("A target found through partial token overlap executes without escalating")
+    func testPartialTokenMatchDoesNotEscalate() {
+        let engine = TypeSafeDecisionEngine()
+        // One of two goal tokens is a substring of the label and id (score 65, overlap 0.5).
+        // A whole-token hit would score >= 100 and take the exact-match branch instead.
+        let half = makeCandidate(id: "exporting_status", role: "AXStaticText", label: "Exporting")
+        let d1 = engine.fallbackLocalDecision(goal: "expo report", candidates: [half])
+        #expect(d1.targetElementId == "exporting_status")
+        #expect(d1.confidence < 0.85, "fixture must reach the partial-overlap branch, not the exact-match one")
+        #expect(!engine.shouldEscalate(decision: d1), "conf \(d1.confidence) must stay at or above the 0.80 threshold")
+
+        // One of three goal tokens only prefixes the label (score < 60, overlap < 0.5).
+        let prefix = makeCandidate(id: "lbl_1", role: "AXStaticText", label: "Exporting")
+        let d2 = engine.fallbackLocalDecision(goal: "expo report data", candidates: [prefix])
+        #expect(d2.targetElementId == "lbl_1")
+        #expect(!engine.shouldEscalate(decision: d2), "conf \(d2.confidence) must stay at or above the 0.80 threshold")
+    }
+
+    @Test("A key named with a key verb is pressed even when the screen shows tabs")
+    func testExplicitKeyIsPressedDespiteTabsOnScreen() {
+        let engine = TypeSafeDecisionEngine()
+        let browserTab = makeCandidate(id: "tab_1", role: "AXTab", label: "Inbox")
+        let toc = makeCandidate(id: "toc", role: "AXButton", label: "Table of contents")
+        let suggestion = makeCandidate(id: "suggestion", role: "AXMenuItem", label: "tokyo weather")
+
+        let enter = engine.fallbackLocalDecision(goal: "Press Enter to select the suggestion", candidates: [browserTab, suggestion])
+        #expect(enter.action == .keyPress)
+        #expect(enter.keyCombination == ["Return"])
+
+        let tab = engine.fallbackLocalDecision(goal: "Press Tab to select the next field", candidates: [toc])
+        #expect(tab.action == .keyPress)
+        #expect(tab.keyCombination == ["Tab"])
+
+        // A loose key phrase still yields to the tab the goal names.
+        let shortcutsTab = makeCandidate(id: "tab_shortcuts", role: "AXTab", label: "ショートカット")
+        let select = engine.fallbackLocalDecision(goal: "ショートカットタブを選択", candidates: [shortcutsTab])
+        #expect(select.action == .click)
+        #expect(select.targetElementId == "tab_shortcuts")
+
+        // A key word without a key verb names the tab, not the key.
+        let escapeTab = makeCandidate(id: "tab_escape", role: "AXTab", label: "Escape")
+        for goal in ["Select the Escape tab", "Select the Escape tab in the press settings"] {
+            let escape = engine.fallbackLocalDecision(goal: goal, candidates: [escapeTab])
+            #expect(escape.action == .click, "\(goal)")
+            #expect(escape.targetElementId == "tab_escape")
+        }
+        let escapeKeyTab = makeCandidate(id: "tab_escape_key", role: "AXTab", label: "エスケープキー")
+        let named = engine.fallbackLocalDecision(goal: "「エスケープキー」タブを選択", candidates: [escapeKeyTab])
+        #expect(named.action == .click)
+        #expect(named.targetElementId == "tab_escape_key")
+
+        // The pressed key is the commanded one, not another key word later in the goal.
+        let tabToEscape = engine.fallbackLocalDecision(goal: "Press Tab to select the Escape tab", candidates: [escapeTab])
+        #expect(tabToEscape.action == .keyPress)
+        #expect(tabToEscape.keyCombination == ["Tab"])
+
+        // ...but a spelled-out chord is kept whole, and a quoted tab title is a name, not a command.
+        let chord = engine.fallbackLocalDecision(goal: "Shift+Enter（Shiftを押しながらEnterキーを押す）で改行", candidates: [browserTab])
+        #expect(chord.keyCombination == ["shift", "enter"])
+        let quotedTab = makeCandidate(id: "tab_continue", role: "AXTab", label: "Press Enter to Continue")
+        let quoted = engine.fallbackLocalDecision(goal: "Open the \"Press Enter to Continue\" tab", candidates: [quotedTab])
+        // (The "enter" in the title still reads as typing intent; that predates this guard.)
+        #expect(quoted.action != .keyPress)
+        #expect(quoted.targetElementId == "tab_continue")
+
+        let jaEnter = engine.fallbackLocalDecision(goal: "エンターキーを押して候補を選択", candidates: [browserTab, suggestion])
+        #expect(jaEnter.action == .keyPress)
+        #expect(jaEnter.keyCombination == ["Return"])
+
+        // So does a numbered tab, even after "press".
+        let tab2 = makeCandidate(id: "tab_2", role: "AXTab", label: "Tab 2")
+        let numbered = engine.fallbackLocalDecision(goal: "Press tab 2", candidates: [tab2])
+        #expect(numbered.action == .click)
+        #expect(numbered.targetElementId == "tab_2")
+    }
 }

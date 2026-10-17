@@ -18,3 +18,8 @@
 {"at":"2026-10-04T11:40:47.300Z","train":53,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"intent root: separate code-composition and how-to questions from screen-operation keywords; Korean screen term boundary"}
 {"at":"2026-10-04T11:44:14.692Z","train":51,"heldout":25,"total":[54,28],"verdict":"REVERT","note":"decision root: map a search request to typeText only when the current observation contains an AXSearchField"}
 {"at":"2026-10-09T15:00:55.853Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":""}
+{"at":"2026-10-17T04:16:00.153Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"scroll stagnation ignores unverified-after-movement; explicit key beats tab guard"}
+{"at":"2026-10-17T04:29:05.524Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix: tab guard exempts only keys named with a key verb"}
+{"at":"2026-10-17T04:34:13.531Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 2: key verb must be adjacent to the key"}
+{"at":"2026-10-17T04:41:38.746Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 3: press the commanded key"}
+{"at":"2026-10-17T04:49:33.681Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 4: keep chords, ignore quoted names"}
