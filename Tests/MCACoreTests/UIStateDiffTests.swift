@@ -562,6 +562,43 @@ struct UIStateDiffTests {
         #expect(outcome("「保存」ボタンが表示される", added: [button("save", "保存")]).isVerified)
         let idField = UIElementCandidate(id: "f1", role: "AXTextField", label: "User ID", bounds: CGRect(x: 10, y: 60, width: 200, height: 24))
         #expect(outcome("Enter the ID", added: [idField]).isVerified)
+        // A name inside Japanese text, or in 【】 « » or straight quotes, marks it as much as 「」 does.
+        #expect(!outcome("画面にSaveボタンが表示される", added: [cancel]).isVerified)
+        #expect(outcome("画面にSaveボタンが表示される", added: [button("save", "Save")]).isVerified)
+        #expect(!outcome("【保存】ボタンが表示される", added: [cancel]).isVerified)
+        #expect(!outcome("'保存'ボタンが表示される", added: [cancel]).isVerified)
+        #expect(!outcome("Click «Save» button", added: [cancel]).isVerified)
+        #expect(!outcome("click the \"\" placeholder then \"save\" button", added: [cancel]).isVerified)
+        // A label that is only a kind word names no element.
+        #expect(!outcome("Click the Save button", added: [button("b1", "Button")]).isVerified)
+        let menuButton = UIElementCandidate(id: "m1", role: "AXMenuButton", label: "Menu", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
+        #expect(!outcome("Click the File menu", added: [menuButton]).isVerified)
+        #expect(!outcome("「保存」ボタンが表示される", added: [button("b2", "ボタン")]).isVerified)
+        // A name that happens to be a kind word still names the element when it is not that element's kind.
+        let viewMenu = UIElementCandidate(id: "m2", role: "AXMenu", label: "View", bounds: CGRect(x: 10, y: 60, width: 80, height: 20))
+        #expect(outcome("Click the \"View\" menu", added: [viewMenu]).isVerified)
+        #expect(outcome("Click the \"Dialog\" button", added: [button("dialog_button", "Dialog")]).isVerified)
+    }
+
+    /// Mirrors `UIStateDiff.outcomeKindWords`; every entry must keep a wrong element of its kind unverified.
+    private static let kindWords = [
+        "button", "buttons", "btn", "dialog", "dialogs", "window", "windows", "page", "pages", "screen", "field",
+        "fields", "textfield", "menu", "menus", "item", "items", "tab", "tabs", "link", "links", "icon", "view",
+        "panel", "popup", "popover", "modal", "sheet", "alert", "list", "element", "checkbox", "toggle", "toolbar",
+        "radio", "image", "row", "cell", "table", "option", "input", "slider", "switch", "group", "dropdown",
+        "combo", "combobox", "picker", "sidebar", "banner"
+    ]
+
+    @Test("Each kind word stops counting once a name is marked", arguments: kindWords)
+    func testEachKindWordIsNotEvidence(kind: String) {
+        let wrong = button("cancel_\(kind)", "Cancel \(kind)")
+        #expect(!outcome("Click the Save \(kind)", added: [wrong]).isVerified)
+    }
+
+    @Test("Each Japanese kind word stops counting once a name is marked",
+          arguments: ["ボタン", "ダイアログ", "ウィンドウ", "画面", "ページ", "フィールド", "メニュー", "タブ", "リンク", "アイコン"])
+    func testEachJapaneseKindWordIsNotEvidence(kind: String) {
+        #expect(!outcome("「保存」\(kind)が表示される", added: [button("cancel", "キャンセル\(kind)")]).isVerified)
     }
 
     @Test("An outcome that names only a kind still verifies on an element of that kind")
@@ -592,6 +629,30 @@ struct UIStateDiffTests {
         #expect(!UIStateDiff.outcomeMarksName("- Dialog appears"))
         #expect(!UIStateDiff.outcomeMarksName("1. Dialog appears"))
         #expect(UIStateDiff.outcomeMarksName("Click ‘Save’ button"))
+        #expect(UIStateDiff.outcomeMarksName("'保存'ボタンを押す"))
+        #expect(UIStateDiff.outcomeMarksName("press the ('save') button"))
+        #expect(UIStateDiff.outcomeMarksName("画面にSaveボタンが表示される"))
+        #expect(UIStateDiff.outcomeMarksName("Dialog appears\nthe Save button is enabled"))
+        // Apostrophes are not quotes, and a new line starts a sentence.
+        #expect(!UIStateDiff.outcomeMarksName("A dialog appears; don’t dismiss it"))
+        #expect(!UIStateDiff.outcomeMarksName("click the button in bob's inbox"))
+        #expect(!UIStateDiff.outcomeMarksName("Dialog appears\nButton visible"))
+        #expect(!UIStateDiff.outcomeMarksName("click the \"\" button"))
+        #expect(UIStateDiff.outcomeMarksName("click the \"\" placeholder then \"save\" button"))
+        #expect(!UIStateDiff.outcomeMarksName("Dialog\u{00A0}appears"))
+        #expect(!UIStateDiff.outcomeMarksName("Dialog appears…"))
+    }
+
+    @Test("outcomeMarksName: every quote pair marks a name", arguments: [
+        ("\"", "\""), ("“", "”"), ("‘", "’"), ("「", "」"), ("『", "』"), ("【", "】"), ("«", "»"), ("'", "'")
+    ])
+    func testEachQuotePairMarksName(open: String, close: String) {
+        #expect(UIStateDiff.outcomeMarksName("click the \(open)save\(close) button"))
+    }
+
+    @Test("outcomeMarksName: a capitalised word after a sentence end is not a name", arguments: [".", "!", "?", ":", "。"])
+    func testSentenceEndBeforeCapital(end: String) {
+        #expect(!UIStateDiff.outcomeMarksName("typed text\(end) Dialog appears"))
     }
 
     @Test("Focus on an element of the expected kind but the wrong name is not verified")
@@ -603,6 +664,8 @@ struct UIStateDiffTests {
         }
         let diff = UIStateDiff.compute(before: focus("name"), after: focus("cancel"))
         #expect(!diff.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
+        let cancelButton = UIStateDiff.compute(before: focus("name"), after: focus("cancel_button"))
+        #expect(!cancelButton.verifyOutcome(expected: "Focus moves to the \"Save\" button").isVerified)
         let hit = UIStateDiff.compute(before: focus("name"), after: focus("save"))
         #expect(hit.verifyOutcome(expected: "Focus moves to the Save button").isVerified)
         // Without a marked name the kind still verifies, as before.
