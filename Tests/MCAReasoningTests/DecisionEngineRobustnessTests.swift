@@ -618,10 +618,12 @@ struct DecisionEngineRobustnessTests {
     @Test("A target found through partial token overlap executes without escalating")
     func testPartialTokenMatchDoesNotEscalate() {
         let engine = TypeSafeDecisionEngine()
-        // One of two goal tokens hits a token of the label (score >= 60, overlap 0.5).
-        let half = makeCandidate(id: "export_data", role: "AXStaticText", label: "Export Data")
-        let d1 = engine.fallbackLocalDecision(goal: "export report", candidates: [half])
-        #expect(d1.targetElementId == "export_data")
+        // One of two goal tokens is a substring of the label and id (score 65, overlap 0.5).
+        // A whole-token hit would score >= 100 and take the exact-match branch instead.
+        let half = makeCandidate(id: "exporting_status", role: "AXStaticText", label: "Exporting")
+        let d1 = engine.fallbackLocalDecision(goal: "expo report", candidates: [half])
+        #expect(d1.targetElementId == "exporting_status")
+        #expect(d1.confidence < 0.85, "fixture must reach the partial-overlap branch, not the exact-match one")
         #expect(!engine.shouldEscalate(decision: d1), "conf \(d1.confidence) must stay at or above the 0.80 threshold")
 
         // One of three goal tokens only prefixes the label (score < 60, overlap < 0.5).
@@ -651,6 +653,12 @@ struct DecisionEngineRobustnessTests {
         let select = engine.fallbackLocalDecision(goal: "ショートカットタブを選択", candidates: [shortcutsTab])
         #expect(select.action == .click)
         #expect(select.targetElementId == "tab_shortcuts")
+
+        // A key word without a key verb names the tab, not the key.
+        let escapeTab = makeCandidate(id: "tab_escape", role: "AXTab", label: "Escape")
+        let escape = engine.fallbackLocalDecision(goal: "Select the Escape tab", candidates: [escapeTab])
+        #expect(escape.action == .click)
+        #expect(escape.targetElementId == "tab_escape")
 
         // So does a numbered tab, even after "press".
         let tab2 = makeCandidate(id: "tab_2", role: "AXTab", label: "Tab 2")

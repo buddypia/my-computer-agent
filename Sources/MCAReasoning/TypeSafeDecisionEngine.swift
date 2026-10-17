@@ -1227,8 +1227,11 @@ public struct TypeSafeDecisionEngine: Sendable {
             $0.role == "AXTab" || $0.label.lowercased().contains("tab")
         })
         // A key the goal names with a key verb ("press Enter to select the suggestion") is honored even
-        // when the screen has tabs; only a loose key phrase ("ショートカット" tab) yields to the tab element.
-        let isTabSelectionGoal = (!hasExplicitKey && (
+        // when the screen has tabs. A key word without one ("Select the Escape tab", "ショートカット" tab)
+        // names the tab, so it yields to the tab element.
+        let namesKeyWithVerb = hasExplicitKey
+            && normalizedGoal.range(of: "\\b(?:press|hit|tap)\\b|\\bkey\\b|キー|を押", options: .regularExpression) != nil
+        let isTabSelectionGoal = (!namesKeyWithVerb && (
                 normalizedGoal.contains("select")
                 || normalizedGoal.contains("switch")
                 || normalizedGoal.contains("choose")
