@@ -1229,8 +1229,10 @@ public struct TypeSafeDecisionEngine: Sendable {
         // A key the goal names with a key verb ("press Enter to select the suggestion") is honored even
         // when the screen has tabs. A key word without one ("Select the Escape tab", "ショートカット" tab)
         // names the tab, so it yields to the tab element.
+        let keyCommandPattern = "\\b(?:press|hit|tap)\\s+(?:the\\s+)?(?:return|enter|escape|esc|tab|space|spacebar|backspace|delete|up|down|cmd|command|ctrl|control|alt|opt|option|shift)\\b"
+            + "|(?:エンター|リターン|エスケープ|タブ|スペース|バックスペース|enter|return|esc|tab)(?:キー)?を押"
         let namesKeyWithVerb = hasExplicitKey
-            && normalizedGoal.range(of: "\\b(?:press|hit|tap)\\b|\\bkey\\b|キー|を押", options: .regularExpression) != nil
+            && normalizedGoal.range(of: keyCommandPattern, options: .regularExpression) != nil
         let isTabSelectionGoal = (!namesKeyWithVerb && (
                 normalizedGoal.contains("select")
                 || normalizedGoal.contains("switch")

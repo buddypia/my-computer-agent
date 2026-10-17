@@ -20,3 +20,4 @@
 {"at":"2026-10-09T15:00:55.853Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":""}
 {"at":"2026-10-17T04:16:00.153Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"scroll stagnation ignores unverified-after-movement; explicit key beats tab guard"}
 {"at":"2026-10-17T04:29:05.524Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix: tab guard exempts only keys named with a key verb"}
+{"at":"2026-10-17T04:34:13.531Z","train":50,"heldout":25,"total":[54,28],"verdict":"NO","note":"review fix 2: key verb must be adjacent to the key"}

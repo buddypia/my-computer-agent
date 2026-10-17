@@ -656,9 +656,19 @@ struct DecisionEngineRobustnessTests {
 
         // A key word without a key verb names the tab, not the key.
         let escapeTab = makeCandidate(id: "tab_escape", role: "AXTab", label: "Escape")
-        let escape = engine.fallbackLocalDecision(goal: "Select the Escape tab", candidates: [escapeTab])
-        #expect(escape.action == .click)
-        #expect(escape.targetElementId == "tab_escape")
+        for goal in ["Select the Escape tab", "Select the Escape tab in the press settings"] {
+            let escape = engine.fallbackLocalDecision(goal: goal, candidates: [escapeTab])
+            #expect(escape.action == .click, "\(goal)")
+            #expect(escape.targetElementId == "tab_escape")
+        }
+        let escapeKeyTab = makeCandidate(id: "tab_escape_key", role: "AXTab", label: "エスケープキー")
+        let named = engine.fallbackLocalDecision(goal: "「エスケープキー」タブを選択", candidates: [escapeKeyTab])
+        #expect(named.action == .click)
+        #expect(named.targetElementId == "tab_escape_key")
+
+        let jaEnter = engine.fallbackLocalDecision(goal: "エンターキーを押して候補を選択", candidates: [browserTab, suggestion])
+        #expect(jaEnter.action == .keyPress)
+        #expect(jaEnter.keyCombination == ["Return"])
 
         // So does a numbered tab, even after "press".
         let tab2 = makeCandidate(id: "tab_2", role: "AXTab", label: "Tab 2")
