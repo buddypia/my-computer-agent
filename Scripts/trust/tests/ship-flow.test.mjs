@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -14,6 +14,8 @@ const { assertApprovalFreshAfterBaseMerge, shipReviewMarkerPath } = await import
   '../../../.claude/scripts/create-pr/ops.mjs'
 );
 const { run: guard } = await import('../../../.cli/hooks/pre-ship-review-guard.mjs');
+const { shipMarkerProblem } = await import('../../../.cli/lib/quality-gate-labels.mjs');
+const { checkPreShipSteps } = await import('../../../.claude/scripts/mark-pre-ship-confirmed.mjs');
 
 let root;
 let worktree;
@@ -90,4 +92,33 @@ test('a human-path approval still gets the full Panel instructions', async () =>
   assert.doesNotMatch(text, /trust recorded the approval/);
   assert.match(text, /Review template/);
   assert.match(await denyText(null), /Review template/);
+});
+
+test('an expired marker after a human approval gets the re-create step, not the Panel again', async () => {
+  const marker = join(root, '.tmp', `pre-ship-review-confirmed-${branch.replace('/', '__')}`);
+  mkdirSync(dirname(marker), { recursive: true });
+  writeFileSync(marker, JSON.stringify({ quality_gate: 'agent_go' }));
+  const old = new Date(Date.now() - 12 * 60_000);
+  utimesSync(marker, old, old);
+  try {
+    const text = await denyText({ value: 'Approve and proceed', source: 'human' });
+    assert.match(text, /marker expired \(12 min old, limit 10\)/);
+    assert.doesNotMatch(text, /Review template/);
+  } finally {
+    rmSync(marker, { force: true });
+  }
+});
+
+test('shipMarkerProblem: missing, unlabelled, expired, fresh', () => {
+  const p = join(root, 'marker-probe');
+  assert.deepEqual(shipMarkerProblem(p), { reason: 'missing' });
+  writeFileSync(p, JSON.stringify({ quality_gate: 'nope' }));
+  assert.deepEqual(shipMarkerProblem(p), { reason: 'label' });
+  writeFileSync(p, JSON.stringify({ quality_gate: 'agent_go' }));
+  assert.equal(shipMarkerProblem(p), null);
+  assert.deepEqual(shipMarkerProblem(p, { now: Date.now() + 10 * 60_000 + 61_000 }), { reason: 'stale', ageMin: 11 });
+});
+
+test('a --force marker is not recorded as a human approval', () => {
+  assert.equal(checkPreShipSteps(root, branch, true).approval.mode, 'forced');
 });
