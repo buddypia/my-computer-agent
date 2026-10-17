@@ -135,6 +135,7 @@ struct AutonomousLoopReplanAndEscalationTests {
         let sgEng = Subgoal(id: "sg_empty_eng", description: "Scroll feed down", expectedOutcome: "screen changes", maxSteps: 3)
         if case .retrySubgoal(let retry) = DefaultSubgoalPlanner.heuristicReplan(failedSubgoal: sgEng, reason: .actionStagnant(reason: "Unchanged state")) {
             #expect(retry.description == "Navigate using alternative elements or shortcuts for: target elements or controls")
+            #expect(retry.maxSteps == 5, "a retry needs room to try an alternative, not the failed subgoal's 3 steps")
         } else {
             Issue.record("Expected retrySubgoal for English stagnant fallback")
         }
@@ -149,6 +150,7 @@ struct AutonomousLoopReplanAndEscalationTests {
         let sgConf = Subgoal(id: "sg_conf_empty", description: "retry after low confidence: retry:", expectedOutcome: "", maxSteps: 3)
         if case .retrySubgoal(let retry) = DefaultSubgoalPlanner.heuristicReplan(failedSubgoal: sgConf, reason: .lowConfidence(confidence: 0.3, threshold: 0.8)) {
             #expect(retry.description == "Interact with alternative interactive element for: interactive elements on screen")
+            #expect(retry.maxSteps == 4)
         } else {
             Issue.record("Expected retrySubgoal for low-confidence fallback")
         }

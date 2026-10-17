@@ -1141,11 +1141,12 @@ public struct TypeSafeDecisionEngine: Sendable {
             let lastAction = history.last?.action
             let lastActionWasScroll = lastAction?.action == .scroll
             let lastActionWasKeyPress = lastAction?.action == .keyPress
-            let lastVerificationFailed = history.last?.verificationResult?.status == .unverified
 
+            // Only an unchanged screen proves the scroll went nowhere. An unverified outcome after a
+            // scroll that moved the content means the target is further away, not that the page ended.
             let isStagnant: Bool = {
                 if hasStagnantEscalation { return true }
-                if lastActionWasScroll && (isStateUnchanged || lastVerificationFailed) { return true }
+                if lastActionWasScroll && isStateUnchanged { return true }
                 if isStateUnchanged && (lastActionWasScroll || lastActionWasKeyPress) { return true }
                 let recentScrolls = history.suffix(2).filter { $0.action.action == .scroll }
                 if recentScrolls.count >= 2 && isStateUnchanged { return true }
@@ -1225,12 +1226,16 @@ public struct TypeSafeDecisionEngine: Sendable {
         let hasTabCandidate = candidates.contains(where: {
             $0.role == "AXTab" || $0.label.lowercased().contains("tab")
         })
-        let isTabSelectionGoal = normalizedGoal.contains("select")
-            || normalizedGoal.contains("switch")
-            || normalizedGoal.contains("choose")
-            || normalizedGoal.contains("open")
-            || normalizedGoal.contains("選択")
-            || normalizedGoal.contains("切り替え")
+        // A key the goal names with a key verb ("press Enter to select the suggestion") is honored even
+        // when the screen has tabs; only a loose key phrase ("ショートカット" tab) yields to the tab element.
+        let isTabSelectionGoal = (!hasExplicitKey && (
+                normalizedGoal.contains("select")
+                || normalizedGoal.contains("switch")
+                || normalizedGoal.contains("choose")
+                || normalizedGoal.contains("open")
+                || normalizedGoal.contains("選択")
+                || normalizedGoal.contains("切り替え")
+            ))
             || normalizedGoal.range(of: "\\btab\\s+\\d+\\b", options: .regularExpression) != nil
 
         let shouldSkipKeyPressForTabElement = hasTabCandidate && isTabSelectionGoal

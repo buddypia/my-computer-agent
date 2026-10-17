@@ -601,4 +601,61 @@ struct DecisionEngineRobustnessTests {
         #expect(decision.confidence >= 0.80)
         #expect(ms < 100, "500 candidate evaluation took \(ms)ms of CPU; must be < 100ms")
     }
+
+    // MARK: - Word Boundaries, Partial-Match Confidence & Explicit Keys
+
+    @Test("Latin needles need a word boundary on the right too, and a single kanji matches only itself")
+    func testWordBoundaryOnBothSidesAndSingleKanji() {
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "okay", needle: "ok"))
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "saved drafts", needle: "save"))
+        #expect(TypeSafeDecisionEngine.containsWordOrPhrase(in: "save as", needle: "save"))
+        #expect(!TypeSafeDecisionEngine.isDirectMatch(target: "okay", query: "ok"))
+
+        #expect(!TypeSafeDecisionEngine.containsWordOrPhrase(in: "開発者ツール", needle: "開"))
+        #expect(TypeSafeDecisionEngine.containsWordOrPhrase(in: "開", needle: "開"))
+    }
+
+    @Test("A target found through partial token overlap executes without escalating")
+    func testPartialTokenMatchDoesNotEscalate() {
+        let engine = TypeSafeDecisionEngine()
+        // One of two goal tokens hits a token of the label (score >= 60, overlap 0.5).
+        let half = makeCandidate(id: "export_data", role: "AXStaticText", label: "Export Data")
+        let d1 = engine.fallbackLocalDecision(goal: "export report", candidates: [half])
+        #expect(d1.targetElementId == "export_data")
+        #expect(!engine.shouldEscalate(decision: d1), "conf \(d1.confidence) must stay at or above the 0.80 threshold")
+
+        // One of three goal tokens only prefixes the label (score < 60, overlap < 0.5).
+        let prefix = makeCandidate(id: "lbl_1", role: "AXStaticText", label: "Exporting")
+        let d2 = engine.fallbackLocalDecision(goal: "expo report data", candidates: [prefix])
+        #expect(d2.targetElementId == "lbl_1")
+        #expect(!engine.shouldEscalate(decision: d2), "conf \(d2.confidence) must stay at or above the 0.80 threshold")
+    }
+
+    @Test("A key named with a key verb is pressed even when the screen shows tabs")
+    func testExplicitKeyIsPressedDespiteTabsOnScreen() {
+        let engine = TypeSafeDecisionEngine()
+        let browserTab = makeCandidate(id: "tab_1", role: "AXTab", label: "Inbox")
+        let toc = makeCandidate(id: "toc", role: "AXButton", label: "Table of contents")
+        let suggestion = makeCandidate(id: "suggestion", role: "AXMenuItem", label: "tokyo weather")
+
+        let enter = engine.fallbackLocalDecision(goal: "Press Enter to select the suggestion", candidates: [browserTab, suggestion])
+        #expect(enter.action == .keyPress)
+        #expect(enter.keyCombination == ["Return"])
+
+        let tab = engine.fallbackLocalDecision(goal: "Press Tab to select the next field", candidates: [toc])
+        #expect(tab.action == .keyPress)
+        #expect(tab.keyCombination == ["Tab"])
+
+        // A loose key phrase still yields to the tab the goal names.
+        let shortcutsTab = makeCandidate(id: "tab_shortcuts", role: "AXTab", label: "ショートカット")
+        let select = engine.fallbackLocalDecision(goal: "ショートカットタブを選択", candidates: [shortcutsTab])
+        #expect(select.action == .click)
+        #expect(select.targetElementId == "tab_shortcuts")
+
+        // So does a numbered tab, even after "press".
+        let tab2 = makeCandidate(id: "tab_2", role: "AXTab", label: "Tab 2")
+        let numbered = engine.fallbackLocalDecision(goal: "Press tab 2", candidates: [tab2])
+        #expect(numbered.action == .click)
+        #expect(numbered.targetElementId == "tab_2")
+    }
 }
