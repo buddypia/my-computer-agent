@@ -165,6 +165,16 @@ test('harness-lint-guard blocks an edit that leaves the harness invalid, and ign
   const patch = '*** Begin Patch\n*** Update File: Sources/A.swift\n*** Update File: .agents/skills/beta/SKILL.md\n*** End Patch\n';
   const codex = await lintRun({ tool_name: 'Edit', tool_input: { file_path: join(root, 'Sources/A.swift'), command: patch }, cwd: root });
   assert.equal(codex.decision, 'block');
+  // A session's project dir (main) must not replace the cwd the patch paths are relative to.
+  const saved = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = scratch;
+  try {
+    const fromWorktree = await lintRun({ tool_name: 'Edit', tool_input: { command: patch }, cwd: root });
+    assert.equal(fromWorktree.decision, 'block');
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = saved;
+  }
 });
 
 test('harness-lint-guard finds the nearest checkout, a linked worktree included, without spawning git', () => {
