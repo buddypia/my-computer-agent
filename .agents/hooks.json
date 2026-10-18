@@ -44,6 +44,21 @@
             "type": "command",
             "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-policy-guard.mjs antigravity PreToolUse worktree-policy-guard",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/heldout-guard.mjs antigravity PreToolUse heldout-guard",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "view_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/heldout-guard.mjs antigravity PreToolUse heldout-guard",
+            "timeout": 5
           }
         ]
       }
@@ -56,6 +71,16 @@
             "type": "command",
             "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-owner-tracker.mjs antigravity PostToolUse worktree-owner-tracker",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "replace_file_content|write_to_file|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/harness-lint-guard.mjs antigravity PostToolUse harness-lint-guard",
+            "timeout": 10
           }
         ]
       }

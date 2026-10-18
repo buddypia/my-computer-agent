@@ -457,11 +457,15 @@ test('gate: a clean merge or root commit is gated on what it brought in, not ski
   mkdirSync(join(repo, 'Scripts'));
   writeFileSync(join(repo, 'Scripts/gate.sh'), readFileSync(new URL('../../gate.sh', import.meta.url)));
   writeFileSync(join(repo, '.gitignore'), '.tmp/\n');
+  // The harness check runs before G0 classifies anything; a passing stand-in keeps it out of this case.
+  mkdirSync(join(repo, 'Scripts/harness/tests'), { recursive: true });
+  writeFileSync(join(repo, 'Scripts/harness/check.mjs'), '');
+  writeFileSync(join(repo, 'Scripts/harness/tests/ok.test.mjs'), "import { test } from 'node:test';\ntest('ok', () => {});\n");
   git('init', '-q', '-b', 'main');
   git('add', '-A');
   git('commit', '-q', '-m', 'root');
   // A commit with no parent: a root commit, or the tip of a depth-1 clone.
-  assert.match(gate().stdout, /GATE RUN +2 changed path/);
+  assert.match(gate().stdout, /GATE RUN +4 changed path/);
   git('checkout', '-q', '-b', 'branch');
   writeFileSync(join(repo, 'b.swift'), 'b\n');
   git('add', '-A');
