@@ -17,10 +17,10 @@
  * Behavior: other paths / unresolved repository / check error → passthrough. Never blocks on its own failure.
  */
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import { HookOutput } from '../lib/hook-output.mjs';
-import { readStdin, output, safeHookMain, safeGit, resolveProjectDir } from '../lib/utils.mjs';
+import { readStdin, output, safeHookMain } from '../lib/utils.mjs';
 import { extractApplyPatchFilePaths } from '../lib/apply-patch-paths.mjs';
 import { checkHarness } from '../../Scripts/harness/check.mjs';
 
@@ -41,17 +41,17 @@ export function isHarnessPath(rel) {
 
 // The Codex adapter rewrites `apply_patch` into an Edit/Write carrying only the patch's first file in
 // `file_path`, and keeps the patch in `tool_input.command` — so every file comes from the patch.
-function editedPaths(data, projectDir) {
+function editedPaths(data, baseDir) {
   const toolName = data?.tool_name || '';
   if (!['Edit', 'Write', 'MultiEdit', 'apply_patch'].includes(toolName)) return [];
   const input = data?.tool_input || {};
-  const paths = extractApplyPatchFilePaths(input.command, projectDir);
+  const paths = extractApplyPatchFilePaths(input.command, baseDir);
   const raw = input.file_path;
-  if (raw && typeof raw === 'string') paths.push(isAbsolute(raw) ? raw : join(projectDir, raw));
+  if (raw && typeof raw === 'string') paths.push(isAbsolute(raw) ? raw : join(baseDir, raw));
   return paths;
 }
 
-// git prints the resolved top level, so the file's directory is resolved too (`/tmp` → `/private/tmp`).
+// The resolved directory (`/tmp` → `/private/tmp`), so the path is compared with a resolved root.
 function realDir(file) {
   try {
     return realpathSync(dirname(file));
@@ -60,13 +60,25 @@ function realDir(file) {
   }
 }
 
+// The nearest directory holding `.git` (a directory in a checkout, a file in a linked worktree).
+// Not `git rev-parse`: under load the spawn ran past its timeout, and a hook that cannot find the
+// repository passes the edit through unchecked.
+export function findRoot(dir) {
+  for (let d = dir; ; d = dirname(d)) {
+    if (existsSync(join(d, '.git'))) return d;
+    if (dirname(d) === d) return null;
+  }
+}
+
 export async function run(data) {
   try {
-    const projectDir = resolveProjectDir(data);
+    // Relative paths are relative to where the tool ran. Not `resolveProjectDir`: it prefers
+    // CLAUDE_PROJECT_DIR and folds `.worktrees/<b>` into main, so a worktree's patch was linted as main's.
+    const baseDir = data?.cwd || process.cwd();
     const roots = new Set();
-    for (const file of editedPaths(data, projectDir)) {
+    for (const file of editedPaths(data, baseDir)) {
       const dir = realDir(file);
-      const root = safeGit('rev-parse --show-toplevel', dir, { timeout: 3000 })?.trim();
+      const root = findRoot(dir);
       if (!root) continue;
       const rel = relative(root, join(dir, basename(file))).replace(/\\/g, '/');
       if (!rel.startsWith('..') && isHarnessPath(rel)) roots.add(root);
