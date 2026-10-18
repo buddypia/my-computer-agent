@@ -101,7 +101,8 @@ function checkSkills(root, body, errs) {
           `\`${name}\` stops matching; drop the \`name:\` line or make it \`name: ${name}\``,
       );
     }
-    if (!body.includes(rel)) {
+    // The trigger is the instruction to read the file, not a mention of its path.
+    if (!new RegExp(`\\bread\\s+\`?${rel.replace(/[.]/g, '\\.')}\\b`).test(body)) {
       errs.push(
         `skill '${name}' has no trigger line in AGENTS.md, so the agent will never open it. Add one line under ` +
           `"## スキル": - When <the situation it handles>, read ${rel} and follow it.`,

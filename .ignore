@@ -1,0 +1,2 @@
+# ripgrep (the Grep tool, `rg`) skips these. The heldout split is scored, never read: docs/evals/system-one.md
+Evals/system-one/heldout.jsonl

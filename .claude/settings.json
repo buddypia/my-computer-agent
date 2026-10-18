@@ -68,7 +68,7 @@
         ]
       },
       {
-        "matcher": "Read|Grep|Glob|Bash",
+        "matcher": "Read|Grep|Bash",
         "hooks": [
           {
             "type": "command",

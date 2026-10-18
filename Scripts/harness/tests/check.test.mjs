@@ -3,10 +3,11 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { ALWAYS_ON_MAX, checkHarness } from '../check.mjs';
 
@@ -72,6 +73,8 @@ test('a skill without a trigger line naming its SKILL.md path fails', () => {
   // The bare name is not a trigger: the agent needs the path it is told to read.
   write(root, 'AGENTS.md', `${trigger('alpha')}Use beta when needed.\n`);
   assert.match(errors(root).join('\n'), /skill 'beta' has no trigger line/);
+  write(root, 'AGENTS.md', `${trigger('alpha')}See .agents/skills/beta/SKILL.md for details.\n`);
+  assert.match(errors(root).join('\n'), /skill 'beta' has no trigger line/);
   write(root, 'AGENTS.md', trigger('alpha') + trigger('beta'));
   assert.deepEqual(errors(root), []);
 });
@@ -128,8 +131,15 @@ test('heldout-guard denies reading the heldout split and allows scoring and stag
   const heldout = 'Evals/system-one/heldout.jsonl';
   assert.equal(readsHeldout('Read', { file_path: `/repo/${heldout}` }), true);
   assert.equal(readsHeldout('Read', { file_path: '/repo/Evals/system-one/train.jsonl' }), false);
+  assert.equal(readsHeldout('Read', { AbsolutePath: `/repo/${heldout}` }), true, 'Antigravity names the path differently');
   assert.equal(readsHeldout('Grep', { pattern: 'route', path: heldout }), true);
+  assert.equal(readsHeldout('Grep', { pattern: 'route', path: 'Evals/system-one' }), false, '.ignore keeps ripgrep out');
   assert.equal(readsHeldout('Bash', { command: `head -5 ${heldout}` }), true);
+  assert.equal(readsHeldout('Bash', { command: 'cd Evals/system-one && cat heldout.jsonl' }), true);
+  assert.equal(readsHeldout('Bash', { command: 'grep -rn route Evals/' }), true);
+  assert.equal(readsHeldout('Bash', { command: 'ls Evals/system-one' }), false);
+  assert.equal(readsHeldout('Bash', { command: `wc -l ${heldout}` }), false);
+  assert.equal(readsHeldout('Bash', { command: `git -C /repo add ${heldout}` }), false);
   assert.equal(readsHeldout('Bash', { command: 'cat Evals/system-one/*.jsonl' }), true);
   assert.equal(readsHeldout('Bash', { command: `git status && jq . ${heldout} | head` }), true);
   assert.equal(readsHeldout('Bash', { command: 'node Scripts/eval/hillclimb.mjs run' }), false);
@@ -151,4 +161,13 @@ test('harness-lint-guard blocks an edit that leaves the harness invalid, and ign
   assert.match(r.reason, /skill 'beta' has no trigger line/);
   write(root, 'Sources/A.swift', '');
   assert.deepEqual(await edit('Sources/A.swift'), {});
+  // Codex: the adapter keeps only the patch's first file in file_path; the second must still be checked.
+  const patch = '*** Begin Patch\n*** Update File: Sources/A.swift\n*** Update File: .agents/skills/beta/SKILL.md\n*** End Patch\n';
+  const codex = await lintRun({ tool_name: 'Edit', tool_input: { file_path: join(root, 'Sources/A.swift'), command: patch }, cwd: root });
+  assert.equal(codex.decision, 'block');
+});
+
+test('the repository keeps ripgrep out of the heldout split', () => {
+  const ignore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../.ignore'), 'utf8');
+  assert.match(ignore, /^Evals\/system-one\/heldout\.jsonl$/m);
 });

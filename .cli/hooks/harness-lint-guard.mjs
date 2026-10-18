@@ -17,7 +17,8 @@
  * Behavior: other paths / unresolved repository / check error → passthrough. Never blocks on its own failure.
  */
 
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import { HookOutput } from '../lib/hook-output.mjs';
 import { readStdin, output, safeHookMain, safeGit, resolveProjectDir } from '../lib/utils.mjs';
 import { extractApplyPatchFilePaths } from '../lib/apply-patch-paths.mjs';
@@ -38,14 +39,25 @@ export function isHarnessPath(rel) {
   );
 }
 
+// The Codex adapter rewrites `apply_patch` into an Edit/Write carrying only the patch's first file in
+// `file_path`, and keeps the patch in `tool_input.command` — so every file comes from the patch.
 function editedPaths(data, projectDir) {
   const toolName = data?.tool_name || '';
+  if (!['Edit', 'Write', 'MultiEdit', 'apply_patch'].includes(toolName)) return [];
   const input = data?.tool_input || {};
-  if (toolName === 'apply_patch') return extractApplyPatchFilePaths(input.command, projectDir);
-  if (!['Edit', 'Write', 'MultiEdit'].includes(toolName)) return [];
+  const paths = extractApplyPatchFilePaths(input.command, projectDir);
   const raw = input.file_path;
-  if (!raw || typeof raw !== 'string') return [];
-  return [isAbsolute(raw) ? raw : join(projectDir, raw)];
+  if (raw && typeof raw === 'string') paths.push(isAbsolute(raw) ? raw : join(projectDir, raw));
+  return paths;
+}
+
+// git prints the resolved top level, so the file's directory is resolved too (`/tmp` → `/private/tmp`).
+function realDir(file) {
+  try {
+    return realpathSync(dirname(file));
+  } catch {
+    return dirname(file);
+  }
 }
 
 export async function run(data) {
@@ -53,9 +65,10 @@ export async function run(data) {
     const projectDir = resolveProjectDir(data);
     const roots = new Set();
     for (const file of editedPaths(data, projectDir)) {
-      const root = safeGit('rev-parse --show-toplevel', dirname(file), { timeout: 3000 })?.trim();
+      const dir = realDir(file);
+      const root = safeGit('rev-parse --show-toplevel', dir, { timeout: 3000 })?.trim();
       if (!root) continue;
-      const rel = relative(root, file).replace(/\\/g, '/');
+      const rel = relative(root, join(dir, basename(file))).replace(/\\/g, '/');
       if (!rel.startsWith('..') && isHarnessPath(rel)) roots.add(root);
     }
     for (const root of roots) {
