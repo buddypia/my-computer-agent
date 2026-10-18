@@ -13,7 +13,8 @@
 # and no point assembling a signed bundle from a tree that fails its tests, so a
 # failure short-circuits the rest.
 #
-#   G0  classify   what changed? docs-only edits exit 0 without touching swift
+#   G0  harness    Scripts/harness/check.mjs + its tests (AGENTS.md cap, skill triggers, hooks shape)
+#       classify   what changed? docs-only edits exit 0 without touching swift
 #   G1  build      swift build          (~20s incremental)
 #   G2  trust      node --test Scripts/trust/tests/*.test.mjs  (~1s)
 #       test       swift test --xunit-output   (~12s)
@@ -186,6 +187,13 @@ trust_guards() {
     node "$ROOT/Scripts/trust/trust.mjs" incident check --tap "$TRUST_TAP" ${xunit[@]+"${xunit[@]}"}
 }
 
+# The agent harness (AGENTS.md, .agents/skills, hooks files) is almost all Markdown, so G0 would class
+# an edit to it as docs-only and skip it. The check is cheap and runs before that classification.
+harness_check() {
+    node "$ROOT/Scripts/harness/check.mjs" --root "$ROOT" &&
+        node --test "$ROOT"/Scripts/harness/tests/*.test.mjs
+}
+
 PATHS="$(changed_paths)"
 FP="$(fingerprint)"
 
@@ -197,6 +205,13 @@ if [ -z "$PATHS" ]; then
         exit 0
     fi
     PATHS="(forced)"
+fi
+
+if ! harness_out="$(harness_check 2>&1)"; then
+    echo "GATE FAIL  harness checks"
+    printf '%s\n' "$harness_out" | tail -n "$TAIL_LINES"
+    rm -f "$STATE_DIR/pass"
+    exit 1
 fi
 
 CODE_TOUCHED=0

@@ -66,6 +66,16 @@
             "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-session-owner-guard.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/heldout-guard.mjs\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -76,6 +86,16 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-owner-tracker.mjs\"",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/harness-lint-guard.mjs\"",
+            "timeout": 10
           }
         ]
       }

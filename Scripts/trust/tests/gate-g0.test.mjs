@@ -31,6 +31,10 @@ const repo = (name) => {
   // A docs-only change still runs the trust checks; without these it fails before it can skip.
   writeFileSync(join(root, 'Scripts/trust/trust.mjs'), '');
   writeFileSync(join(root, 'Scripts/trust/tests/ok.test.mjs'), "import { test } from 'node:test';\ntest('ok', () => {});\n");
+  // The harness check runs before G0 classifies anything; a passing stand-in keeps it out of these cases.
+  mkdirSync(join(root, 'Scripts/harness/tests'), { recursive: true });
+  writeFileSync(join(root, 'Scripts/harness/check.mjs'), '');
+  writeFileSync(join(root, 'Scripts/harness/tests/ok.test.mjs'), "import { test } from 'node:test';\ntest('ok', () => {});\n");
   writeFileSync(join(root, '.gitignore'), '.tmp/\n');
   commit(root, 'Sources/A.swift');
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
@@ -107,6 +111,20 @@ test('a docs-only change that skips the build still fails on a failing trust che
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
   const r = gate(root, 'ok');
   assert.match(r.out, /GATE FAIL\s+trust checks \(docs-only change\)/, r.out);
+  assert.equal(r.status, 1);
+  assert.equal(r.runs, 0);
+});
+
+test('an AGENTS.md-only change still fails on a failing harness check, before anything is built', () => {
+  const root = repo('harness-red');
+  writeFileSync(join(root, 'Scripts/harness/check.mjs'), "console.log('HARNESS FAIL  1 problem(s)'); process.exit(1);\n");
+  git(root, 'add', '-A');
+  git(root, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'red check');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  commit(root, 'AGENTS.md');
+  const r = gate(root, 'ok');
+  assert.match(r.out, /GATE FAIL\s+harness checks/, r.out);
+  assert.match(r.out, /HARNESS FAIL/);
   assert.equal(r.status, 1);
   assert.equal(r.runs, 0);
 });

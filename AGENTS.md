@@ -28,12 +28,8 @@ G3 が既定に入っていないのは、`build/` を作り直して `codesign`
 これはエージェントが毎ターン行ってよい副作用ではない。リリース前に人が
 `Scripts/gate.sh --stage 3` として明示的に通す。
 
-プロセス全体の量（main thread の遅延・watchdog・共有プールの壁時計・常駐メモリ）は、並列の `swift test` では
-隣のテストの負荷まで測ってしまう。テスト関数名を `…Isolated` で終え（`Tests/*/IsolatedTiming.swift`）、上限は
-`let budget = IsolatedTiming.enabled ? tight : parallelSafe; #expect(elapsed < budget)` の三項演算子で書く。
-`if IsolatedTiming.enabled { #expect(…) }` ブロックにすると並列実行でアサート自体が消え、`swift-bar-move.mjs` の
-テスト基準引き下げ検知（`\.enabled\s*[({]`）にも引っかかる。機能のアサートは常に走り、厳しい数値は
-G2「隔離」が単独・直列に強制する。
+`node Scripts/harness/check.mjs`（AGENTS.md の上限・skill のトリガー行・hooks.json の形）は
+docs-only の変更でも G0 の前に走る。
 
 ### G0 がスキップする条件
 
@@ -64,27 +60,9 @@ G2「隔離」が単独・直列に強制する。
 評価系自身・不可逆な変更（DB スキーマ変更 `CREATE/ALTER/DROP TABLE` 等・破壊的データ削除 `DELETE FROM` / `rm -rf` 等）・秘密/権限/依存・仕様・大きな UI・大規模変更（大規模リファクタリングを含む 10 ファイル以上 または 300 行以上）は必ず人間が承認する。
 それ以外（revert 可能かつ局所的）は、証拠（gate 緑・テスト基準引き下げなし・独立レビュー等）がすべて緑なら AI が人間に聞かずにマージする。
 
-1. commit して `git push -u origin <branch>` する（CI が HEAD に対して gate と executed_tests を走らせる）。
-   作者とは別コンテキストのレビュアー（サブエージェント）に `trust.mjs diff-id` の値へ
-   束縛した review.json を書かせる。チェック項目は `trust.mjs incident checklist`。
-2. Pre-Ship の approval 以外のステップを済ませてから、**main 側の**評価器で判定する:
-   `node <main>/Scripts/trust/trust.mjs approve --worktree <wt> --review <json> --ci`
-   （`--ci` は CI run の完了を待ち、その証拠を使う。ローカルで swift test は走らない）
-   - exit 0 かつ `TRUST AUTO_MERGE` と「Pre-Ship approval を trust として記録した」が出力された場合だけ、
-     人間に聞かずに `/create-pr ship-worktree` へ進む。PR 本文に判定結果を載せ、マージ後に報告する。
-     exit 0 だけでは判断しない（INC-012）。
-     ship の直前に `node .claude/scripts/mark-pre-ship-confirmed.mjs <branch> --quality <label>` を単独の
-     Bash 呼び出しで実行し（マーカーの有効期限は 10 分）、`--worktree` にはリテラルの絶対パスを渡す。
-     ship は main を取り込んだ head の CI を最大 30 分待ってからマージするので、background で実行する。
-     AUTO_MERGE でも trust が測らない規約（System One eval の改善など）を満たさないときは人間に聞き、
-     その回答も下の `answer` で記録する（trust の承認を上書きし、台帳に human として残る）。
-   - exit 3（`HUMAN`）: 表示された理由（どの軸で致命的か）を Pre-Ship Panel に添えて人間の承認を待つ。
-     回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する。
-     台帳への取り込み（`trust.mjs reconcile`）は `ship-worktree` が push の前に行う。
-     worktree を消した後では回答が残っていないので、手で取り込むときは ship より前に行う。
-3. 自動マージした変更に欠陥が見つかったら、`data/trust/incidents.json` に根本原因クラスと
-   guard（checklist < test < gate）を登録してから `trust.mjs escape --incident INC-NNN --diff-id <id>`。
-   そのカテゴリは凍結され、2 件で自動マージ全体が止まる。再開は人間が `policy.json` の `breaker.since` を進める。
+手順（独立レビュー → `trust.mjs approve --ci` → AUTO_MERGE / HUMAN → escape）は `trust-auto-merge` skill にある。
+`exit 0` だけで AUTO_MERGE と判断しない（INC-012）。
+
 - `data/trust/**`・`Scripts/trust/**`・ゲート・フックの変更は常に人間の承認を通す。
   AI が自分の採点基準を下げられないようにするため。
 
@@ -113,6 +91,16 @@ G2「隔離」が単独・直列に強制する。
 triage・routing・offline fallback（`TypeSafeDecisionEngine` / `RequestRoute`）を変えるときは、
 `node Scripts/eval/hillclimb.mjs run` で train と heldout の両方が改善することを確かめる。
 `Evals/system-one/heldout.jsonl` は開かない。手順は `docs/evals/system-one.md`。
+
+## スキル
+
+本文は必要になったときだけ読む。skill を足したら、同じ変更でここに 1 行足す（ないと開かれない）。
+
+- When opening a PR, or shipping / cleaning up a worktree, read .agents/skills/create-pr/SKILL.md and follow it.
+- When pushing a worktree for merge, deciding AUTO_MERGE vs HUMAN, or a merged change turns out defective, read .agents/skills/trust-auto-merge/SKILL.md and follow it.
+- When writing or changing a Swift test that bounds latency, a watchdog, wall-clock or memory, read .agents/skills/isolated-timing-tests/SKILL.md and follow it.
+- When a feature needs a typed AI judgment (routing, ranking, extraction, verification) instead of prompt-and-parse, read .agents/skills/typesafe-ai/SKILL.md and follow it.
+- When adding or changing agent instructions (AGENTS.md, a skill, a hook, a helper script, a subagent), read .agents/skills/harness-design/SKILL.md and follow it.
 
 ## その他
 
