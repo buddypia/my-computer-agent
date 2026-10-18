@@ -17,10 +17,10 @@
  * Behavior: other paths / unresolved repository / check error → passthrough. Never blocks on its own failure.
  */
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import { HookOutput } from '../lib/hook-output.mjs';
-import { readStdin, output, safeHookMain, safeGit, resolveProjectDir } from '../lib/utils.mjs';
+import { readStdin, output, safeHookMain, resolveProjectDir } from '../lib/utils.mjs';
 import { extractApplyPatchFilePaths } from '../lib/apply-patch-paths.mjs';
 import { checkHarness } from '../../Scripts/harness/check.mjs';
 
@@ -51,12 +51,22 @@ function editedPaths(data, projectDir) {
   return paths;
 }
 
-// git prints the resolved top level, so the file's directory is resolved too (`/tmp` → `/private/tmp`).
+// The resolved directory (`/tmp` → `/private/tmp`), so the path is compared with a resolved root.
 function realDir(file) {
   try {
     return realpathSync(dirname(file));
   } catch {
     return dirname(file);
+  }
+}
+
+// The nearest directory holding `.git` (a directory in a checkout, a file in a linked worktree).
+// Not `git rev-parse`: under load the spawn ran past its timeout, and a hook that cannot find the
+// repository passes the edit through unchecked.
+export function findRoot(dir) {
+  for (let d = dir; ; d = dirname(d)) {
+    if (existsSync(join(d, '.git'))) return d;
+    if (dirname(d) === d) return null;
   }
 }
 
@@ -66,7 +76,7 @@ export async function run(data) {
     const roots = new Set();
     for (const file of editedPaths(data, projectDir)) {
       const dir = realDir(file);
-      const root = safeGit('rev-parse --show-toplevel', dir, { timeout: 3000 })?.trim();
+      const root = findRoot(dir);
       if (!root) continue;
       const rel = relative(root, join(dir, basename(file))).replace(/\\/g, '/');
       if (!rel.startsWith('..') && isHarnessPath(rel)) roots.add(root);

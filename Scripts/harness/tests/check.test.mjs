@@ -14,7 +14,7 @@ import { ALWAYS_ON_MAX, checkHarness } from '../check.mjs';
 // Imported without this flag, a hook runs its standalone entry and waits on stdin.
 globalThis.__HOOK_ORCHESTRATOR__ = true;
 const { readsHeldout } = await import('../../../.cli/hooks/heldout-guard.mjs');
-const { isHarnessPath, run: lintRun } = await import('../../../.cli/hooks/harness-lint-guard.mjs');
+const { findRoot, isHarnessPath, run: lintRun } = await import('../../../.cli/hooks/harness-lint-guard.mjs');
 
 let scratch;
 let n = 0;
@@ -165,6 +165,16 @@ test('harness-lint-guard blocks an edit that leaves the harness invalid, and ign
   const patch = '*** Begin Patch\n*** Update File: Sources/A.swift\n*** Update File: .agents/skills/beta/SKILL.md\n*** End Patch\n';
   const codex = await lintRun({ tool_name: 'Edit', tool_input: { file_path: join(root, 'Sources/A.swift'), command: patch }, cwd: root });
   assert.equal(codex.decision, 'block');
+});
+
+test('harness-lint-guard finds the nearest checkout, a linked worktree included, without spawning git', () => {
+  const root = tree();
+  mkdirSync(join(root, '.git'));
+  const wt = join(root, '.worktrees/feature/x');
+  write(wt, '.git', 'gitdir: ../../../.git/worktrees/x\n');
+  mkdirSync(join(wt, '.agents/skills'), { recursive: true });
+  assert.equal(findRoot(join(wt, '.agents/skills')), wt);
+  assert.equal(findRoot(join(root, '.agents/skills/alpha')), root);
 });
 
 test('the repository keeps ripgrep out of the heldout split', () => {
