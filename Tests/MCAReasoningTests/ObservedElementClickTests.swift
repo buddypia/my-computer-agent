@@ -29,7 +29,7 @@ struct ObservedElementClickTests {
     }
 
     @Test("Approved coordinate operations tolerate selected-window focus restoration", arguments:
-        ["Click element", "click", "left_click", "right_click", "double_click", "triple_click", "middle_click", "left_click_drag", "scroll", "mouse_move"])
+        ["Click element", "click", "left_click", "right_click", "double_click", "triple_click", "middle_click", "left_click_drag", "scroll", "mouse_move", "Click and type", "Click and press key"])
     func selectedWindowFocusRestoration(operation: String) {
         #expect(DesktopActionAuthorization.matchesObservation(observedSnapshot(focused: false),
             observedSnapshot(focused: true), operation: operation))

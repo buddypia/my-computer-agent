@@ -1565,36 +1565,46 @@ public actor TwoTierAutonomousLoopCoordinator {
         goal: String? = nil,
         cancellationToken: CancellationToken
     ) async throws {
+        // Resolve target coordinates with robust fallback cascade before approval
+        let targetPoint: CGPoint? = {
+            // 1. Explicit coordinates provided by decision
+            if let direct = decision.targetCenter ?? decision.coordinates {
+                return direct
+            }
+            // 2. Candidate center matching targetElementId
+            if let targetId = decision.targetElementId, targetId != "none",
+               let matched = candidates.first(where: { $0.id == targetId }) {
+                return matched.center
+            }
+            // 3. Fallback coordinate resolution for .scroll
+            if decision.action == .scroll {
+                // 3a. Target scroll container candidate if available
+                if let container = TypeSafeDecisionEngine.resolveScrollContainer(candidates: candidates, goal: goal ?? "") {
+                    return container.center
+                }
+                // 3b. Fall back to candidate bounding box centroid or screen center
+                return TypeSafeDecisionEngine.resolveFallbackScrollCoordinates(candidates: candidates)
+            }
+            return nil
+        }()
+
         if !synthesizer.isSimulation, decision.action != .none && decision.action != .wait {
-            try await DesktopActionAuthorization.requireApproval(operation: decision.action.rawValue, details: "Goal: \(goal ?? "")\nDecision: \(decision)", expected: snapshot)
+            let approvalOperation: String
+            if targetPoint != nil && decision.action == .typeText {
+                approvalOperation = "Click and type"
+            } else if targetPoint != nil && decision.action == .keyPress {
+                approvalOperation = "Click and press key"
+            } else {
+                approvalOperation = decision.action.rawValue
+            }
+            try await DesktopActionAuthorization.requireApproval(
+                operation: approvalOperation,
+                details: "Goal: \(goal ?? "")\nDecision: \(decision)",
+                expected: snapshot
+            )
         }
         try cancellationToken.throwIfCancelled()
         do {
-            let targetPID = resolveTargetPID(from: snapshot)
-
-            // Resolve target coordinates with robust fallback cascade
-            let targetPoint: CGPoint? = {
-                // 1. Explicit coordinates provided by decision
-                if let direct = decision.targetCenter ?? decision.coordinates {
-                    return direct
-                }
-                // 2. Candidate center matching targetElementId
-                if let targetId = decision.targetElementId, targetId != "none",
-                   let matched = candidates.first(where: { $0.id == targetId }) {
-                    return matched.center
-                }
-                // 3. Fallback coordinate resolution for .scroll
-                if decision.action == .scroll {
-                    // 3a. Target scroll container candidate if available
-                    if let container = TypeSafeDecisionEngine.resolveScrollContainer(candidates: candidates, goal: goal ?? "") {
-                        return container.center
-                    }
-                    // 3b. Fall back to candidate bounding box centroid or screen center
-                    return TypeSafeDecisionEngine.resolveFallbackScrollCoordinates(candidates: candidates)
-                }
-                return nil
-            }()
-
             try cancellationToken.throwIfCancelled()
             guard let coordinates = targetPoint else {
                 switch decision.action {
@@ -1613,7 +1623,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                     // Defensive fallback: If targetPoint was somehow nil, resolve viewport centroid
                     let fallbackPoint = TypeSafeDecisionEngine.resolveFallbackScrollCoordinates(candidates: candidates)
                     let delta = decision.scrollDelta ?? CGVector(dx: 0, dy: -5)
-                    try synthesizer.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: fallbackPoint, targetPID: targetPID)
+                    try synthesizer.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: fallbackPoint, targetPID: nil)
                 case .wait, .none:
                     break
                 case .click, .doubleClick, .rightClick:
@@ -1631,12 +1641,18 @@ public actor TwoTierAutonomousLoopCoordinator {
                 try synthesizer.click(at: coordinates, button: .right, clickCount: 1)
             case .typeText:
                 try synthesizer.click(at: coordinates, button: .left, clickCount: 1)
+                if !synthesizer.isSimulation && config.settlingDelayMs > 0 {
+                    try await Task.sleep(for: .milliseconds(min(config.settlingDelayMs, 50)))
+                }
                 if let text = decision.textInput {
                     try cancellationToken.throwIfCancelled()
                     try synthesizer.typeText(text)
                 }
             case .keyPress:
                 try synthesizer.click(at: coordinates, button: .left, clickCount: 1)
+                if !synthesizer.isSimulation && config.settlingDelayMs > 0 {
+                    try await Task.sleep(for: .milliseconds(min(config.settlingDelayMs, 50)))
+                }
                 if let keys = decision.keyCombination {
                     for key in keys {
                         try cancellationToken.throwIfCancelled()
@@ -1645,7 +1661,7 @@ public actor TwoTierAutonomousLoopCoordinator {
                 }
             case .scroll:
                 let delta = decision.scrollDelta ?? CGVector(dx: 0, dy: -5)
-                try synthesizer.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: coordinates, targetPID: targetPID)
+                try synthesizer.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: coordinates, targetPID: nil)
             case .wait:
                 break
             case .none:

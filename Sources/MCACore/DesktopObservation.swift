@@ -25,9 +25,16 @@ public enum ScreenTextSource: String, Codable, Sendable {
 ///
 /// Observations are immutable value types so they can cross actor boundaries
 /// without copying concerns.
-public enum DesktopObservation: Codable, Sendable, Equatable {
+public enum DesktopObservation: Codable, Sendable, Equatable, Identifiable {
     case screen(ScreenObservation)
     case audio(AudioObservation)
+
+    public var id: UUID {
+        switch self {
+        case .screen(let s): return s.id
+        case .audio(let a): return a.id
+        }
+    }
 
     public var timestamp: Date {
         switch self {

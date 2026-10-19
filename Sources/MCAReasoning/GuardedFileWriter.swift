@@ -150,6 +150,24 @@ enum GuardedFileWriter {
                         contents: try boundedContents(handle, descriptor: descriptor))
     }
 
+    static func readRegularFile(_ destination: Destination) throws -> Data? {
+        try Task.checkCancellation()
+        guard destination.isCurrent() else { throw ActionAuthorizationError.staleTarget }
+        let descriptor = openat(destination.parent, destination.name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        if descriptor < 0 {
+            if errno == ENOENT { return nil }
+            if errno == ELOOP { throw ActionAuthorizationError.staleTarget }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            throw ActionAuthorizationError.staleTarget
+        }
+        return try boundedContents(handle, descriptor: descriptor)
+    }
+
     static func write(_ contents: Data, to destination: Destination, append: Bool, expected: Snapshot?) throws {
         try Task.checkCancellation()
         guard destination.isCurrent() else { throw ActionAuthorizationError.staleTarget }

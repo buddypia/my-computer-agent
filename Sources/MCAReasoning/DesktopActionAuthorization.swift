@@ -72,7 +72,8 @@ public enum DesktopActionAuthorization {
         // keyboard-dependent operations retain strict field identity checks.
         switch operation {
         case "Click element", "click", "left_click", "right_click", "double_click", "triple_click",
-             "middle_click", "left_click_drag", "scroll", "mouse_move":
+             "middle_click", "left_click_drag", "scroll", "mouse_move",
+             "Click and type", "Click and press key":
             return true
         default:
             return before.focusedElementId == after.focusedElementId

@@ -586,20 +586,63 @@ public struct TypeSafeActTool: AgentTool {
         let engine = engineProvider()
         let decision = try await engine.decideNextAction(goal: goal, candidates: candidates)
 
+        let targetPoint: CGPoint? = {
+            if let direct = decision.targetCenter ?? decision.coordinates {
+                return direct
+            }
+            if let targetId = decision.targetElementId, targetId != "none",
+               let matched = candidates.first(where: { $0.id == targetId }) {
+                return matched.center
+            }
+            if decision.action == .scroll {
+                if let container = TypeSafeDecisionEngine.resolveScrollContainer(candidates: candidates, goal: goal) {
+                    return container.center
+                }
+                return TypeSafeDecisionEngine.resolveFallbackScrollCoordinates(candidates: candidates)
+            }
+            return nil
+        }()
+
         if decision.action != .none && decision.action != .wait {
-            try await DesktopActionAuthorization.requireApproval(operation: decision.action.rawValue, details: "Goal: \(goal)\nDecision: \(decision)", expected: observed)
+            let approvalOperation: String
+            if targetPoint != nil && decision.action == .typeText {
+                approvalOperation = "Click and type"
+            } else if targetPoint != nil && decision.action == .keyPress {
+                approvalOperation = "Click and press key"
+            } else {
+                approvalOperation = decision.action.rawValue
+            }
+            if ActionAuthorization.current != nil || (!synthesizer.isSimulation && decision.action != .typeText && decision.action != .keyPress) {
+                try await DesktopActionAuthorization.requireApproval(
+                    operation: approvalOperation,
+                    details: "Goal: \(goal)\nDecision: \(decision)",
+                    expected: observed
+                )
+            }
         }
         try Task.checkCancellation()
         var executedSummary = "Action: \(decision.action.rawValue)"
-        if let targetCenter = decision.targetCenter, decision.action != .none {
+        if decision.action != .none && !decision.isCompleted {
             do {
                 switch decision.action {
                 case .click:
-                    try synthesizer.click(at: targetCenter)
+                    guard let targetCenter = targetPoint else {
+                        throw EventSynthesizer.SynthesizerError.eventCreationFailed
+                    }
+                    try synthesizer.click(at: targetCenter, button: .left, clickCount: 1)
                     executedSummary += " (clicked at \(Int(targetCenter.x)), \(Int(targetCenter.y)))"
                 case .doubleClick:
-                    try synthesizer.click(at: targetCenter, clickCount: 2)
+                    guard let targetCenter = targetPoint else {
+                        throw EventSynthesizer.SynthesizerError.eventCreationFailed
+                    }
+                    try synthesizer.click(at: targetCenter, button: .left, clickCount: 2)
                     executedSummary += " (double-clicked at \(Int(targetCenter.x)), \(Int(targetCenter.y)))"
+                case .rightClick:
+                    guard let targetCenter = targetPoint else {
+                        throw EventSynthesizer.SynthesizerError.eventCreationFailed
+                    }
+                    try synthesizer.click(at: targetCenter, button: .right, clickCount: 1)
+                    executedSummary += " (right-clicked at \(Int(targetCenter.x)), \(Int(targetCenter.y)))"
                 case .typeText:
                     if let text = decision.textInput {
                         if ActionAuthorization.current == nil,
@@ -607,10 +650,41 @@ public struct TypeSafeActTool: AgentTool {
                             tool: definition.name, title: "Type text", keystrokes: text, app: frontmostApp())) {
                             return refusal
                         }
+                        if let targetCenter = targetPoint {
+                            try synthesizer.click(at: targetCenter, button: .left, clickCount: 1)
+                            if !synthesizer.isSimulation {
+                                try await Task.sleep(for: .milliseconds(50))
+                            }
+                        }
                         try synthesizer.typeText(text)
                         executedSummary += " (typed '\(text)')"
                     }
-                default:
+                case .keyPress:
+                    if let keys = decision.keyCombination, !keys.isEmpty {
+                        if ActionAuthorization.current == nil,
+                           keys.contains(where: KeystrokeApproval.needsApproval(key:)),
+                           let refusal = await approver.gate(KeystrokeApproval.request(
+                            tool: definition.name, title: "Press keys", keystrokes: "Keys: \(keys.joined(separator: ", "))", app: frontmostApp())) {
+                            return refusal
+                        }
+                        if let targetCenter = targetPoint {
+                            try synthesizer.click(at: targetCenter, button: .left, clickCount: 1)
+                            if !synthesizer.isSimulation {
+                                try await Task.sleep(for: .milliseconds(50))
+                            }
+                        }
+                        for key in keys {
+                            try Task.checkCancellation()
+                            try synthesizer.pressKey(key)
+                        }
+                        executedSummary += " (pressed '\(keys.joined(separator: ", "))')"
+                    }
+                case .scroll:
+                    let scrollPoint = targetPoint ?? TypeSafeDecisionEngine.resolveFallbackScrollCoordinates(candidates: candidates)
+                    let delta = decision.scrollDelta ?? CGVector(dx: 0, dy: -5)
+                    try synthesizer.scroll(deltaX: Int32(delta.dx), deltaY: Int32(delta.dy), at: scrollPoint, targetPID: nil)
+                    executedSummary += " (scrolled at \(Int(scrollPoint.x)), \(Int(scrollPoint.y)) with deltaY=\(Int(delta.dy)), deltaX=\(Int(delta.dx)))"
+                case .wait, .none:
                     break
                 }
             } catch {
@@ -878,6 +952,125 @@ public struct OpenFileTool: AgentTool {
 
     static func optionSafe(_ path: String) -> String {
         path.hasPrefix("-") ? "./" + path : path
+    }
+}
+
+/// Reads the text contents of a local file on macOS for inspection, proofreading, or editing.
+///
+/// Enforces ``FileWritePolicy`` plus credential/secret filename checks, opens only regular files
+/// without following symlinks (`GuardedFileWriter.readRegularFile`), and redacts sensitive output
+/// through ``PrivacyFilter``.
+public struct ReadFileTool: AgentTool {
+    public static let defaultMaxCharacters = 16_000
+    public static let hardMaxCharacters = 60_000
+
+    private let home: URL
+    private let privacyFilter = PrivacyFilter()
+
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
+    }
+
+    public var definition: ToolDefinition {
+        ToolDefinition(
+            name: "read_file",
+            description: """
+                Reads the text contents of a file on the local filesystem. \
+                Use this before proofreading, reviewing, summarizing, or editing a file with `write_file`.
+                """,
+            parameters: Data("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "file_path": {
+                      "type": "string",
+                      "description": "Path to the text file to read (e.g. '~/Desktop/memo.txt', '~/Documents/draft.md')."
+                    },
+                    "max_characters": {
+                      "type": "integer",
+                      "description": "Maximum number of characters to return (default: 16000, max: 60000)."
+                    }
+                  },
+                  "required": ["file_path"]
+                }
+                """.utf8))
+    }
+
+    public func invoke(arguments: Data) async throws -> String {
+        let parsed = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
+        guard let path = parsed.string("file_path"), !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Error: 'file_path' parameter is required."
+        }
+        if let requestedMax = parsed.int("max_characters"), requestedMax <= 0 {
+            return "Error: 'max_characters' must be positive."
+        }
+        let maxCharacters = min(max(parsed.int("max_characters") ?? Self.defaultMaxCharacters, 100), Self.hardMaxCharacters)
+        let expandedPath = NSString(string: path).expandingTildeInPath
+
+        switch FileWritePolicy.evaluate(path: path, home: home) {
+        case .denied(let reason):
+            return "Error: reading '\(expandedPath)' is not allowed: \(reason)."
+        case .needsApproval:
+            break
+        }
+
+        if let reason = Self.sensitiveReadReason(path: expandedPath) {
+            return "Error: reading '\(expandedPath)' is not allowed: \(reason)."
+        }
+
+        do {
+            let destination = try GuardedFileWriter.Destination(expandedPath)
+            guard let data = try GuardedFileWriter.readRegularFile(destination) else {
+                return "Error: file not found at '\(expandedPath)'."
+            }
+            if data.prefix(8_192).contains(0) {
+                return "Error: '\(expandedPath)' appears to be a binary file and cannot be read as text."
+            }
+            let rawText = String(decoding: data, as: UTF8.self)
+            let redacted = privacyFilter.redactSensitiveText(rawText)
+            if redacted.count > maxCharacters {
+                let prefix = String(redacted.prefix(maxCharacters))
+                return "File: \(expandedPath) (showing first \(maxCharacters) of \(redacted.count) characters)\n\n\(prefix)"
+            }
+            return "File: \(expandedPath) (\(redacted.count) characters)\n\n\(redacted)"
+        } catch is ActionAuthorizationError {
+            return "Error: '\(expandedPath)' could not be read safely (missing parent directory, symlink, or non-regular file)."
+        } catch {
+            return "Error reading file '\(expandedPath)': \(error.localizedDescription)"
+        }
+    }
+
+    private static let sensitiveDirectories: Set<String> = [
+        ".ssh", ".aws", ".gnupg", ".kube", "keychains",
+    ]
+
+    private static let sensitiveFileNames: Set<String> = [
+        ".env", ".netrc", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+    ]
+
+    private static let sensitiveExtensions: Set<String> = [
+        "pem", "key", "p12", "pfx", "kdbx",
+    ]
+
+    static func sensitiveReadReason(path: String) -> String? {
+        let canonical = FileWritePolicy.canonicalPath(URL(fileURLWithPath: path)) ?? path
+        let components = canonical.lowercased().split(separator: "/").map(String.init)
+        if components.contains(where: { sensitiveDirectories.contains($0) }) {
+            return "credential and keychain directories are off limits"
+        }
+        guard let name = components.last else { return nil }
+        if sensitiveFileNames.contains(name) {
+            return "credential and secret configuration files are off limits"
+        }
+        if name.hasPrefix(".env."),
+           !name.hasSuffix(".example"), !name.hasSuffix(".sample"), !name.hasSuffix(".template") {
+            return "environment secret files are off limits"
+        }
+        let ext = (name as NSString).pathExtension
+        if sensitiveExtensions.contains(ext) {
+            return "private key and keystore files are off limits"
+        }
+        return nil
     }
 }
 
