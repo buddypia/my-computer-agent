@@ -326,6 +326,7 @@ final class Copilot {
             InspectUIElementsTool(),
             TypeSafeActTool(engineProvider: { .live() }, approver: approver),
             FindFilesTool(),
+            ReadFileTool(),
             OpenFileTool(approver: approver),
             WriteFileTool(approver: approver),
         ] + (configuration.browser.enabled
@@ -659,6 +660,11 @@ final class Copilot {
     /// Executes an on-demand prompt preset against the target screen.
     private func executePreset(_ role: WatchRole, target: WatchTarget? = nil) {
         let selected = target ?? hudState.watchTarget
+        if role.id == "builtin.meeting" || role.triggerKind == .meetingFast {
+            Task { [weak self] in
+                await self?.handleMeetingSessionAudio(active: true, targetPID: selected.pinnedWindow?.processID)
+            }
+        }
         chatWindow.present()
         ask(role.oneShotDirective(targetName: selected.subjectName ?? "Focused Window"), capturingScreen: true, target: selected)
     }
@@ -795,11 +801,24 @@ final class Copilot {
                       !configuration.isExcluded(bundleID: capture.bundleID, windowTitle: capture.windowTitle) else {
                     return "Error: selected window identity changed or is excluded."
                 }
+                var accessibleValues: [String] = []
                 if let observed = try? await InspectUIElementsTool.makeDefaultInspector(maxCandidates: 100).captureSnapshot() {
                     await ActionAuthorization.current?.recordNativeObservation(observed)
+                    accessibleValues = observed.visibleCandidates.compactMap { candidate in
+                        guard let val = candidate.value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                              !val.isEmpty else { return nil }
+                        return "[\(candidate.id)] \(candidate.role) (\(candidate.label)): \(val)"
+                    }
                 }
-                let text = PrivacyFilter().redactSensitiveText(try await textRecognizer.recognizeText(in: capture.image))
-                return PrivacyFilter().redactSensitiveText("App: \(capture.appName)\nWindow: \(capture.windowTitle)\nWindow ID: \(pinned.id)\n\n\(text.prefix(8_000))")
+                let ocrText = PrivacyFilter().redactSensitiveText(try await textRecognizer.recognizeText(in: capture.image))
+                let combinedText: String
+                if accessibleValues.isEmpty {
+                    combinedText = String(ocrText.prefix(8_000))
+                } else {
+                    let axSection = "Accessible Text Fields:\n" + accessibleValues.joined(separator: "\n")
+                    combinedText = String((axSection + "\n\nScreen Text (OCR):\n" + ocrText).prefix(8_000))
+                }
+                return PrivacyFilter().redactSensitiveText("App: \(capture.appName)\nWindow: \(capture.windowTitle)\nWindow ID: \(pinned.id)\n\n\(combinedText)")
             } catch { return "Error: selected window could not be read: \(error.localizedDescription)" }
         }
         let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -994,10 +1013,22 @@ final class Copilot {
         let allWindows = (try? await screenCapturer.availableWindows()) ?? []
         guard !allWindows.isEmpty else { return nil }
 
+        let browserNames = ["chrome", "safari", "firefox", "arc", "edge", "brave"]
+
         // 1. App name hint match
         if let hint = appNameHint?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
+            if hint == "browser" {
+                for browser in browserNames {
+                    if let match = allWindows.first(where: {
+                        $0.appName.lowercased().contains(browser) || ($0.bundleID?.lowercased().contains(browser) == true)
+                    }) {
+                        return match
+                    }
+                }
+                return nil
+            }
             return allWindows.first(where: {
-                $0.appName.lowercased().contains(hint)
+                $0.appName.lowercased().contains(hint) || ($0.bundleID?.lowercased().contains(hint) == true)
             })
         }
 
@@ -1008,7 +1039,6 @@ final class Copilot {
         }
 
         // 3. Known web browsers
-        let browserNames = ["chrome", "safari", "firefox", "arc", "edge", "brave"]
         for browser in browserNames {
             if let match = allWindows.first(where: {
                 $0.appName.lowercased().contains(browser) || ($0.bundleID?.lowercased().contains(browser) == true)
@@ -1572,6 +1602,7 @@ final class Copilot {
                     }
                     if observation.isFinal {
                         try? await self.store.append(.audio(observation))
+                        await self.screenWatcher?.notifySpeechEnded(channel: channel)
                     }
                 }
             }
@@ -1655,6 +1686,25 @@ final class Copilot {
         return (window, window.map { .pinned($0) } ?? selectedTarget)
     }
 
+    /// Extracts an explicit browser application name or generic `"browser"` hint from a question.
+    /// Uses ASCII letter boundaries so English words like `"Search"` or `"knowledge"` do not
+    /// falsely match `"Arc"` or `"Edge"`, while Japanese/Korean particles like `"Chromeで"` still match.
+    static func detectedBrowserHint(in question: String) -> String? {
+        for name in ["Firefox", "Google Chrome", "Chrome", "Safari", "Brave", "Edge", "Arc"] {
+            let escaped = NSRegularExpression.escapedPattern(for: name)
+            let pattern = "(?<![A-Za-z])\(escaped)(?![A-Za-z])"
+            if question.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil {
+                return name
+            }
+        }
+        if question.localizedCaseInsensitiveContains("ブラウザ")
+            || question.localizedCaseInsensitiveContains("ブラウザー")
+            || question.range(of: "(?<![A-Za-z])browser(?![A-Za-z])", options: [.regularExpression, .caseInsensitive]) != nil {
+            return "browser"
+        }
+        return nil
+    }
+
     /// Asks the agent a question and streams the answer into every surface.
     ///
     /// `capturingScreen` attaches a photograph of the display. It is off by
@@ -1677,9 +1727,7 @@ final class Copilot {
                 // 1. Check for explicit command prefixes
                 let explicitGoal = RequestRoute.explicitGoal(in: question)
 
-                let browserHint = ["Firefox", "Google Chrome", "Safari", "Brave", "Edge", "Arc"].first {
-                    question.localizedCaseInsensitiveContains($0)
-                }
+                let browserHint = Self.detectedBrowserHint(in: question)
                 let resolvedTarget = await Self.resolveRequestTarget(target: target, hudTarget: hudTarget) {
                     await self.autoResolveTargetWindow(appNameHint: browserHint)
                 }
@@ -1709,7 +1757,8 @@ final class Copilot {
                     return
                 }
 
-                let shouldCapture = capturingScreen || route != .agentChat
+                let hasExplicitTarget = (target ?? hudTarget) != .focused
+                let shouldCapture = capturingScreen || route != .agentChat || hasExplicitTarget || self.screenWatcher.isMeetingSessionActive
 
                 let images: [ImageAttachment]
                 if let suppliedImages { images = suppliedImages }
@@ -2090,11 +2139,20 @@ final class Copilot {
             // no session to land in, and a setup the server refuses arrives
             // moments later as a close.
 
-            // Seed the conversation with what is on screen, so the first
+            // Seed the conversation with what is on screen and recent dialogue, so the first
             // question does not need to explain the situation.
-            if let recent = try? await store.recent(seconds: 180, limit: 30), !recent.isEmpty {
+            let recent = (try? await store.recent(seconds: 180, limit: 30)) ?? []
+            let recentAudio = (try? await store.search(ContextQuery(
+                since: Date().addingTimeInterval(-900),
+                channels: AudioChannel.allCases,
+                limit: 30
+            )))?.map(\.observation) ?? []
+            var seenIDs = Set<UUID>()
+            let combined = (recent + recentAudio).filter { seenIDs.insert($0.id).inserted }
+            if !combined.isEmpty || hudState.watchTarget != .focused {
+                let targetHeader = hudState.watchTarget.subjectName.map { "Shared/Pinned target: \($0)\n" } ?? ""
                 await session.sendContext(
-                    "Current desktop context:\n" + ContextFormatter.synthesize(recent))
+                    targetHeader + "Current desktop context:\n" + ContextFormatter.synthesize(combined))
             }
 
             tasks.append(Task { [weak self] in
@@ -2292,7 +2350,7 @@ final class Copilot {
 
         hudState.clearVoiceTranscript()
         log.info("Dictated utterance sent (\(utterance.count, privacy: .public) characters)")
-        ask(utterance)
+        ask(utterance, capturingScreen: true)
     }
 
     /// Feeds a microphone transcript chunk to the dictation buffer.

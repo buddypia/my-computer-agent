@@ -144,7 +144,7 @@ public struct BrowserInference: Sendable {
 
             Supported actions: \(actions). When choosing non-left click actions, provide right or middle as the argument.
 
-            Each element in the accessibility tree has an ID in square brackets, like [0-18372]. The ID has two parts: frame ordinal and backend node ID. Always copy the complete ID exactly as shown inside the brackets into elementId, including the frame ordinal and hyphen. For example, if the tree shows [0-18372], return elementId "0-18372"; never return only "18372".
+            Each element in the accessibility tree has an ID in square brackets, like [0-18372] or [ocr-1]. Always copy the complete ID exactly as shown inside the brackets into elementId, including the prefix and hyphen. For example, if the tree shows [0-18372], return elementId "0-18372"; never return only "18372".
 
             Respond with only the JSON object described by the schema.
             """
@@ -161,7 +161,7 @@ public struct BrowserInference: Sendable {
 
             Return the element that matches the instruction if it exists. If no element on the page matches the instruction, set `action` to null. Do not fabricate or guess an element — empty strings or placeholder values for elementId/description/method are not acceptable.
 
-            Each element in the accessibility tree has an ID in square brackets, like [0-18372]. Always copy the complete ID exactly as shown inside the brackets into elementId, including the frame ordinal and hyphen.
+            Each element in the accessibility tree has an ID in square brackets, like [0-18372] or [ocr-1]. Always copy the complete ID exactly as shown inside the brackets into elementId, including the prefix and hyphen.
 
             Respond with only the JSON object described by the schema.
             """
@@ -305,7 +305,7 @@ public struct BrowserInference: Sendable {
         // A bare backend id is the one mistake the prompt warns about; assume
         // the main frame rather than dropping the element.
         if !elementID.contains("-"), Int(elementID) != nil { elementID = "0-\(elementID)" }
-        guard elementID.range(of: #"^\d+-\d+$"#, options: .regularExpression) != nil else { return nil }
+        guard elementID.range(of: #"^(?:\d+|ocr)-\d+$"#, options: .regularExpression) != nil else { return nil }
         guard let methodName = json["method"] as? String,
               let method = BrowserActionMethod(rawValue: methodName) ?? BrowserActionMethod.lenient(methodName)
         else { return nil }

@@ -128,7 +128,7 @@ public struct EmbeddingGemmaClient: Sendable, TypeSafeEvaluating {
 
     // MARK: - TypeSafeEvaluating
 
-    public var acceptsImages: Bool { false }
+    public var acceptsImages: Bool { true }
 
     public func evaluate(request: TypeSafeClient.EvaluationRequest) async throws -> TypeSafeClient.EvaluationResponse {
         var urlRequest = URLRequest(url: endpoint)

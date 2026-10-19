@@ -149,11 +149,37 @@ final class ScreenWatcher {
         }
     }
 
+    private var isSpeechTriggeredTick = false
+
     /// Called when participant speech ends; triggers an immediate meeting assistant evaluation without waiting for the polling timer.
     func notifySpeechEnded(channel: AudioChannel) async {
         guard state.watchPhase != .off, isMeetingSessionActive else { return }
         log.info("Speech ended on \(channel.rawValue); triggering immediate meeting assistant look")
+        isSpeechTriggeredTick = true
+        defer { isSpeechTriggeredTick = false }
         await tick()
+    }
+
+    /// Returns a short digest of the latest spoken meeting utterance so a visually static slide
+    /// still triggers a look when new dialogue arrives.
+    private func meetingDialogueDigest() async -> String? {
+        if let results = try? await store.search(ContextQuery(
+            since: Date().addingTimeInterval(-300),
+            channels: AudioChannel.allCases,
+            limit: 5
+        )), let latest = results.first?.observation {
+            if case .audio(let audio) = latest, audio.isFinal, !audio.text.isEmpty {
+                return "\(audio.id.uuidString):\(audio.text.hashValue)"
+            }
+        }
+        if let recent = try? await store.recent(seconds: 300, limit: 30) {
+            for observation in recent {
+                if case .audio(let audio) = observation, audio.isFinal, !audio.text.isEmpty {
+                    return "\(audio.id.uuidString):\(audio.text.hashValue)"
+                }
+            }
+        }
+        return nil
     }
 
     init(
@@ -314,6 +340,9 @@ final class ScreenWatcher {
                 return max(2.0, min(self.policy.interval, minItemInterval))
             }
         }
+        if let preset = state.selectedPreset {
+            return max(2.0, min(self.policy.interval, preset.defaultInterval))
+        }
         return self.policy.interval
     }
 
@@ -434,7 +463,27 @@ final class ScreenWatcher {
         policy.reset()
         recentAdvice.removeAll()
 
-        let activeCount = items.filter(\.isEnabled).count
+        let activeItems = items.filter(\.isEnabled)
+        let activeCount = activeItems.count
+        if let first = activeItems.first {
+            state.selectedPreset = first.role
+            let available = await availableTargets()
+            if first.targetKey.hasPrefix("window:"),
+               let idStr = first.targetKey.split(separator: ":").last,
+               let wid = UInt32(idStr),
+               let window = available.windows.first(where: { $0.id == wid }) {
+                target = .pinned(window)
+                state.watchTarget = .pinned(window)
+                state.focusedApp = window.displayName
+            } else if first.targetKey.hasPrefix("display:"),
+                      let idStr = first.targetKey.split(separator: ":").last,
+                      let did = UInt32(idStr),
+                      let display = available.displays.first(where: { $0.id == did }) {
+                target = .display(display)
+                state.watchTarget = .display(display)
+                state.focusedApp = display.displayName
+            }
+        }
         if items.isEmpty {
             state.watchStatus = watchingStatus
             if state.watchPhase != .off {
@@ -494,6 +543,8 @@ final class ScreenWatcher {
 
         if state.watchPhase != .off {
             restartLoop()
+        } else {
+            setEnabled(true)
         }
         updateMeetingSessionState()
         log.info("Role [\(role.name, privacy: .public)] applied to target [\(item.targetKey, privacy: .public)]")
@@ -792,7 +843,7 @@ final class ScreenWatcher {
                 }
                 await tickTargetItem(item, window: nil, display: display)
             } else if item.targetKey == "focused" {
-                await tickFocused()
+                await tickFocused(item: item)
             }
         }
     }
@@ -837,12 +888,19 @@ final class ScreenWatcher {
             return
         }
 
-        guard !Task.isCancelled, let fingerprint = await captured.fingerprint else { return }
+        guard !Task.isCancelled, var fingerprint = await captured.fingerprint else { return }
+        let isItemMeeting = item.role.id == "builtin.meeting" || item.role.triggerKind == .meetingFast
+        if isItemMeeting, let audioDigest = await meetingDialogueDigest() {
+            fingerprint += "|audio:\(audioDigest)"
+        }
+        let effectiveInterval = isSpeechTriggeredTick && isItemMeeting
+            ? min(item.effectiveInterval, 3.0)
+            : item.effectiveInterval
 
         let decision = policy.decide(
             for: item.targetKey,
             fingerprint: fingerprint,
-            interval: item.effectiveInterval,
+            interval: effectiveInterval,
             isOwnWindow: false,
             isExcluded: captured.isExcluded,
             isBusy: state.isStreaming
@@ -949,14 +1007,25 @@ final class ScreenWatcher {
     /// app, and OCR needs the picture. So the picture is taken before the policy
     /// is asked — a screenshot the policy then throws away is the price of being
     /// able to notice that a Figma board changed at all.
-    private func tickFocused() async {
+    private func tickFocused(item: WatchItem? = nil) async {
         // No picture when nothing can look at one. Capturing anyway would spend
         // the screenshot, send it to a route that is blocked, and fail — three
         // times, at which point the watch stops. The text path still works.
         let wantsImage = canCaptureScreen && router.blockedReason(for: .vision) == nil
-        let look = await currentLook(includeImage: wantsImage)
+        var look = await currentLook(includeImage: wantsImage)
+        let role = item?.role ?? state.selectedPreset ?? .general
+        let isMeeting = role.id == "builtin.meeting" || role.triggerKind == .meetingFast
+        if var resolvedLook = look, isMeeting, let audioDigest = await meetingDialogueDigest() {
+            resolvedLook.fingerprint += "|audio:\(audioDigest)"
+            look = resolvedLook
+        }
+        let policyKey = item?.targetKey ?? "default"
+        let baseInterval = item?.effectiveInterval ?? effectiveLoopInterval
+        let effectiveInterval = isSpeechTriggeredTick && isMeeting ? min(baseInterval, 3.0) : baseInterval
         let decision = policy.decide(
+            for: policyKey,
             fingerprint: look?.fingerprint,
+            interval: effectiveInterval,
             isOwnWindow: look?.isOwnWindow ?? false,
             isExcluded: look?.isExcluded ?? false,
             isBusy: state.isStreaming)
@@ -966,7 +1035,7 @@ final class ScreenWatcher {
             return
         }
         guard let look else { return }
-        await respond(to: look)
+        await respond(to: look, item: item)
     }
 
     /// A frame from a pinned subject, before anything expensive has been done
@@ -1083,10 +1152,18 @@ final class ScreenWatcher {
         // `nil` means the frame could not be measured, which is not the same as
         // it being unchanged — so the look is skipped without being recorded and
         // the next tick starts over.
-        guard let fingerprint = await captured.fingerprint else {
+        guard var fingerprint = await captured.fingerprint else {
             state.watchStatus = describe(.nothingReadable)
             return
         }
+        let role = state.selectedPreset ?? .general
+        let isMeeting = role.id == "builtin.meeting" || role.triggerKind == .meetingFast
+        if isMeeting, let audioDigest = await meetingDialogueDigest() {
+            fingerprint += "|audio:\(audioDigest)"
+        }
+        let effectiveInterval = isSpeechTriggeredTick && isMeeting
+            ? min(effectiveLoopInterval, 3.0)
+            : effectiveLoopInterval
 
         // `isOwnWindow: false` unconditionally, and that is the point of pinning
         // rather than an oversight. The focused path has to stand down when this
@@ -1094,7 +1171,9 @@ final class ScreenWatcher {
         // own advice. A pinned subject does not move when the user clicks over
         // here to ask a question, so the watch keeps running through it.
         let decision = policy.decide(
+            for: "default",
             fingerprint: fingerprint,
+            interval: effectiveInterval,
             isOwnWindow: false,
             isExcluded: captured.isExcluded,
             isBusy: state.isStreaming)
@@ -1164,8 +1243,11 @@ final class ScreenWatcher {
     /// watch decided to take it, and the failure handling in particular — three
     /// strikes and the watch stops — is the part that must not drift between
     /// them.
-    private func respond(to look: ScreenLook) async {
-        policy.recordLook(fingerprint: look.fingerprint)
+    private func respond(to look: ScreenLook, item: WatchItem? = nil) async {
+        let policyKey = item?.targetKey ?? "default"
+        let role = item?.role ?? state.selectedPreset ?? .general
+        let originTarget = item?.targetName ?? target.subjectName
+        policy.recordLook(for: policyKey, fingerprint: look.fingerprint)
         state.watchPhase = .looking
         defer { if state.watchPhase == .looking { state.watchPhase = .watching } }
 
@@ -1176,9 +1258,12 @@ final class ScreenWatcher {
             }
             let card = try await agent.advise(
                 screenshot: look.image,
-                context: await context(for: look),
-                recentAdvice: alreadySaid())
-            policy.recordSuccess()
+                context: await context(for: look, role: role),
+                recentAdvice: alreadySaid(),
+                role: role,
+                originTarget: originTarget,
+                promptOverride: item?.customPromptOverride)
+            policy.recordSuccess(for: policyKey)
 
             guard let card else {
                 state.watchStatus = localized(
@@ -1190,14 +1275,32 @@ final class ScreenWatcher {
 
             recentAdvice.append(card.title)
             if recentAdvice.count > 6 { recentAdvice.removeFirst() }
-            state.presentAdvice(title: card.title, body: card.body)
+            let hudSev: HUDCard.Severity
+            switch card.severity {
+            case .info: hudSev = .info
+            case .suggestion: hudSev = .suggestion
+            case .warning: hudSev = .warning
+            case .error: hudSev = .error
+            case .actionItem: hudSev = .actionItem
+            }
+            state.presentAdvice(
+                title: card.title,
+                body: card.body,
+                severity: hudSev,
+                originTarget: originTarget,
+                roleId: role.id,
+                roleName: role.name,
+                roleIcon: role.icon,
+                actionTitle: card.actionTitle,
+                actionPayload: card.actionPayload
+            )
             state.watchStatus = localized(
                 "Last spoke at \(Self.clock.string(from: Date())).",
                 "\(Self.clock.string(from: Date())) に話しかけました。",
                 "\(Self.clock.string(from: Date())) 에 말을 걸었습니다.")
         } catch {
             recordFailure((error as? LanguageModelError)?.description
-                ?? error.localizedDescription)
+                ?? error.localizedDescription, targetKey: policyKey)
         }
     }
 
@@ -1205,10 +1308,10 @@ final class ScreenWatcher {
     ///
     /// Stopping rather than looping: every attempt costs a request, and the
     /// cause is almost always something only the user can fix.
-    private func recordFailure(_ reason: String) {
+    private func recordFailure(_ reason: String, targetKey: String = "default") {
         log.warning("Screen watch failed: \(reason, privacy: .public)")
 
-        guard policy.recordFailure() else {
+        guard policy.recordFailure(for: targetKey) else {
             state.watchStatus = localized(
                 "That look failed (\(reason)). Trying again shortly.",
                 "今回の確認は失敗しました（\(reason)）。しばらくして再試行します。",
@@ -1251,11 +1354,19 @@ final class ScreenWatcher {
         let isMeeting = role?.triggerKind == .meetingFast || role?.id == "builtin.meeting"
 
         if isMeeting {
-            // For meetings, spoken audio dialogue (both me and other participants) is paramount
-            let audioObservations = recent.compactMap { observation -> DesktopObservation? in
+            // For meetings, spoken audio dialogue (both me and other participants) is paramount.
+            // Query audio channels directly up to 15 minutes back so screen observations never crowd out dialogue.
+            let searchedAudio = (try? await store.search(ContextQuery(
+                since: Date().addingTimeInterval(-900),
+                channels: AudioChannel.allCases,
+                limit: 40
+            )))?.map(\.observation) ?? []
+            let recentAudio = recent.compactMap { observation -> DesktopObservation? in
                 if case .audio = observation { return observation }
                 return nil
             }
+            var seenIDs = Set<UUID>()
+            let audioObservations = (searchedAudio + recentAudio).filter { seenIDs.insert($0.id).inserted }
             if !audioObservations.isEmpty {
                 parts.append("## Recent meeting dialogue / 会話履歴 (相手およびあなたの発言)\n" +
                     ContextFormatter.synthesize(audioObservations, maxCharacters: 4000))

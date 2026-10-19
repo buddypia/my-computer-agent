@@ -263,7 +263,14 @@ public actor Agent {
     ) async throws -> String {
         let isAutonomous = isAutonomousAction || triage?.needsComputerAction == true
         let recent = try await store.recent(seconds: 300, limit: 80)
-        let context = ContextFormatter.synthesize(recent)
+        let recentAudio = (try? await store.search(ContextQuery(
+            since: Date().addingTimeInterval(-900),
+            channels: AudioChannel.allCases,
+            limit: 40
+        )))?.map(\.observation) ?? []
+        var seenObservationIDs = Set<UUID>()
+        let combinedObservations = (recent + recentAudio).filter { seenObservationIDs.insert($0.id).inserted }
+        let context = ContextFormatter.synthesize(combinedObservations)
 
         let baseInstructions = Prompts.assistant + Prompts.languageDirective(language)
         var instructionSections = [baseInstructions]
@@ -330,10 +337,10 @@ public actor Agent {
             }
         }
 
-        // Browser work is inherently multi-step (navigate → snapshot → act →
-        // snapshot …), so the budget is wider when those tools are present.
+        // Browser and file editing work is inherently multi-step (find/navigate →
+        // read/snapshot → act/write …), so the budget is wider when those tools are present.
         // When autonomous action is explicitly requested or triggered, allocate 15 rounds.
-        let defaultBudget = isAutonomous ? 15 : (definitions.contains { $0.name.hasPrefix("browser_") } ? 10 : 4)
+        let defaultBudget = isAutonomous ? 15 : (definitions.contains { $0.name.hasPrefix("browser_") || $0.name == "read_file" } ? 10 : 4)
         let effectiveMaxRounds = maxRounds ?? defaultBudget
 
         for round in 0..<effectiveMaxRounds {
@@ -990,6 +997,11 @@ enum Prompts {
         in search or composition inputs on modern SPAs, causing `cmd+a` to capture only input text. \
         If the browser's accessibility tree yields limited elements, visual OCR fallback activates \
         automatically to recover visible content.
+
+        # File editing and proofreading
+        For reading, proofreading, or editing local files:
+        - Locate the file with `find_files` when only a filename or folder hint is given, read its contents with `read_file`, and write the revised text with `write_file`.
+        - When proofreading or revising text visible on screen (in an editor, document, or browser field), inspect the exact text via `read_current_screen`, `inspect_ui_elements`, or `browser_snapshot`, then return the improved text or apply it via `write_file`, `browser_element` (`fill`), or `typesafe_act` as requested.
 
         # Context
         Answer from the provided desktop context and the prior conversation when they are \

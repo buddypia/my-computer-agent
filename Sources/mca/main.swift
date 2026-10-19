@@ -251,6 +251,7 @@ func runAsk(question: String) async {
             InspectUIElementsTool(),
             TypeSafeActTool(engineProvider: { .live() }, approver: approver),
             FindFilesTool(),
+            ReadFileTool(),
             OpenFileTool(approver: approver),
             WriteFileTool(approver: approver),
         ] + (configuration.browser.enabled

@@ -211,13 +211,9 @@ public struct EventSynthesizer: Sendable {
             throw SynthesizerError.inputTooLong(text.count)
         }
 
-        let focused = Self.expectedTargetPID.flatMap { focusedAXElement(pid: $0, attribute: kAXFocusedUIElementAttribute) }
-        if Self.expectedTargetPID != nil && focused == nil { throw SynthesizerError.targetChanged }
+        try ensureInputTarget()
         for char in text {
             try ensureInputTarget()
-            if let focused, let pid = Self.expectedTargetPID {
-                guard let current = focusedAXElement(pid: pid, attribute: kAXFocusedUIElementAttribute), CFEqual(focused, current) else { throw SynthesizerError.targetChanged }
-            }
             if char == "\n" {
                 try pressKeyCode(UInt16(kVK_Return), modifiers: [])
                 Thread.sleep(forTimeInterval: 0.01)
@@ -485,10 +481,13 @@ public struct EventSynthesizer: Sendable {
 
     public func validateCoordinate(_ point: CGPoint) throws {
         if let frame = try scopedWindowFrame() {
+            let ownPID = ProcessInfo.processInfo.processIdentifier
             guard frame.contains(point),
                   let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
                   let hit = windows.first(where: { item in
-                      guard let bounds = item[kCGWindowBounds as String] as? [String: Any],
+                      guard (item[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value != ownPID,
+                            ((item[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0) == 0,
+                            let bounds = item[kCGWindowBounds as String] as? [String: Any],
                             let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
                             (item[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1 > 0 else { return false }
                       return frame.contains(point)

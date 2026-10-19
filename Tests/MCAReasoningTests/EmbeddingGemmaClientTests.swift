@@ -138,5 +138,6 @@ struct EmbeddingGemmaClientTests {
         let bodyData = try #require(r.httpBody)
         let json = try #require(try JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
         #expect(json["model"] as? String == "google/embeddinggemma-2-740m")
+        #expect(client.acceptsImages == true)
     }
 }

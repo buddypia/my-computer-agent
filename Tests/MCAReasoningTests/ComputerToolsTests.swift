@@ -296,4 +296,161 @@ struct ComputerToolsTests {
         let res = try await tool.invoke(arguments: Data("{}".utf8))
         #expect(res.contains("Error: 'goal' parameter is required."))
     }
+
+    @Test("TypeSafeActTool executes click-then-type, double-click, right-click, and scroll")
+    func testTypeSafeActToolExecutesAllActionKinds() async throws {
+        let searchBox = UIElementCandidate(
+            id: "search_input",
+            role: "AXTextField",
+            label: "Search",
+            value: nil,
+            bounds: CGRect(x: 100, y: 200, width: 200, height: 40),
+            isActionable: true,
+            source: .accessibility
+        )
+        let scrollArea = UIElementCandidate(
+            id: "scroll_main",
+            role: "AXScrollArea",
+            label: "Main Content",
+            value: nil,
+            bounds: CGRect(x: 0, y: 0, width: 800, height: 600),
+            isActionable: true,
+            source: .accessibility
+        )
+        let snapshot = UIStateSnapshot(visibleCandidates: [searchBox, scrollArea], timestamp: .now)
+        let synthesizer = MockEventSynthesizer(isSimulation: true)
+
+        // 1. Type text into searchBox: should click target center (200, 220) first, then type text
+        let typeEvaluator = MockTypeSafeEvaluator.scripted(
+            targetChoice: "search_input",
+            actionChoice: "type",
+            textInput: "hello world"
+        )
+        let typeTool = TypeSafeActTool(
+            inspectorProvider: { _ in MockUIInspector(snapshots: [snapshot]) },
+            engineProvider: { TypeSafeDecisionEngine(client: typeEvaluator) },
+            synthesizer: synthesizer,
+            approver: AutoApproveToolApprover()
+        )
+        let typeResult = try await ActionAuthorization.$current.withValue(nil) {
+            try await typeTool.invoke(arguments: Data(#"{"goal": "Type hello world into Search"}"#.utf8))
+        }
+        #expect(typeResult.contains("typed 'hello world'"))
+        #expect(synthesizer.recordedEvents == [
+            .click(point: CGPoint(x: 200, y: 220), button: .left, clickCount: 1),
+            .typeText("hello world")
+        ])
+
+        // 2. Scroll action: should scroll at scroll container center (400, 300)
+        synthesizer.reset()
+        let scrollEvaluator = MockTypeSafeEvaluator.scripted(
+            targetChoice: "scroll_main",
+            actionChoice: "scroll"
+        )
+        let scrollTool = TypeSafeActTool(
+            inspectorProvider: { _ in MockUIInspector(snapshots: [snapshot]) },
+            engineProvider: { TypeSafeDecisionEngine(client: scrollEvaluator) },
+            synthesizer: synthesizer,
+            approver: AutoApproveToolApprover()
+        )
+        let scrollResult = try await ActionAuthorization.$current.withValue(nil) {
+            try await scrollTool.invoke(arguments: Data(#"{"goal": "Scroll down the page"}"#.utf8))
+        }
+        #expect(scrollResult.contains("scrolled at 400, 300"))
+        #expect(synthesizer.recordedEvents == [
+            .scroll(deltaX: 0, deltaY: -15, point: CGPoint(x: 400, y: 300), targetPID: nil)
+        ])
+    }
+
+    @Test("ReadFileTool reads text files, supports max_characters truncation, and pairs with WriteFileTool for proofreading")
+    func testReadFileToolAndProofreadRoundtrip() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mca-readfile-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let draftURL = tempRoot.appendingPathComponent("draft.md")
+        try "誤字のある文章です。確認おねがいします。".write(to: draftURL, atomically: true, encoding: .utf8)
+
+        let readTool = ReadFileTool(home: tempRoot)
+        let writeTool = WriteFileTool(approver: AutoApproveToolApprover(), home: tempRoot)
+
+        let readOutput = try await readTool.invoke(
+            arguments: Data("{\"file_path\": \"\(draftURL.path)\"}".utf8)
+        )
+        #expect(readOutput.contains("誤字のある文章です。確認おねがいします。"))
+
+        // Truncation check (clamped minimum 100 chars)
+        let longURL = tempRoot.appendingPathComponent("long.txt")
+        try String(repeating: "あ", count: 250).write(to: longURL, atomically: true, encoding: .utf8)
+        let truncatedOutput = try await readTool.invoke(
+            arguments: Data("{\"file_path\": \"\(longURL.path)\", \"max_characters\": 120}".utf8)
+        )
+        #expect(truncatedOutput.contains("showing first 120 of 250 characters"))
+
+        // Proofread and write back
+        let revisedText = "修正済みの文章です。ご確認をお願いいたします。"
+        let writeOutput = try await ActionAuthorization.$current.withValue(nil) {
+            try await writeTool.invoke(
+                arguments: Data("{\"file_path\": \"\(draftURL.path)\", \"content\": \"\(revisedText)\", \"mode\": \"overwrite\"}".utf8)
+            )
+        }
+        #expect(writeOutput.contains("Successfully wrote"))
+
+        let rereadOutput = try await readTool.invoke(
+            arguments: Data("{\"file_path\": \"\(draftURL.path)\"}".utf8)
+        )
+        #expect(rereadOutput.contains(revisedText))
+    }
+
+    @Test("ReadFileTool refuses sensitive paths, symlinks, and binary files")
+    func testReadFileToolSecurityBoundaries() async throws {
+        let tempHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mca-readfile-sec-\(UUID().uuidString)")
+        let sshDir = tempHome.appendingPathComponent(".ssh")
+        let projectDir = tempHome.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: sshDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempHome) }
+
+        let keyURL = sshDir.appendingPathComponent("id_ed25519")
+        try "PRIVATE_KEY".write(to: keyURL, atomically: true, encoding: .utf8)
+
+        let envURL = projectDir.appendingPathComponent(".env")
+        try "SECRET_TOKEN=xyz".write(to: envURL, atomically: true, encoding: .utf8)
+
+        let envExampleURL = projectDir.appendingPathComponent(".env.example")
+        try "SECRET_TOKEN=placeholder".write(to: envExampleURL, atomically: true, encoding: .utf8)
+
+        let normalURL = projectDir.appendingPathComponent("note.txt")
+        try "safe content".write(to: normalURL, atomically: true, encoding: .utf8)
+
+        let symlinkURL = projectDir.appendingPathComponent("link.txt")
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: normalURL)
+
+        let binaryURL = projectDir.appendingPathComponent("image.bin")
+        try Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01]).write(to: binaryURL)
+
+        let readTool = ReadFileTool(home: tempHome)
+
+        // 1. ~/.ssh/id_ed25519 denied by FileWritePolicy
+        let sshResult = try await readTool.invoke(arguments: Data("{\"file_path\": \"\(keyURL.path)\"}".utf8))
+        #expect(sshResult.contains("is not allowed"))
+
+        // 2. ~/project/.env denied by sensitiveReadReason
+        let envResult = try await readTool.invoke(arguments: Data("{\"file_path\": \"\(envURL.path)\"}".utf8))
+        #expect(envResult.contains("is not allowed"))
+
+        // 3. ~/project/.env.example is allowed
+        let exampleResult = try await readTool.invoke(arguments: Data("{\"file_path\": \"\(envExampleURL.path)\"}".utf8))
+        #expect(exampleResult.contains("SECRET_TOKEN=placeholder"))
+
+        // 4. Symlink is refused by GuardedFileWriter.readRegularFile (O_NOFOLLOW)
+        let symlinkResult = try await readTool.invoke(arguments: Data("{\"file_path\": \"\(symlinkURL.path)\"}".utf8))
+        #expect(symlinkResult.contains("could not be read safely"))
+
+        // 5. Binary file with NUL bytes is refused
+        let binaryResult = try await readTool.invoke(arguments: Data("{\"file_path\": \"\(binaryURL.path)\"}".utf8))
+        #expect(binaryResult.contains("binary file"))
+    }
 }

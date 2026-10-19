@@ -567,7 +567,6 @@ public struct ScreenPickerView: View {
     /// Applies a choice and gets out of the way.
     private func apply(_ target: WatchTarget) {
         selectedItems.removeAll()
-        onChooseItems?([])
         onChoose?(target)
         onClose?()
     }

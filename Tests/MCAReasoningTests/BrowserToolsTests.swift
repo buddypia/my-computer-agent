@@ -299,6 +299,31 @@ struct BrowserActPipelineTests {
         #expect(elements.map(\.elementID) == ["0-12"])
     }
 
+    @Test("observe and act accept OCR fallback element IDs (ocr-1, [ocr-2])")
+    func ocrFallbackElementIDs() async throws {
+        let ocrOutline = """
+            [ocr-1] text: "Search"
+            [ocr-2] text: "Submit"
+            """
+        let ocrRefs: [String: BrowserElementRef] = [
+            "ocr-1": BrowserElementRef(id: "ocr-1", role: "text", name: "Search", bounds: CGRect(x: 10, y: 10, width: 100, height: 24)),
+            "ocr-2": BrowserElementRef(id: "ocr-2", role: "text", name: "Submit", bounds: CGRect(x: 120, y: 10, width: 80, height: 24)),
+        ]
+        let driver = FakeBrowserDriver(outlines: [ocrOutline, ocrOutline], refs: [ocrRefs, ocrRefs])
+        let inference = cannedInference([
+            ("instruction: Find buttons", #"{"elements": [{"elementId": "[ocr-2]", "description": "Submit button", "method": "click", "arguments": []}]}"#),
+            ("Find the most relevant element to perform an action on given the following action: click Submit",
+             #"{"action": {"elementId": "ocr-2", "description": "Submit", "method": "click", "arguments": []}, "twoStep": false}"#),
+        ])
+        let session = BrowserSession(drivers: [driver], inference: inference)
+        let observed = try await session.observe(instruction: "Find buttons")
+        #expect(observed.map(\.elementID) == ["ocr-2"])
+
+        let outcome = try await session.act(instruction: "click Submit")
+        #expect(outcome.success)
+        #expect(await driver.performed == [BrowserAction(method: .click, elementID: "ocr-2", description: "Submit", arguments: [])])
+    }
+
     @Test("extract: returns pretty JSON of the model's object")
     func extract() async throws {
         let driver = FakeBrowserDriver(outlines: [loginOutline], refs: [loginRefs])

@@ -47,4 +47,17 @@ struct CopilotRequestScopeTests {
         #expect(unavailable.window == nil)
         #expect(unavailable.subject == .focused)
     }
+
+    @Test("Browser hint detection recognizes short Chrome and generic browser phrasing")
+    func browserHintDetection() {
+        #expect(Copilot.detectedBrowserHint(in: "Chromeで開いているページを要約して") == "Chrome")
+        #expect(Copilot.detectedBrowserHint(in: "Google Chromeのタブを確認して") == "Google Chrome")
+        #expect(Copilot.detectedBrowserHint(in: "Safariで検索して") == "Safari")
+        #expect(Copilot.detectedBrowserHint(in: "Open in Arc") == "Arc")
+        #expect(Copilot.detectedBrowserHint(in: "画面のブラウザ操作をして") == "browser")
+        #expect(Copilot.detectedBrowserHint(in: "ブラウザーでフォームを入力して") == "browser")
+        #expect(Copilot.detectedBrowserHint(in: "Search in the browser") == "browser")
+        #expect(Copilot.detectedBrowserHint(in: "Search for notes on Desktop") == nil)
+        #expect(Copilot.detectedBrowserHint(in: "メモ帳の文章を添削して") == nil)
+    }
 }
