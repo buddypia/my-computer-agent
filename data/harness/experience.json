@@ -1,0 +1,56 @@
+{
+  "$comment": "ハーネス（AGENTS.md・skill・hook・補助スクリプト）の変更が実際に何をしたかの記録。harness2 の experience reflector の形。entry ごとに edits（component / change / observed / verdict）と、edits が支える場合だけ転移する教訓を 1 件（lesson、なければ null）。手順と検査規則は .agents/skills/harness-design/SKILL.md、検査は Scripts/harness/check.mjs。",
+  "entries": [
+    {
+      "id": "HX-001",
+      "at": "2026-10-18",
+      "change": "#54",
+      "edits": [
+        {
+          "component": "AGENTS.md",
+          "change": "Trust の手順と IsolatedTiming の書き方を skill に移し、4,999 → 4,160 文字に削った",
+          "observed": "同じ PR で skill・hook・検査を同時に足しており、削減だけの効果を切り分けた実行はない",
+          "verdict": "confounded"
+        },
+        {
+          "component": ".cli/hooks/harness-lint-guard.mjs",
+          "change": "ハーネスのファイルを編集した直後に check.mjs を走らせ、失敗なら差し戻す PostToolUse hook を足した",
+          "observed": "Stop フックのゲートと並走すると `git rev-parse` が 3 秒のタイムアウトを超え、リポジトリが見つからないまま編集を素通しした。main のテストが赤くなって発覚（#55）",
+          "verdict": "hurt"
+        },
+        {
+          "component": ".cli/hooks/heldout-guard.mjs",
+          "change": "Evals/system-one/heldout.jsonl を読む呼び出しを PreToolUse で拒否する hook を足した",
+          "observed": "以後のセッション記録に、この hook が実際に拒否した呼び出しはない",
+          "verdict": "no observed effect"
+        }
+      ],
+      "lesson": null
+    },
+    {
+      "id": "HX-002",
+      "at": "2026-10-18",
+      "change": "#55",
+      "edits": [
+        {
+          "component": ".cli/hooks/harness-lint-guard.mjs",
+          "change": "`git rev-parse` を spawn せず、最寄りの `.git`（linked worktree ではファイル）まで親を辿ってリポジトリを見つける",
+          "observed": "負荷下での素通しが消え、hook のテストが 4.9s → 0.17s になった",
+          "verdict": "helped"
+        },
+        {
+          "component": ".cli/hooks/harness-lint-guard.mjs",
+          "change": "相対パスを CLAUDE_PROJECT_DIR ではなくペイロードの cwd から解決する",
+          "observed": "worktree で行った Codex の patch が main のファイルとして検査されて通っていた。CLAUDE_PROJECT_DIR を設定した回帰テストが修正前に落ち、修正後に通る",
+          "verdict": "helped"
+        }
+      ],
+      "lesson": {
+        "cue": "hook がリポジトリの位置や相対パスを解決する必要があり、他の hook やゲートと並走しうる、または linked worktree の中で呼ばれうる",
+        "lesson": ".cli/hooks/harness-lint-guard.mjs と同じく、hook ではリポジトリを `.git` まで親を辿って見つけ、パスはペイロードの cwd から解決する。git の spawn や CLAUDE_PROJECT_DIR に頼ると、解決の失敗が素通し（fail-open）になる",
+        "evidence": [1, 2],
+        "confidence": "medium（同じ hook の 2 件の修正と回帰テストが支える。他の hook では未確認）"
+      }
+    }
+  ]
+}

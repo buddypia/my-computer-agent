@@ -1,0 +1,11 @@
+{
+  "$comment": "error-hint.mjs のシグネチャ表。セッションをまたいで再発したツールエラーだけを載せ、evidence に再発の記録を書く（Scripts/harness/check.mjs が検査する）。1 回きりの失敗はここに入れない。",
+  "hints": [
+    {
+      "id": "eza-ls-time",
+      "signature": "invalid value '[^']*' for '--time <FIELD>'",
+      "hint": "`ls` in this shell is an alias for eza, whose `-t` takes a field (`-t modified`), so `ls -t <path>` reads the path as the field. For newest-first use `command ls -t …` / `command ls -td …` (BSD ls).",
+      "evidence": "2026-10 のセッション 5 件以上で 16 回: `ls -t`, `ls -td`, `ls -lt` が `$(...)` やパイプの中で失敗し、空の結果のまま次のコマンドへ進んだ。"
+    }
+  ]
+}

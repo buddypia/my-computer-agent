@@ -3,8 +3,9 @@
 /**
  * harness-lint-guard.mjs — PostToolUse Edit/Write Hook (CLI-agnostic)
  *
- * Right after an edit to the agent harness — `AGENTS.md`, `CLAUDE.md`, `.agents/skills/**`, or a hooks file
- * (`.claude/settings.json`, `.codex/hooks.json`, `.agents/hooks.json`) — runs `Scripts/harness/check.mjs`
+ * Right after an edit to the agent harness — `AGENTS.md`, `CLAUDE.md`, `.agents/skills/**`, `.claude/agents/**`,
+ * a hooks file (`.claude/settings.json`, `.codex/hooks.json`, `.agents/hooks.json`), the error-hint table or the
+ * experience ledger (`data/harness/experience.json`) — runs `Scripts/harness/check.mjs`
  * against the repository the file lives in, and blocks with the problems when it fails.
  *
  * Why a hook: the rules (AGENTS.md ≤ 8,000 chars, every skill named by a trigger line, a well-formed
@@ -34,6 +35,9 @@ export function isHarnessPath(rel) {
     rel === '.claude/settings.json' ||
     rel === '.codex/hooks.json' ||
     rel === '.agents/hooks.json' ||
+    rel === '.cli/hooks/error-hints.json' ||
+    rel === 'data/harness/experience.json' ||
+    rel.startsWith('.claude/agents/') ||
     rel.startsWith('.agents/skills/') ||
     rel.startsWith('.claude/skills/')
   );

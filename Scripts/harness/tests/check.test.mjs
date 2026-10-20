@@ -9,12 +9,13 @@ import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { ALWAYS_ON_MAX, checkHarness } from '../check.mjs';
+import { ALWAYS_ON_MAX, EXPERIENCE_REL, HINTS_REL, checkHarness } from '../check.mjs';
 
 // Imported without this flag, a hook runs its standalone entry and waits on stdin.
 globalThis.__HOOK_ORCHESTRATOR__ = true;
 const { readsHeldout } = await import('../../../.cli/hooks/heldout-guard.mjs');
 const { findRoot, isHarnessPath, run: lintRun } = await import('../../../.cli/hooks/harness-lint-guard.mjs');
+const { loadHints, matchHints, run: hintRun } = await import('../../../.cli/hooks/error-hint.mjs');
 
 let scratch;
 let n = 0;
@@ -149,6 +150,9 @@ test('heldout-guard denies reading the heldout split and allows scoring and stag
 test('harness-lint-guard blocks an edit that leaves the harness invalid, and ignores other files', async () => {
   assert.equal(isHarnessPath('AGENTS.md'), true);
   assert.equal(isHarnessPath('.agents/skills/x/SKILL.md'), true);
+  for (const rel of ['.claude/agents/scout.md', '.cli/hooks/error-hints.json', 'data/harness/experience.json']) {
+    assert.equal(isHarnessPath(rel), true, rel);
+  }
   assert.equal(isHarnessPath('Sources/A.swift'), false);
 
   const root = tree();
@@ -190,4 +194,101 @@ test('harness-lint-guard finds the nearest checkout, a linked worktree included,
 test('the repository keeps ripgrep out of the heldout split', () => {
   const ignore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../.ignore'), 'utf8');
   assert.match(ignore, /^Evals\/system-one\/heldout\.jsonl$/m);
+});
+
+test('a subagent without name or description fails', () => {
+  const root = tree();
+  write(root, '.claude/agents/scout.md', '---\nname: scout\ndescription: reads logs, returns a table\n---\n');
+  assert.deepEqual(errors(root), []);
+  assert.equal(checkHarness(root).census.subagents, 1);
+  write(root, '.claude/agents/scout.md', '---\nname: scout\n---\n');
+  assert.match(errors(root).join('\n'), /scout\.md needs `description:`/);
+});
+
+test('a prose line repeated verbatim in AGENTS.md and a skill fails; short lines and code do not', () => {
+  const root = tree();
+  const rule = 'Run the gate before ending a turn that touched code.';
+  write(root, '.agents/skills/alpha/SKILL.md', `${skill('alpha')}\n- ok\n\n\`\`\`\n${rule}\n\`\`\`\n`);
+  write(root, 'AGENTS.md', `# AGENTS.md\n\n${rule}\n\n- ok\n\n${trigger('alpha')}`);
+  assert.deepEqual(errors(root), [], 'a fenced copy and a short line are not instructions');
+  write(root, '.agents/skills/alpha/SKILL.md', `${skill('alpha')}\n1. ${rule}\n`);
+  assert.match(errors(root).join('\n'), /alpha\/SKILL\.md repeats an AGENTS\.md line verbatim/);
+});
+
+test('a script under a skill directory named by its SKILL.md must exist', () => {
+  const root = tree();
+  write(root, '.agents/skills/alpha/SKILL.md', `${skill('alpha')}\nRun \`node .agents/skills/alpha/scripts/x.mjs\`.\n`);
+  assert.match(errors(root).join('\n'), /invokes `\.agents\/skills\/alpha\/scripts\/x\.mjs` but that file does not exist/);
+  write(root, '.agents/skills/alpha/scripts/x.mjs', '');
+  assert.deepEqual(errors(root), []);
+  write(root, 'AGENTS.md', `${readFileSync(join(root, 'AGENTS.md'), 'utf8')}Table: .cli/hooks/table.json\n`);
+  assert.deepEqual(errors(root), [], 'a .json file is not a .js script');
+});
+
+const hint = (over = {}) => ({ id: 'h', signature: 'boom \\d+', hint: 'do x', evidence: 'seen 3 times', ...over });
+
+test('an error hint needs a compiling signature, a hint and evidence of recurrence', () => {
+  const root = tree();
+  write(root, HINTS_REL, JSON.stringify({ hints: [hint()] }));
+  assert.deepEqual(errors(root), []);
+  write(root, HINTS_REL, JSON.stringify({ hints: [hint({ signature: '(' }), hint({ id: 'h' }), hint({ id: 'e', evidence: '' })] }));
+  const out = errors(root).join('\n');
+  assert.match(out, /`signature` must be a non-empty regular expression/);
+  assert.match(out, /duplicate id/);
+  assert.match(out, /\(e\) needs `evidence`/);
+});
+
+test('error-hint appends the hint whose signature is in the output, on success or failure', async () => {
+  const hints = loadHints();
+  assert.ok(hints.length > 0);
+  const eza = { tool_name: 'Bash', tool_response: { stderr: "error: invalid value '/x' for '--time <FIELD>'" } };
+  assert.deepEqual(matchHints(eza, hints).map((h) => h.id), ['eza-ls-time']);
+  assert.deepEqual(matchHints({ tool_name: 'Bash', tool_response: { stdout: 'ok' } }, hints), []);
+  const fail = await hintRun({ hook_event_name: 'PostToolUseFailure', error: eza.tool_response.stderr });
+  assert.equal(fail.hookSpecificOutput.hookEventName, 'PostToolUseFailure');
+  assert.match(fail.hookSpecificOutput.additionalContext, /^\[error-hint:eza-ls-time\] .*command ls -t/);
+  assert.deepEqual(await hintRun({ tool_response: 'fine' }), {});
+});
+
+const row = (verdict, component = 'AGENTS.md') => ({ component, change: 'c', observed: 'o', verdict });
+const entry = (over = {}) => ({ id: 'HX-001', at: '2026-10-18', change: '#1', edits: [row('helped')], lesson: null, ...over });
+const lesson = (over = {}) => ({ cue: 'when x', lesson: 'in AGENTS.md, do y', evidence: [1], confidence: 'medium', ...over });
+
+test('the experience ledger checks verdicts, and a lesson must cite a helped or hurt row and name its component', () => {
+  const root = tree();
+  const put = (entries) => write(root, EXPERIENCE_REL, JSON.stringify({ entries }));
+  put([entry({ lesson: lesson() })]);
+  assert.deepEqual(errors(root), []);
+  assert.equal(checkHarness(root).census.experience_lessons, 1);
+
+  put([entry({ edits: [row('worked')] })]);
+  assert.match(errors(root).join('\n'), /`verdict` must be one of helped \/ hurt \/ no observed effect \/ confounded/);
+  put([entry({ edits: [row('confounded'), row('no observed effect')], lesson: lesson({ evidence: [1, 2] }) })]);
+  assert.match(errors(root).join('\n'), /rests only on confounded \/ no-observed-effect rows/);
+  put([entry({ lesson: lesson({ evidence: [2] }) })]);
+  assert.match(errors(root).join('\n'), /`evidence` must list the 1-based numbers/);
+  put([entry({ lesson: lesson({ lesson: 'do y' }) })]);
+  assert.match(errors(root).join('\n'), /must name the component it concerns \(one of: AGENTS\.md\)/);
+  put([entry(), entry({ at: '18 Oct', lesson: lesson({ confidence: 'sure' }) })]);
+  const out = errors(root).join('\n');
+  assert.match(out, /duplicate id/);
+  assert.match(out, /`at` must be YYYY-MM-DD/);
+  assert.match(out, /`confidence` must start with high \/ medium \/ low/);
+});
+
+test('--base reports the always-on character delta against a git ref', () => {
+  const root = tree();
+  const git = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' });
+  git('init', '-q');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'empty');
+  git('add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'base');
+  write(root, 'AGENTS.md', `${readFileSync(join(root, 'AGENTS.md'), 'utf8')}12345`);
+  assert.equal(checkHarness(root, { base: 'HEAD' }).census.always_on_char_delta, 5);
+  assert.match(checkHarness(root, { base: 'HEAD~1' }).errors.join('\n'), /could not be read at that ref/);
+});
+
+test('this repository\'s harness passes its own check', () => {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+  assert.deepEqual(checkHarness(repo).errors, []);
 });
