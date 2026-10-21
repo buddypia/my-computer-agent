@@ -14,7 +14,7 @@
  *
  * trunk-branch.mjs 와 같은 병이다(하나의 개념이 여러 hook 에 제각기 구현 → 일부만 작동 →
  * 사용자는 보호받고 있다고 믿는다). 같은 처방을 쓴다: 단일 진입점 + 전 호출부 전환 +
- * `tests/unit/create-pr-lease-ssot.test.mjs` 의 재발 차단 스캔.
+ * `Scripts/harness/tests/create-pr-lease.test.mjs` 의 재발 차단 스캔 (실제 hook 으로 확인).
  *
  * **왜 TTL 이 정답인가**: 종료 시 정리(trap/finally)는 SIGKILL 을 못 덮는다 — 이번 유출이
  * 정확히 그 경우였다. 임대는 프로세스 생사와 무관하게 스스로 만료하므로 정리 실패가
@@ -27,10 +27,6 @@
  * 병렬로 각자의 worktree 에서 일하는 **다른 모든 세션**에게도 owner/commit/destructive/trunk-ref
  * 가드가 열려 있었다. 임대는 그것을 연 세션의 것이다: `.tmp/create-pr-lease/<session-id>` 에 두고,
  * 가드는 자기 세션의 파일만 본다. 세션을 알 수 없으면 임대도 없다 (어느 세션에도 열리지 않는 쪽).
- *
- * R-CM-028 경계: boundary-uniform. 관점 2 는 `.cli/` 를 import 할 수 없어
- * `project-scaffolder/templates/scripts/lib/create-pr-lease.mjs` 에 독립 사본을 두고,
- * 동작 동등성은 위 테스트가 강제한다 (trunk-branch.mjs 와 동일한 관행).
  */
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
