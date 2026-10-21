@@ -64,7 +64,9 @@ export function resolveMainRoot(cwd = process.cwd()) {
       cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 3000,
+      // A CLI, not a hook: nothing waits on it, and 3s timed out under load (load average ~100,
+      // 2026-10-21), which read as "not a git repo".
+      timeout: 30_000,
     }).trim();
     if (!out) return null;
     const abs = resolve(cwd, out);
