@@ -12,9 +12,10 @@ permissions:
   contents: read
   actions: read # gh run download of main's trunk baseline
 
+# main runs are never cancelled: each one leaves the trunk baseline and .build for branches leaving from it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build-and-test:
@@ -67,8 +68,9 @@ jobs:
         with:
           name: trust-baseline
           path: .tmp/trust/runs
+          include-hidden-files: true # .tmp is hidden; without this the upload is silently empty
           retention-days: 30
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       # Only a push run on main can have made it. Missing (run cancelled, not finished, expired) or from
       # another toolchain (the file name carries it): trust.mjs builds and tests the trunk itself.
