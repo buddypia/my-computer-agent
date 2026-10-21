@@ -24,9 +24,10 @@
  *
  * Security: All external commands use execFileSync argument arrays (no shell interpretation).
  *
- * Hook integration: cmdInit creates .tmp/create-pr-active flag →
- *   commit-guard.mjs / destructive-git-guard.mjs switch to allowlist mode.
- *   cmdFinalize / cmdCleanupWorktree automatically remove the flag upon completion.
+ * Hook integration: the staged commands renew this session's create-pr lease
+ *   (`.tmp/create-pr-lease/<session-id>`, .cli/lib/create-pr-lease.mjs) → commit-guard.mjs /
+ *   destructive-git-guard.mjs switch to allowlist mode for this session only.
+ *   cmdFinalize releases it upon completion.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -63,6 +64,7 @@ import {
   withoutInheritedRepository,
 } from '../../../.cli/lib/utils.mjs';
 import { resolveShipBaseBranchStrict } from '../../../.cli/lib/ship-base-branch.mjs';
+import { currentSessionId, releaseCreatePrLease, touchCreatePrLease } from '../../../.cli/lib/create-pr-lease.mjs';
 import { detectBarMove, formatBarMoveWarning } from '../../../.cli/lib/self-improving-loop.mjs';
 import {
   buildFileTree,
@@ -113,7 +115,12 @@ export function resolveProjectRoot(cwd = process.cwd()) {
 
 const PROJECT_DIR = resolveProjectRoot();
 const STATE_DIR = join(PROJECT_DIR, '.tmp', 'create-pr');
-const ACTIVE_FLAG = join(PROJECT_DIR, '.tmp', 'create-pr-active');
+// Two locks with different owners. ACTIVE_FLAG serializes Mode A across sessions: it stages from
+// the main checkout's one index, so a second run would ship the first one's changes. The guard
+// carve-out is a lease of the session that holds it (.cli/lib/create-pr-lease.mjs); other sessions
+// working in their own worktrees keep every guard.
+const ACTIVE_FLAG = join(STATE_DIR, 'active');
+const SESSION_ID = currentSessionId();
 const WT_DIR = join(STATE_DIR, 'wt');
 const PATCH_FILE = join(STATE_DIR, 'patch');
 const BRANCH_FILE = join(STATE_DIR, 'branch');
@@ -459,6 +466,18 @@ function inferMode(command) {
   return null;
 }
 
+/** Renews the Mode A lock and this session's guard lease (they expire together). */
+function markActive() {
+  mkdirSync(STATE_DIR, { recursive: true });
+  writeFileSync(ACTIVE_FLAG, String(Date.now()));
+  touchCreatePrLease(PROJECT_DIR, SESSION_ID);
+}
+
+function releaseActive() {
+  try { if (existsSync(ACTIVE_FLAG)) rmSync(ACTIVE_FLAG); } catch {}
+  try { releaseCreatePrLease(PROJECT_DIR, SESSION_ID); } catch {}
+}
+
 function isStaleActiveFlag(flagPath, now = Date.now(), thresholdMs = ACTIVE_FLAG_STALE_MS) {
   if (!existsSync(flagPath)) return true;
   try {
@@ -514,7 +533,7 @@ const readBranch = () => {
 };
 
 function autoCleanup() {
-  try { if (existsSync(ACTIVE_FLAG)) rmSync(ACTIVE_FLAG); } catch {}
+  releaseActive();
   if (!existsSync(STATE_DIR)) return;
   if (existsSync(WT_DIR)) {
     try { git(['worktree', 'remove', WT_DIR, '--force']); } catch {}
@@ -609,7 +628,7 @@ export function makeTargetExists(target, cwd, { timeoutMs = 60_000 } = {}) {
 function cmdInit() {
   if (!isStaleActiveFlag(ACTIVE_FLAG)) {
     const err = new Error('Another create-pr session is in progress (active flag updated within 30 minutes).');
-    err.details = { hint: 'Wait for the current session to complete or manually clear .tmp/create-pr-active and retry.' };
+    err.details = { hint: `Wait for the current session to complete or manually clear ${ACTIVE_FLAG} and retry.` };
     throw err;
   }
   autoCleanup();
@@ -690,7 +709,7 @@ function cmdInit() {
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(join(STATE_DIR, '.gitignore'), '*\n');
   writeFileSync(PATCH_FILE, exec(['git', 'diff', '--cached', '--binary'], { raw: true }));
-  writeFileSync(ACTIVE_FLAG, String(Date.now()));
+  markActive();
 
   return { ok: true, stagedFiles, baseCommit: git(['rev-parse', 'HEAD']), warnings };
 }
@@ -703,7 +722,7 @@ function cmdIsolate(args) {
   writeFileSync(BRANCH_FILE, branchName);
   git(['apply', '--index', PATCH_FILE], { cwd: WT_DIR });
 
-  writeFileSync(ACTIVE_FLAG, String(Date.now()));
+  markActive();
   return { ok: true, branch: branchName, worktreeDir: WT_DIR };
 }
 
@@ -718,7 +737,7 @@ function cmdCommit(args) {
     : ['commit', '-F', MSG_FILE];
   git(cmdArgs, { cwd: WT_DIR });
 
-  writeFileSync(ACTIVE_FLAG, String(Date.now()));
+  markActive();
   return { ok: true, sha: git(['rev-parse', 'HEAD'], { cwd: WT_DIR }).slice(0, 7) };
 }
 
@@ -1016,7 +1035,7 @@ function cmdShipFeature(args) {
   const qualitySnapshot = collectShipQualitySnapshot({ absWtPath: WT_DIR, branch, baseBranch: BASE_BRANCH });
 
   git(['push', '-u', 'origin', branch], { cwd: WT_DIR, timeout: PUSH_TIMEOUT_MS, retry: 3 });
-  writeFileSync(ACTIVE_FLAG, String(Date.now()));
+  markActive();
 
   const result = createAndMergePr({
     base: BASE_BRANCH, head: branch, title, body,
@@ -1050,7 +1069,7 @@ function cmdFinalize() {
 
   const cleanupState = () => {
     rmSync(STATE_DIR, { recursive: true, force: true });
-    try { if (existsSync(ACTIVE_FLAG)) rmSync(ACTIVE_FLAG); } catch {}
+    releaseActive();
   };
 
   try {

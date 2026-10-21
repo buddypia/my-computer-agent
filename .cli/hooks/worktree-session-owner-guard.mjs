@@ -33,7 +33,7 @@
  * Behavior:
  *   - tool is not Edit|Write|MultiEdit|Bash → passthrough
  *   - target not under .worktrees/ (main repo file) → passthrough (worktree-policy-guard domain)
- *   - `.tmp/create-pr-active` exists → passthrough (ship/create-pr carve-out)
+ *   - this session's create-pr lease is fresh → passthrough (ship/create-pr carve-out; other sessions' leases open nothing)
  *   - Bash is not `git commit` / is `--dry-run` → passthrough (default `session_owner_scope: "commit"`)
  *   - opt-in `session_owner_scope: "all_bash"` (worktree-policy.json): every Bash command is checked
  *     against every worktree it touches (see `bashTargets`):
@@ -188,7 +188,7 @@ export async function run(rawData) {
 
     const projectDir = resolveProjectDir(rawData);
     // Ship / create-pr flows legitimately manipulate worktree paths → carve-out
-    if (isCreatePrLeaseActive(projectDir)) {
+    if (isCreatePrLeaseActive(projectDir, sessionId)) {
       return HookOutput.passthrough();
     }
 

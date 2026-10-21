@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { loadWorktreePolicy } from '../../.cli/lib/trunk-branch.mjs';
-import { isCreatePrLeaseActive } from '../../.cli/lib/create-pr-lease.mjs';
+import { currentSessionId, isCreatePrLeaseActive } from '../../.cli/lib/create-pr-lease.mjs';
 import {
   findTrunkViolations,
   formatDenial,
@@ -40,7 +40,8 @@ function main() {
   const violations = findTrunkViolations({
     updates,
     policy: loadWorktreePolicy(projectDir),
-    leaseActive: isCreatePrLeaseActive(projectDir),
+    // git runs as a child of the session's own tool call, so the session comes from its environment.
+    leaseActive: isCreatePrLeaseActive(projectDir, currentSessionId()),
     isPublished: makeIsPublished({ updates, isAncestor }),
     isUnmoved: makeIsUnmoved(commonDir),
   });
