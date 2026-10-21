@@ -56,7 +56,8 @@ export function parseArgs(argv) {
 /** Trimmed stdout, or null when git fails. */
 function git(cwd, args) {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim() || null;
+    // 30s like resolveMainRoot: a CLI, and 3s timed out under load.
+    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }).trim() || null;
   } catch {
     return null;
   }
