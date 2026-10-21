@@ -64,7 +64,9 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 
 ### `--ci`：実行系の証拠を CI から取る
 
-`gate` と `executed_tests` は `swift test` を 3 回走らせる、評価の中で最も重い部分。`assess` / `approve` に
+`gate` と `executed_tests` は評価の中で最も重い部分（trunk のビルドと `swift test`、branch の `swift test` と
+isolated）。branch 側の実行結果はゲート自身の `swift test` のイベントストリーム
+（`.tmp/gate/logs/swift-events.jsonl`）から読み、同じテストを 2 回は走らせない。`assess` / `approve` に
 `--ci` を付けると、これをローカルで実行せず、push 済みの HEAD に対する `ci.yml` の run（push イベント）が
 `trust.mjs evidence` で集めた `trust-evidence` artifact を使う。
 
@@ -73,8 +75,18 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 - run は `ci.yml` の push イベントで、HEAD sha・branch が一致し、完了しているものに限る
 - CI が何を実行するかは `.github/**` と `Scripts/**` が決め、どちらも `governance` なので、ブランチが
   CI の中身を変えた PR は証拠に関係なく人間に回る
-- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の実行はそれより**前に**済ませ、
-  trunk の結果は CI ではキャッシュしない（ブランチのテストが比較の基準を書き換えられないように）
+- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の結果はそれより**前に**用意する
+  （ブランチのテストが比較の基準を書き換えられないように）
+- trunk 側の結果は、main への push の run が `trust.mjs baseline`（ゲートを通し、その実行結果を
+  `<main>/.tmp/trust/runs/<sha>-<toolchain>.json` に置く）で作り、その run の artifact `trust-baseline` に
+  する。ブランチの run は merge-base を head に持つ main の push run から取得するだけで、作らない。
+  Actions cache は使わない。ブランチの run は自分の scope に cache を保存でき、同じブランチの後の run は
+  main のものより先にそれを復元する。保存 step を足した commit を後の commit で消せば最終 diff の
+  `ci.yml` は無変更になり、`governance` にも掛からない。main の push run はブランチからは作れない。
+  取得できなかった（main の run がまだ終わっていない・取り消された・期限切れ・toolchain が違う）ときは、
+  従来どおりこの job で trunk をビルドして実行する
+- `.build` も main の run だけが commit ごとの key で保存し、ブランチは最新のものを復元してインクリメンタルに
+  ビルドする。release 構成のビルドは別 job（`Release Build (macOS)`）で並行して走る
 - `bar_move`・`review`・`clean`・`stable` は従来どおりローカルで判定する（静的で安い）
 - main は branch protection で `Build & Test (macOS)` を必須チェックにしている
 
@@ -199,6 +211,13 @@ CI に移した（`--ci`）。それ以外は**強制ではなく手順**であ�
 - review.json の作者が本当に別コンテキストかは検証できない（INC-003）
 - 台帳の escape を AI が消せば breaker は戻る
 - `breaker` の値はポリシー検証で ISO-8601 の過去の日時と正の整数に限る。読めない escape の時刻は数える側に倒す（INC-015）
+- `executed_tests` の branch 側は、ゲートの `swift test` が書く `.tmp/gate/logs/swift-events.jsonl` を読む。
+  ゲートはその後の隔離段でもブランチのテストを走らせるので、ブランチのテストコードはこのファイルを
+  書き換えられる（以前の `$TMPDIR/trust-run-*` も推測できるパスで、同じ種類のリスク）。消したテスト・
+  弱めた assert は `bar_move` が diff から静的にも見ており、テストコードがゲートのログに書く変更は
+  独立レビューで止める。trunk 側はゲートより前にメモリに読み込むので、書き換えの影響を受けない
+- `.build` の Actions cache は、ブランチの run が自分の scope に保存したものが main のものより先に復元される。
+  影響はビルドの中間生成物に限られ（判定には使わない）、変更前は全ブランチが保存していた
 
 この受け入れが致命的にならないように、次の範囲は機械の判定に関係なく人間が承認する：
 評価系そのもの（`governance`）と、revert で戻らない・影響が外に及ぶ変更。誤って自動マージされた

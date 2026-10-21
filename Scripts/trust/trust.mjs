@@ -6,6 +6,7 @@
  *   assess     --worktree <p> [--review <json>] [--ci] [--no-gate] [--no-runtime] [--dry-run] [--json]
  *   approve    --worktree <p> --review <json> [--ci] [--json]  assess; on auto_merge, record the Pre-Ship approval
  *   evidence   --worktree <p> --out <json>                  runtime evidence for HEAD (run by CI; --ci reads it)
+ *   baseline   --worktree <p>                               gate a trunk commit and keep its run as the trunk side
  *   reconcile  --worktree <p>                               pull the human's Pre-Ship answer into the ledger
  *   escape     --incident INC-NNN (--diff-id <id> | --categories a,b) [--note "..."]
  *   stats      [--json]
@@ -156,16 +157,23 @@ async function managedBarMove(wt, mergeBase) {
  */
 function runSwiftTests(dir) {
   const events = join(mkdtempSync(join(tmpdir(), 'trust-run-')), 'events.jsonl');
-  const r = spawnSync(
+  spawnSync(
     'swift',
     ['test', '--package-path', dir, '--event-stream-output-path', events, '--event-stream-version', '0'],
     { encoding: 'utf-8', maxBuffer: 256 << 20 },
   );
+  return readRun(events);
+}
+
+/** What a `swift test` event stream says ran, or null when the run never completed. */
+export function readRun(events) {
   if (!existsSync(events)) return null;
   const text = readFileSync(events, 'utf-8');
-  if (!runCompleted(text)) return null;
-  return parseEventStream(text);
+  return runCompleted(text) ? parseEventStream(text) : null;
 }
+
+/** Scripts/gate.sh writes the event stream of its own `swift test` run here. */
+const gateEvents = (wt) => join(wt, '.tmp', 'gate', 'logs', 'swift-events.jsonl');
 
 /** Toolchain identity: a baseline measured by another compiler is not the same baseline. */
 function toolchainId() {
@@ -197,6 +205,8 @@ function withLock(lockDir, fn) {
   }
 }
 
+const trunkCachePath = (wt, sha) => join(mainRoot(wt), '.tmp', 'trust', 'runs', `${sha}-${toolchainId()}.json`);
+
 /**
  * The trunk side of the comparison, cached per merge-base sha and toolchain (it only changes when
  * either does). The trunk tree is exported with `git archive` into `<main>/.tmp/trust/base-src/`
@@ -209,7 +219,7 @@ function withLock(lockDir, fn) {
  */
 function trunkRun(wt, mergeBase) {
   const dir = join(mainRoot(wt), '.tmp', 'trust');
-  const cache = join(dir, 'runs', `${mergeBase}-${toolchainId()}.json`);
+  const cache = trunkCachePath(wt, mergeBase);
   if (existsSync(cache)) return { run: new Map(readJson(cache)) };
   mkdirSync(dir, { recursive: true });
   const locked = withLock(join(dir, 'base-src.lock'), () => {
@@ -231,11 +241,11 @@ function trunkRun(wt, mergeBase) {
   return locked.busy ? { run: null, busy: true } : { run: locked.value };
 }
 
-function executedTestsEvidence(wt, mergeBase) {
-  const { run: base, busy } = trunkRun(wt, mergeBase);
+/** `branchRun` is called only once the trunk side exists, so no branch test runs before it. */
+function executedTestsVerdict({ run: base, busy }, branchRun) {
   if (busy) return { id: 'executed_tests', ok: false, detail: '別の assess が trunk 側をビルド中（しばらくして再実行）' };
   if (!base) return { id: 'executed_tests', ok: false, detail: 'trunk 側の swift test が失敗・未取得（比較できない）' };
-  const head = runSwiftTests(wt);
+  const head = branchRun();
   if (!head) return { id: 'executed_tests', ok: false, detail: 'branch 側の swift test が失敗' };
   const findings = compareRuns(base, head);
   const passed = (r) => [...r.values()].filter((v) => v.status === 'passed').length;
@@ -399,6 +409,8 @@ const snapshot = (wt) => ({ head: git(wt, ['rev-parse', 'HEAD']).trim(), dirty: 
 function runGate(wt) {
   // No cache: a pass file is just a file, and anyone who can compute its key can write it.
   const env = { ...process.env, MCA_GATE: 'on', MCA_GATE_NO_CACHE: '1' };
+  // The gate removes it before its test run; a gate that fails earlier must not leave a previous run's.
+  rmSync(gateEvents(wt), { force: true });
   const r = spawnSync(join(wt, 'Scripts/gate.sh'), ['--force'], { cwd: wt, env, encoding: 'utf-8' });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   const last = out.trim().split('\n').pop() ?? '';
@@ -407,6 +419,18 @@ function runGate(wt) {
   // The detail keeps one line; without the gate's own output a CI failure cannot be traced to a test.
   if (!ok) process.stderr.write(`${out.trimEnd()}\n`);
   return { id: 'gate', ok, detail: ok ? last : `gate failed (exit ${r.status}) ${last}` };
+}
+
+/**
+ * `gate` and `executed_tests`. The trunk side comes first, so no branch test can run before it and
+ * plant it. The branch side is the gate's own `swift test` run: running the suite a second time only
+ * re-derived the same answer, at the cost of a full test run per assessment.
+ */
+function runtimeEvidence(wt, mergeBase, { gate = true, runtime = true } = {}) {
+  const trunk = runtime ? trunkRun(wt, mergeBase) : null;
+  const gateEvidence = gate ? runGate(wt) : { id: 'gate', ok: false, detail: '--no-gate: ゲート未実行' };
+  if (!runtime) return [gateEvidence, { id: 'executed_tests', ok: false, detail: '--no-runtime: 実行比較なし' }];
+  return [gateEvidence, executedTestsVerdict(trunk, gate ? () => readRun(gateEvents(wt)) : () => runSwiftTests(wt))];
 }
 
 async function assessBranch(args) {
@@ -424,8 +448,7 @@ async function assessBranch(args) {
   if (args.ci) {
     evidence.push(...ciEvidence(wt, branch, { head: before.head, diff_id: diffId, merge_base: mergeBase }));
   } else {
-    evidence.push(args['no-gate'] ? { id: 'gate', ok: false, detail: '--no-gate: ゲート未実行' } : runGate(wt));
-    evidence.push(args['no-runtime'] ? { id: 'executed_tests', ok: false, detail: '--no-runtime: 実行比較なし' } : executedTestsEvidence(wt, mergeBase));
+    evidence.push(...runtimeEvidence(wt, mergeBase, { gate: !args['no-gate'], runtime: !args['no-runtime'] }));
   }
 
   const barMove = [...detectSwiftBarMove(testFiles), ...(await managedBarMove(wt, mergeBase))];
@@ -660,14 +683,40 @@ function cmdEvidence(args) {
   if (planted) throw new Error(`.tmp/ に追跡ファイルがある（trunk 実行の結果を偽れる）: ${planted.split('\n')[0]}`);
   const diffId = reviewDiffId(wt, ref);
   const mergeBase = git(wt, ['merge-base', ref, 'HEAD']).trim();
-  // executed_tests first: its trunk run must finish before any branch test runs (the gate runs them).
-  const executed = executedTestsEvidence(wt, mergeBase);
-  const evidence = [runGate(wt), executed];
+  const evidence = runtimeEvidence(wt, mergeBase);
   const after = snapshot(wt);
   if (after.head !== before.head || after.dirty !== before.dirty) throw new Error('証拠収集中に HEAD / tree が変わった');
   writeFileSync(resolve(String(args.out)), `${JSON.stringify({ head: before.head, diff_id: diffId, merge_base: mergeBase, evidence }, null, 2)}\n`);
   for (const e of evidence) console.log(`  ${e.ok ? 'ok  ' : 'FAIL'} ${e.id.padEnd(16)} ${e.detail}`);
   return evidence.every((e) => e.ok) ? 0 : 1;
+}
+
+/**
+ * Gates a trunk commit (ci.yml, on main) and keeps its `swift test` run as the trunk side of
+ * `executed_tests` for branches that leave from it. ci.yml caches it per commit, so a branch run reads
+ * it instead of building and testing the trunk a second time; only main runs save that cache.
+ */
+function cmdBaseline(args) {
+  const { wt, ref } = requireWorktree(args);
+  const { head, dirty } = snapshot(wt);
+  if (dirty) throw new Error('未コミットの変更がある（baseline は commit についてしか語れない）');
+  // On trunk, not at its tip: main can move between the push and the checkout of its run.
+  if (spawnSync('git', ['-C', wt, 'merge-base', '--is-ancestor', head, ref]).status !== 0) {
+    throw new Error(`HEAD が ${ref} 上にない（baseline は trunk の commit にしか作らない）`);
+  }
+  const gate = runGate(wt);
+  console.log(`  ${gate.ok ? 'ok  ' : 'FAIL'} ${gate.id.padEnd(16)} ${gate.detail}`);
+  // A red trunk still has a baseline: only the tests that passed on it are compared.
+  const run = readRun(gateEvents(wt));
+  if (run) {
+    const out = trunkCachePath(wt, head);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, JSON.stringify([...run]));
+    console.log(`  baseline: ${run.size} tests → ${out}`);
+  } else {
+    console.log('  baseline: none (the gate did not complete a swift test run)');
+  }
+  return gate.ok ? 0 : 1;
 }
 
 function cmdDiffId(args) {
@@ -676,14 +725,14 @@ function cmdDiffId(args) {
   return 0;
 }
 
-const COMMANDS = { assess: cmdAssess, approve: cmdApprove, reconcile: cmdReconcile, escape: cmdEscape, stats: cmdStats, incident: cmdIncident, evidence: cmdEvidence, 'diff-id': cmdDiffId };
+const COMMANDS = { assess: cmdAssess, approve: cmdApprove, reconcile: cmdReconcile, escape: cmdEscape, stats: cmdStats, incident: cmdIncident, evidence: cmdEvidence, baseline: cmdBaseline, 'diff-id': cmdDiffId };
 
 async function main(argv) {
   try {
     const args = parseArgs(argv);
     const cmd = COMMANDS[args._[0]];
     if (!cmd) {
-      console.error(readFileSync(fileURLToPath(import.meta.url), 'utf-8').split('\n').slice(2, 17).join('\n'));
+      console.error(readFileSync(fileURLToPath(import.meta.url), 'utf-8').split('\n').slice(2, 18).join('\n'));
       return 1;
     }
     return await cmd(args);

@@ -5,7 +5,10 @@
 ## 品質ゲート
 
 コードに触れた作業は、応答を終える前に必ずゲートを通す（Stop フックが G1 まで自動で走らせる）。
-G2 のテストは CI に任せる。手元で全段を確かめたいときだけ `Scripts/gate.sh` を実行する。
+G2 のテストは CI に任せる。手元では G1 と、触ったスイートだけの `swift test --filter <Suite>` で回す。
+全段（`Scripts/gate.sh` / `make q.check`）を手元で走らせるのは、CI の失敗を再現するときだけ。
+新しい worktree の初回ビルドはフルビルドになる（SwiftPM は成果物を絶対パスで管理するため、
+他の checkout の `.build` をコピーしても効かない）。
 
 ```bash
 Scripts/gate.sh --stage 1   # Stop フックと同じ
@@ -19,7 +22,7 @@ Scripts/gate.sh             # G0..G2
 |---|---|---|---|---|
 | G0 | 変更分類 | — | 自動 | 即時 |
 | G1 | ビルド | `swift build` | 実行 | ~20s |
-| G2 | trust | `node --test Scripts/trust/tests/*.test.mjs` + `trust.mjs incident check` | 実行 | ~1s |
+| G2 | trust | `node --test Scripts/trust/tests/*.test.mjs` + `trust.mjs incident check` | 実行 | ~75s（負荷平均 100 超で実測） |
 | G2 | テスト | `swift test` | 実行 | ~12s |
 | G2 | 隔離 | `MCA_ISOLATED_TIMING=1 swift test --no-parallel --filter 'Isolated\('` | 実行 | ~25s |
 | G3 | リリース束 | `Scripts/bundle.sh` | **手動のみ** | 数分 |
@@ -78,7 +81,7 @@ docs-only の変更でも G0 の前に走る。
 
 2. **워크트리 내 명령 실행**:
    ```bash
-   make wt.run CMD="make q.check"
+   make wt.run CMD="Scripts/gate.sh --stage 1"
    ```
 
 3. **작업 완료, PR 생성 및 완전 클린업**:
