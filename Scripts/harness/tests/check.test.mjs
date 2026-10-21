@@ -238,6 +238,17 @@ test('an error hint needs a compiling signature, a hint and evidence of recurren
   assert.match(out, /\(e\) needs `evidence`/);
 });
 
+test('the hint table and the ledger may be absent, but not while the hook or skill that reads them exists', () => {
+  const root = tree();
+  assert.deepEqual(errors(root), []);
+  write(root, '.cli/hooks/error-hint.mjs', '');
+  write(root, '.agents/skills/harness-design/SKILL.md', skill('harness-design'));
+  write(root, 'AGENTS.md', `# AGENTS.md\n\n## スキル\n\n${trigger('alpha')}${trigger('harness-design')}`);
+  const out = errors(root).join('\n');
+  assert.match(out, new RegExp(`${HINTS_REL} is missing but \\.cli/hooks/error-hint\\.mjs reads it`));
+  assert.match(out, new RegExp(`${EXPERIENCE_REL} is missing but \\.agents/skills/harness-design/SKILL\\.md reads it`));
+});
+
 test('error-hint appends the hint whose signature is in the output, on success or failure', async () => {
   const hints = loadHints();
   assert.ok(hints.length > 0);

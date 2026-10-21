@@ -242,9 +242,14 @@ function checkDuplicates(body, skillSources, errs) {
 
 export const HINTS_REL = '.cli/hooks/error-hints.json';
 
-function readJson(root, rel, errs) {
+// `neededBy` is the file that reads `rel`. While it exists, a missing `rel` is an error: the hook or
+// skill would silently find nothing, and the count would read 0 instead of failing.
+function readJson(root, rel, errs, neededBy) {
   const path = join(root, rel);
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) {
+    if (neededBy && existsSync(join(root, neededBy))) errs.push(`${rel} is missing but ${neededBy} reads it`);
+    return null;
+  }
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
   } catch (exc) {
@@ -254,7 +259,7 @@ function readJson(root, rel, errs) {
 }
 
 function checkHints(root, errs) {
-  const doc = readJson(root, HINTS_REL, errs);
+  const doc = readJson(root, HINTS_REL, errs, '.cli/hooks/error-hint.mjs');
   if (!doc) return 0;
   if (!Array.isArray(doc.hints)) {
     errs.push(`${HINTS_REL} needs a \`hints\` list`);
@@ -284,7 +289,7 @@ export const EXPERIENCE_REL = 'data/harness/experience.json';
 export const VERDICTS = ['helped', 'hurt', 'no observed effect', 'confounded'];
 
 function checkExperience(root, errs) {
-  const doc = readJson(root, EXPERIENCE_REL, errs);
+  const doc = readJson(root, EXPERIENCE_REL, errs, '.agents/skills/harness-design/SKILL.md');
   if (!doc) return { entries: 0, lessons: 0 };
   if (!Array.isArray(doc.entries)) {
     errs.push(`${EXPERIENCE_REL} needs an \`entries\` list`);
