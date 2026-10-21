@@ -84,6 +84,11 @@
             "type": "command",
             "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/worktree-owner-tracker.mjs codex PostToolUse worktree-owner-tracker",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir || echo /nonexistent/nogit)\")/.cli/_cli-dispatch.mjs\" .cli/hooks/error-hint.mjs codex PostToolUse error-hint",
+            "timeout": 5
           }
         ]
       },

@@ -10,14 +10,25 @@
 //     from its directory (it overrides the directory and the trigger stops matching).
 //   - a hooks file that is malformed never fires rather than erroring, so its shape is checked here.
 //   - every script AGENTS.md, a skill or a hook invokes must exist.
+//   - a subagent (.claude/agents/*.md) without `name:` and `description:` is never registered.
+//   - the same instruction in AGENTS.md and a skill dilutes both ("do not restate what the harness already
+//     says"), so a prose line may live in only one of them.
+//   - error-hint.mjs's table (.cli/hooks/error-hints.json) holds only errors that recurred, each with a
+//     signature that compiles and its recorded `evidence`.
+//   - the experience ledger (data/harness/experience.json) records what each harness edit did with a verdict
+//     of helped / hurt / no observed effect / confounded, and at most one lesson per entry that cites its
+//     rows, names their component and rests on at least one helped or hurt row (harness2 core/prompts.py
+//     `experience`: "a lesson resting only on confounded rows is a guess").
 // CLAUDE.md must stay a pointer to AGENTS.md (a symlink or the single line `@AGENTS.md`), so the same
 // instruction is never kept in two places.
 //
 // Usage:
-//   node Scripts/harness/check.mjs [--root <dir>] [--json]
+//   node Scripts/harness/check.mjs [--root <dir>] [--base <git-ref>] [--json]
+//   --base reports how many always-on characters the change adds over <ref> (harness2 diff_summary).
 // Exit codes: 0 valid, 1 one or more problems (listed on stdout).
 
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,7 +52,7 @@ const HOOK_FILES = [
 
 // A repository script named in always-on text, a skill, or a hook command. Placeholders and globs
 // (`<name>`, `*`) are not concrete paths and are skipped.
-const SCRIPT_REF = /(?<![\w.-]|[\w.-]\/)((?:Scripts|\.claude\/scripts|\.claude\/hooks|\.cli)\/[\w./-]+\.(?:mjs|js|sh|py))/g;
+const SCRIPT_REF = /(?<![\w.-]|[\w.-]\/)((?:Scripts|\.claude\/scripts|\.claude\/hooks|\.cli|\.agents\/skills\/[\w-]+)\/[\w./-]+\.(?:mjs|js|sh|py))(?![\w])/g;
 
 const chars = (s) => [...s].length;
 
@@ -188,32 +199,195 @@ function checkScriptRefs(root, sources, errs) {
   }
 }
 
-export function checkHarness(root) {
+function checkSubagents(root, errs) {
+  const dir = join(root, '.claude/agents');
+  if (!existsSync(dir)) return 0;
+  const files = readdirSync(dir).filter((f) => f.endsWith('.md'));
+  for (const f of files) {
+    const fm = frontmatter(readFileSync(join(dir, f), 'utf8'));
+    for (const key of ['name', 'description']) {
+      if (!new RegExp(`^${key}:\\s*\\S`, 'm').test(fm)) {
+        errs.push(`.claude/agents/${f} needs \`${key}:\` in its frontmatter, or the subagent is never registered`);
+      }
+    }
+  }
+  return files.length;
+}
+
+// Prose lines of a Markdown file: no code fences, headings or table rows, list markers stripped, and only
+// lines long enough to be an instruction rather than a label.
+function proseLines(src) {
+  const out = new Set();
+  let fence = false;
+  for (const raw of src.split('\n')) {
+    const s = raw.trim();
+    if (s.startsWith('```')) { fence = !fence; continue; }
+    if (fence || s.startsWith('#') || s.startsWith('|') || s.startsWith('---')) continue;
+    const line = s.replace(/^(?:[-*]|\d+\.)\s+/, '');
+    if (chars(line) >= 30) out.add(line);
+  }
+  return out;
+}
+
+function checkDuplicates(body, skillSources, errs) {
+  const always = proseLines(body);
+  for (const [rel, src] of skillSources) {
+    for (const line of proseLines(src)) {
+      if (always.has(line)) {
+        errs.push(`${rel} repeats an AGENTS.md line verbatim ("${line.slice(0, 60)}…"); keep the instruction in one place — duplicated instruction dilutes the rest`);
+      }
+    }
+  }
+}
+
+export const HINTS_REL = '.cli/hooks/error-hints.json';
+
+// `neededBy` is the file that reads `rel`. While it exists, a missing `rel` is an error: the hook or
+// skill would silently find nothing, and the count would read 0 instead of failing.
+function readJson(root, rel, errs, neededBy) {
+  const path = join(root, rel);
+  if (!existsSync(path)) {
+    if (neededBy && existsSync(join(root, neededBy))) errs.push(`${rel} is missing but ${neededBy} reads it`);
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (exc) {
+    errs.push(`${rel} is not valid JSON: ${exc.message}`);
+    return null;
+  }
+}
+
+function checkHints(root, errs) {
+  const doc = readJson(root, HINTS_REL, errs, '.cli/hooks/error-hint.mjs');
+  if (!doc) return 0;
+  if (!Array.isArray(doc.hints)) {
+    errs.push(`${HINTS_REL} needs a \`hints\` list`);
+    return 0;
+  }
+  const ids = new Set();
+  doc.hints.forEach((h, i) => {
+    const at = `${HINTS_REL} hints[${i}]${h?.id ? ` (${h.id})` : ''}`;
+    if (!String(h?.id ?? '').trim()) errs.push(`${at} needs an \`id\``);
+    else if (ids.has(h.id)) errs.push(`${at}: duplicate id`);
+    ids.add(h?.id);
+    try {
+      if (!String(h?.signature ?? '').trim()) throw new Error('empty');
+      new RegExp(h.signature);
+    } catch (exc) {
+      errs.push(`${at}: \`signature\` must be a non-empty regular expression (${exc.message})`);
+    }
+    if (!String(h?.hint ?? '').trim()) errs.push(`${at} needs a \`hint\``);
+    if (!String(h?.evidence ?? '').trim()) {
+      errs.push(`${at} needs \`evidence\` that the error recurred across sessions; a hint for a one-off failure is speculation`);
+    }
+  });
+  return doc.hints.length;
+}
+
+export const EXPERIENCE_REL = 'data/harness/experience.json';
+export const VERDICTS = ['helped', 'hurt', 'no observed effect', 'confounded'];
+
+function checkExperience(root, errs) {
+  const doc = readJson(root, EXPERIENCE_REL, errs, '.agents/skills/harness-design/SKILL.md');
+  if (!doc) return { entries: 0, lessons: 0 };
+  if (!Array.isArray(doc.entries)) {
+    errs.push(`${EXPERIENCE_REL} needs an \`entries\` list`);
+    return { entries: 0, lessons: 0 };
+  }
+  const ids = new Set();
+  let lessons = 0;
+  doc.entries.forEach((e, i) => {
+    const at = `${EXPERIENCE_REL} entries[${i}]${e?.id ? ` (${e.id})` : ''}`;
+    if (!/^HX-\d{3,}$/.test(String(e?.id ?? ''))) errs.push(`${at}: \`id\` must look like HX-001`);
+    else if (ids.has(e.id)) errs.push(`${at}: duplicate id`);
+    ids.add(e?.id);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(e?.at ?? ''))) errs.push(`${at}: \`at\` must be YYYY-MM-DD`);
+    if (!String(e?.change ?? '').trim()) errs.push(`${at} needs \`change\` (the PR or commit the edits shipped in)`);
+    const rows = Array.isArray(e?.edits) ? e.edits : [];
+    if (rows.length === 0) errs.push(`${at} needs at least one row in \`edits\``);
+    rows.forEach((r, j) => {
+      for (const key of ['component', 'change', 'observed']) {
+        if (!String(r?.[key] ?? '').trim()) errs.push(`${at} edits[${j}] needs \`${key}\``);
+      }
+      if (!VERDICTS.includes(r?.verdict)) errs.push(`${at} edits[${j}]: \`verdict\` must be one of ${VERDICTS.join(' / ')}`);
+    });
+    const l = e?.lesson;
+    if (l === null || l === undefined) return;
+    lessons++;
+    for (const key of ['cue', 'lesson']) {
+      if (!String(l?.[key] ?? '').trim()) errs.push(`${at} lesson needs \`${key}\``);
+    }
+    if (!/^(?:high|medium|low)\b/.test(String(l?.confidence ?? ''))) errs.push(`${at} lesson: \`confidence\` must start with high / medium / low`);
+    const cited = Array.isArray(l?.evidence) ? l.evidence : [];
+    const bad = cited.filter((n) => !Number.isInteger(n) || n < 1 || n > rows.length);
+    if (cited.length === 0 || bad.length) {
+      errs.push(`${at} lesson: \`evidence\` must list the 1-based numbers of the edits rows it rests on`);
+      return;
+    }
+    const used = cited.map((n) => rows[n - 1]);
+    if (!used.some((r) => r?.verdict === 'helped' || r?.verdict === 'hurt')) {
+      errs.push(`${at} lesson rests only on confounded / no-observed-effect rows, so it is a guess; narrow it to what a helped or hurt row shows, or set \`lesson\` to null`);
+    }
+    if (!used.some((r) => r?.component && String(l?.lesson ?? '').includes(r.component))) {
+      errs.push(`${at} lesson must name the component it concerns (one of: ${[...new Set(used.map((r) => r?.component))].join(', ')})`);
+    }
+  });
+  return { entries: doc.entries.length, lessons };
+}
+
+// AGENTS.md at <ref>, or null when the ref or the file does not exist there.
+function alwaysOnAt(root, ref) {
+  try {
+    return execFileSync('git', ['-C', root, 'show', `${ref}:AGENTS.md`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return null;
+  }
+}
+
+export function checkHarness(root, { base } = {}) {
   const errs = [];
   const body = checkAlwaysOn(root, errs);
   const skills = checkSkills(root, body, errs);
   const { commands, files } = checkHooks(root, errs);
-  const sources = [['AGENTS.md', body], ...skills.map((n) => {
+  const skillSources = skills.map((n) => {
     const rel = `.agents/skills/${n}/SKILL.md`;
     return [rel, readFileSync(join(root, rel), 'utf8')];
-  }), ...commands.map((c) => ['hooks', c])];
-  checkScriptRefs(root, sources, errs);
-  return {
-    errors: [...new Set(errs)],
-    census: { always_on_chars: chars(body), always_on_max: ALWAYS_ON_MAX, skills: skills.length, hook_files: files, hook_commands: commands.length },
+  });
+  checkDuplicates(body, skillSources, errs);
+  checkScriptRefs(root, [['AGENTS.md', body], ...skillSources, ...commands.map((c) => ['hooks', c])], errs);
+  const subagents = checkSubagents(root, errs);
+  const hints = checkHints(root, errs);
+  const experience = checkExperience(root, errs);
+  const census = {
+    always_on_chars: chars(body), always_on_max: ALWAYS_ON_MAX, skills: skills.length, subagents,
+    hook_files: files, hook_commands: commands.length, error_hints: hints,
+    experience_entries: experience.entries, experience_lessons: experience.lessons,
   };
+  if (base) {
+    const before = alwaysOnAt(root, base);
+    if (before === null) errs.push(`--base ${base}: AGENTS.md could not be read at that ref`);
+    else census.always_on_char_delta = chars(body) - chars(before);
+  }
+  return { errors: [...new Set(errs)], census };
 }
 
 function main(argv) {
   const at = argv.indexOf('--root');
   const root = resolve(at >= 0 ? argv[at + 1] : join(dirname(fileURLToPath(import.meta.url)), '../..'));
-  const { errors, census } = checkHarness(root);
+  const b = argv.indexOf('--base');
+  const { errors, census } = checkHarness(root, { base: b >= 0 ? argv[b + 1] : undefined });
   if (argv.includes('--json')) console.log(JSON.stringify({ ok: errors.length === 0, errors, census }, null, 2));
   else if (errors.length) {
     console.log(`HARNESS FAIL  ${errors.length} problem(s)`);
     for (const e of errors) console.log(`  - ${e}`);
   } else {
-    console.log(`HARNESS OK  AGENTS.md ${census.always_on_chars}/${census.always_on_max} chars, ${census.skills} skill(s), ${census.hook_commands} hook command(s)`);
+    const delta = census.always_on_char_delta === undefined ? '' : ` (${census.always_on_char_delta >= 0 ? '+' : ''}${census.always_on_char_delta} vs base)`;
+    console.log(
+      `HARNESS OK  AGENTS.md ${census.always_on_chars}/${census.always_on_max} chars${delta}, ${census.skills} skill(s), ` +
+        `${census.hook_commands} hook command(s), ${census.error_hints} error hint(s), ` +
+        `${census.experience_entries} experience entr${census.experience_entries === 1 ? 'y' : 'ies'}`,
+    );
   }
   return errors.length ? 1 : 0;
 }

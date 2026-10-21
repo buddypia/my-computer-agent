@@ -86,6 +86,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/worktree-owner-tracker.mjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/error-hint.mjs\"",
+            "timeout": 5
           }
         ]
       },
@@ -96,6 +101,18 @@
             "type": "command",
             "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/harness-lint-guard.mjs\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.cli/hooks/error-hint.mjs\"",
+            "timeout": 5
           }
         ]
       }

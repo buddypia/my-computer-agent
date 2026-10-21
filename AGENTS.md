@@ -100,7 +100,7 @@ triage・routing・offline fallback（`TypeSafeDecisionEngine` / `RequestRoute`�
 - When pushing a worktree for merge, deciding AUTO_MERGE vs HUMAN, or a merged change turns out defective, read .agents/skills/trust-auto-merge/SKILL.md and follow it.
 - When writing or changing a Swift test that bounds latency, a watchdog, wall-clock or memory, read .agents/skills/isolated-timing-tests/SKILL.md and follow it.
 - When a feature needs a typed AI judgment (routing, ranking, extraction, verification) instead of prompt-and-parse, read .agents/skills/typesafe-ai/SKILL.md and follow it.
-- When adding or changing agent instructions (AGENTS.md, a skill, a hook, a helper script, a subagent), read .agents/skills/harness-design/SKILL.md and follow it.
+- When adding or changing agent instructions (AGENTS.md, a skill, a hook, a helper script, a subagent), or the same tool error recurs across sessions, read .agents/skills/harness-design/SKILL.md and follow it.
 
 ## その他
 
