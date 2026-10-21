@@ -39,7 +39,8 @@ print(re.sub(r"[^A-Za-z0-9_-]", "", str(s))[:64] or "nosession")
 
 COUNTER="$STATE_DIR/retries-$SESSION"
 
-# The worktrees this session owns (line 1 of `.session-owner`, .cli/lib/worktree-owner-lease.mjs).
+# The worktrees this session is working in: owner on line 1 of `.session-owner` and the lease still
+# fresh (edits renew it; .cli/lib/worktree-owner-lease.mjs), so one left behind does not keep blocking.
 # A session started in the main checkout edits in its worktree, so gating $ROOT alone ended the turn
 # on a tree nobody had touched while the edited one was never built.
 owned_worktrees() {
@@ -50,7 +51,9 @@ const { readOwnerLease } = await import(`${root}/.cli/lib/worktree-owner-lease.m
 const list = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], { encoding: "utf-8" });
 for (const line of list.split("\n")) {
   const wt = line.startsWith("worktree ") ? line.slice("worktree ".length) : null;
-  if (wt && wt !== root && readOwnerLease(wt).owner === session) console.log(wt);
+  if (!wt || wt === root) continue;
+  const lease = readOwnerLease(wt);
+  if (lease.owner === session && lease.fresh) console.log(wt);
 }' "$ROOT" "$SESSION" 2>/dev/null
 }
 

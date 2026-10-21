@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,5 +64,15 @@ test("gate-stop: another session's red worktree is not this turn's to fix", asyn
 test('gate-stop: green trees let the turn end', async () => {
   const { repo, wt } = fixture();
   await own(wt, 'session-a');
+  assert.equal(stop(repo, 'session-a'), null);
+});
+
+test('gate-stop: a worktree whose lease has expired no longer holds the turn', async () => {
+  const { repo, wt } = fixture();
+  await own(wt, 'session-a');
+  writeFileSync(join(wt, 'FAIL'), '');
+  const { readOwnerLease, OWNER_LEASE_TTL_MS } = await import(join(ROOT, '.cli/lib/worktree-owner-lease.mjs'));
+  const old = (Date.now() - OWNER_LEASE_TTL_MS - 60_000) / 1000;
+  utimesSync(readOwnerLease(wt).path, old, old);
   assert.equal(stop(repo, 'session-a'), null);
 });
