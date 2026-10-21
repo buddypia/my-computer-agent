@@ -21,7 +21,7 @@
  *     The edit-time guard can be bypassed with shell edits — the commit cannot.
  *
  * Exceptions:
- *   - Permitted commit + branch creation when .tmp/create-pr-active file exists (amend remains always blocked)
+ *   - Permitted commit + branch creation while this session's create-pr lease is fresh (amend remains always blocked)
  *
  * Block targets:
  *   - git commit (on main branch)
@@ -68,7 +68,7 @@ import {
   requiresWorktree,
   trunkBranches as resolveTrunkBranches,
 } from '../lib/trunk-branch.mjs';
-// `.tmp/create-pr-active` is a time-boxed lease, not a permanent switch — reading it as mere
+// The create-pr lease is per session and time-boxed, not a permanent switch — reading it as mere
 // existence left this guard disabled for three days after a killed /create-pr leaked the file
 // (empirical reproduction 2026-08-23). Resolution SSOT: .cli/lib/create-pr-lease.mjs.
 import { isCreatePrLeaseActive } from '../lib/create-pr-lease.mjs';
@@ -465,7 +465,7 @@ function resolveDecisionContext(data, command, projectDir) {
     baseDir,
     // No `|| ''` coercion: falsy stays falsy so `decide()` can tell "unresolved" from "not trunk".
     branch: safeGit('branch --show-current', projectDir),
-    isCreatePrActive: isCreatePrLeaseActive(projectDir),
+    isCreatePrActive: isCreatePrLeaseActive(projectDir, data?.session_id),
     // Worktree evaluation: the commit's actual target only (`git -C` / `cd … &&` / else the start cwd),
     // resolved to a real path and confirmed as a linked worktree by git (isWorktreeCommit).
     isWorktree: isWorktreeCommit(command, data?.cwd, baseDir),

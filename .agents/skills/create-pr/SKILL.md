@@ -113,12 +113,13 @@ AI Decision Scope: BRANCH name (Conventional Commits, ≤30 characters), commit 
 
 ## Hook Integration (commit-guard / destructive-git-guard)
 
-Flags in `.tmp/create-pr-active` (30-minute mtime freshness) automatically grant temporary exceptions for two guards:
-- **commit-guard**: Blocks manual `git commit` / branch creations outside `/create-pr` → Allowed while active flag is fresh.
+The staged commands (`init` / `isolate` / `commit` / `ship-feature`) renew a lease of **the session that runs them** — `.tmp/create-pr-lease/<session-id>`, 30-minute mtime freshness, session id from `CLAUDE_CODE_SESSION_ID`. It grants temporary exceptions to that session only; sessions working in their own worktrees keep every guard. A CLI without a session id gets no lease (the guards stay closed):
+- **commit-guard**: Blocks manual `git commit` / branch creations outside `/create-pr` → Allowed while the session's lease is fresh.
 - **destructive-git-guard**: Allows `git merge --ff-only` and `git worktree remove` exclusively (all other destructive commands remain blocked).
-- Flag is automatically removed upon completion of `finalize` / `cleanup-worktree`.
+- **worktree-session-owner-guard** / **trunk-ref-guard**: same carve-out, same session only.
+- The lease is released by `finalize`.
 
-**Concurrency Lock**: `init` rejects execution if an active flag exists within 30 seconds, preventing multi-session collisions and state corruption.
+**Concurrency Lock**: `init` rejects execution while another session's staged run is active (`.tmp/create-pr/active`, 30 minutes). Mode A stages from the main checkout's one index, so two runs at once would ship each other's changes; parallel work belongs in worktrees (Mode B), which take no lock.
 
 ## Branch Completion Options
 

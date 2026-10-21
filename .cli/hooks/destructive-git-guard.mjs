@@ -39,7 +39,7 @@
  */
 
 import { readStdin, output, safeHookMainWithProfile, isDirectInvocation } from '../lib/utils.mjs';
-// `.tmp/create-pr-active` resolution SSOT — this guard used to carry its own TTL constant and
+// create-pr lease (per session) resolution SSOT — this guard used to carry its own TTL constant and
 // freshness helper, one of four divergent readings of the same lease (see the lib header).
 import { isCreatePrLeaseActive } from '../lib/create-pr-lease.mjs';
 import { HookOutput } from '../lib/hook-output.mjs';
@@ -714,7 +714,7 @@ export async function run(data) {
     const command = data.tool_input?.command || '';
 
     const projectDir = process.env.CLAUDE_PROJECT_DIR || '';
-    if (isCreatePrLeaseActive(projectDir) && isCreatePrSafeCommand(command)) {
+    if (isCreatePrLeaseActive(projectDir, data.session_id) && isCreatePrSafeCommand(command)) {
       return HookOutput.passthrough();
     }
 
