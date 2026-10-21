@@ -49,7 +49,8 @@ docs-only の変更でも G0 の前に走る。
 ### 強制
 
 `.claude/hooks/gate-stop.sh` が Claude Code と Codex CLI の Stop フックに
-登録されている。ゲートが落ちている間は応答を終えられず、失敗出力が差し戻される。
+登録されている。起動したチェックアウトに加え、そのセッションが所有する worktree（`.session-owner`）も
+ゲートする。ゲートが落ちている間は応答を終えられず、失敗出力が差し戻される。
 毎ターン払う費用なので、フックは **G1（ビルド）まで**しか走らせない（`MCA_GATE_HOOK_STAGE` で変更可）。
 テストは push した HEAD に対して GitHub Actions（`.github/workflows/ci.yml`）が走らせる。
 差し戻しは 1 セッションあたり 3 回まで（`MCA_GATE_MAX_RETRIES`）。使い切った場合は

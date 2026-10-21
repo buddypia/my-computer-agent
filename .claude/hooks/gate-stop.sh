@@ -17,7 +17,7 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)" # physical, as `git worktree list` prints it
 STATE_DIR="$ROOT/.tmp/gate"
 MAX_RETRIES="${MCA_GATE_MAX_RETRIES:-3}"
 
@@ -39,10 +39,33 @@ print(re.sub(r"[^A-Za-z0-9_-]", "", str(s))[:64] or "nosession")
 
 COUNTER="$STATE_DIR/retries-$SESSION"
 
+# The worktrees this session owns (line 1 of `.session-owner`, .cli/lib/worktree-owner-lease.mjs).
+# A session started in the main checkout edits in its worktree, so gating $ROOT alone ended the turn
+# on a tree nobody had touched while the edited one was never built.
+owned_worktrees() {
+    node --input-type=module -e '
+const [root, session] = process.argv.slice(1);
+const { execFileSync } = await import("node:child_process");
+const { readOwnerLease } = await import(`${root}/.cli/lib/worktree-owner-lease.mjs`);
+const list = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], { encoding: "utf-8" });
+for (const line of list.split("\n")) {
+  const wt = line.startsWith("worktree ") ? line.slice("worktree ".length) : null;
+  if (wt && wt !== root && readOwnerLease(wt).owner === session) console.log(wt);
+}' "$ROOT" "$SESSION" 2>/dev/null
+}
+
 # Every turn pays for this, so it stops at the build (G1). The tests run on CI for the pushed HEAD,
-# and `trust.mjs approve --ci` will not auto-merge without that run's evidence.
-OUTPUT="$("$ROOT/Scripts/gate.sh" --stage "${MCA_GATE_HOOK_STAGE:-1}" 2>&1)"
+# and `trust.mjs approve --ci` will not auto-merge without that run's evidence. An unchanged tree
+# answers from the gate's pass cache.
+STAGE="${MCA_GATE_HOOK_STAGE:-1}"
+OUTPUT="$("$ROOT/Scripts/gate.sh" --stage "$STAGE" 2>&1)"
 STATUS=$?
+while IFS= read -r WT; do
+    [ -x "$WT/Scripts/gate.sh" ] || continue
+    WT_OUTPUT="$("$WT/Scripts/gate.sh" --stage "$STAGE" 2>&1)" && continue
+    STATUS=1
+    OUTPUT="$OUTPUT"$'\n\n'"[worktree ${WT#"$ROOT"/}]"$'\n'"$WT_OUTPUT"
+done < <([ "$SESSION" = nosession ] || owned_worktrees)
 
 if [ "$STATUS" -eq 0 ]; then
     rm -f "$COUNTER"
