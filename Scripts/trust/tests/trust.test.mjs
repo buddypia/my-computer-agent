@@ -15,7 +15,7 @@ import { checkIncidents } from '../lib/incidents.mjs';
 import { breakerState, summarize } from '../lib/ledger.mjs';
 import { validateReview } from '../lib/review.mjs';
 import { normalizeApproval } from '../../../.cli/lib/approval-vocabulary.mjs';
-import { ciEvidenceFromReport, diffIdOf, humanAnswer, isEntryPoint, recordTrustApproval } from '../trust.mjs';
+import { ciEvidenceFromReport, diffIdOf, humanAnswer, isEntryPoint, readRun, recordTrustApproval } from '../trust.mjs';
 
 const policy = JSON.parse(readFileSync(new URL('../../../data/trust/policy.json', import.meta.url), 'utf-8'));
 const file = (path, loc = 10, lines = {}) => ({ path, added: loc, removed: 0, ...lines });
@@ -547,4 +547,43 @@ test('CI evidence: missing items and truthy-but-not-true ok are failures', () =>
   const ev = ciEvidenceFromReport({ ...expected, evidence: [{ id: 'gate', ok: 'yes', detail: '' }] }, expected, 1);
   assert.deepEqual(ev.map((e) => [e.id, e.ok]), [['gate', false], ['executed_tests', false]]);
   assert.deepEqual(ciEvidenceFromReport(null, expected, 1).map((e) => e.ok), [false, false]);
+});
+
+// ------------------------------------------------------------------ trunk baseline (ci.yml, main)
+
+test('readRun: only a completed event stream is a run', () => {
+  const fixture = fileURLToPath(new URL('fixtures/swift-testing-events-v0.jsonl', import.meta.url));
+  assert.ok(readRun(fixture).size > 0);
+  const dir = mkdtempSync(join(tmpdir(), 'trust-readrun-'));
+  const cut = join(dir, 'cut.jsonl');
+  writeFileSync(cut, readFileSync(fixture, 'utf-8').split('\n').filter((l) => !l.includes('"runEnded"')).join('\n'));
+  assert.equal(readRun(cut), null, 'a crash or build failure leaves no runEnded');
+  assert.equal(readRun(join(dir, 'absent.jsonl')), null);
+});
+
+test('baseline: refuses a commit that is not the trunk, or a dirty tree, before running the gate', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'trust-baseline-'));
+  const g = (...args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf-8' });
+  const commit = (name) => {
+    writeFileSync(join(repo, name), name);
+    g('add', '-A');
+    g('-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qm', name);
+  };
+  g('init', '-q', '-b', 'main');
+  commit('a');
+  g('checkout', '-qb', 'feature');
+  commit('b');
+  const trust = fileURLToPath(new URL('../trust.mjs', import.meta.url));
+  const baseline = () => spawnSync(process.execPath, [trust, 'baseline', '--worktree', repo], { encoding: 'utf-8' });
+
+  const branch = baseline();
+  assert.equal(branch.status, 1);
+  assert.match(branch.stderr, /trunk の commit にしか作らない/);
+  g('checkout', '-q', 'main');
+  writeFileSync(join(repo, 'a'), 'edited');
+  const dirty = baseline();
+  assert.equal(dirty.status, 1);
+  assert.match(dirty.stderr, /未コミットの変更/);
+  for (const r of [branch, dirty]) assert.doesNotMatch(r.stdout, /gate/, 'the gate must not have run');
+  assert.ok(!existsSync(join(repo, '.tmp')), 'nothing was written as a baseline');
 });

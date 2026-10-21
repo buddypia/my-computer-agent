@@ -64,7 +64,9 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 
 ### `--ci`：実行系の証拠を CI から取る
 
-`gate` と `executed_tests` は `swift test` を 3 回走らせる、評価の中で最も重い部分。`assess` / `approve` に
+`gate` と `executed_tests` は評価の中で最も重い部分（trunk のビルドと `swift test`、branch の `swift test` と
+isolated）。branch 側の実行結果はゲート自身の `swift test` のイベントストリーム
+（`.tmp/gate/logs/swift-events.jsonl`）から読み、同じテストを 2 回は走らせない。`assess` / `approve` に
 `--ci` を付けると、これをローカルで実行せず、push 済みの HEAD に対する `ci.yml` の run（push イベント）が
 `trust.mjs evidence` で集めた `trust-evidence` artifact を使う。
 
@@ -73,8 +75,17 @@ base は常に `main` で、指定する手段はない。判定に使うポリ�
 - run は `ci.yml` の push イベントで、HEAD sha・branch が一致し、完了しているものに限る
 - CI が何を実行するかは `.github/**` と `Scripts/**` が決め、どちらも `governance` なので、ブランチが
   CI の中身を変えた PR は証拠に関係なく人間に回る
-- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の実行はそれより**前に**済ませ、
-  trunk の結果は CI ではキャッシュしない（ブランチのテストが比較の基準を書き換えられないように）
+- ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の結果はそれより**前に**用意する
+  （ブランチのテストが比較の基準を書き換えられないように）
+- trunk 側の結果は、main への push の run が `trust.mjs baseline`（ゲートを通し、その実行結果を
+  `<main>/.tmp/trust/runs/<sha>-<toolchain>.json` に置く）で作り、Actions cache に
+  `trust-baseline-<os>-<sha>` として保存する。ブランチの run は merge-base の key で復元するだけで保存しない。
+  cache はブランチから default branch のものを読めるが、ブランチが書いたものは他のブランチから読めない。
+  ブランチ自身の scope に同じ key を書くには `ci.yml` に保存 step を足す（`governance`）か、`run:` の
+  step に渡されない cache の runtime token が要る。復元できなかった（main の run がまだ終わっていない・
+  toolchain が違う）ときは、従来どおりこの job で trunk をビルドして実行する
+- `.build` も main の run だけが commit ごとの key で保存し、ブランチは最新のものを復元してインクリメンタルに
+  ビルドする。release 構成のビルドは別 job（`Release Build (macOS)`）で並行して走る
 - `bar_move`・`review`・`clean`・`stable` は従来どおりローカルで判定する（静的で安い）
 - main は branch protection で `Build & Test (macOS)` を必須チェックにしている
 

@@ -125,6 +125,9 @@ fingerprint() {
 TRUST_TAP="$LOG_DIR/trust-tap.txt"
 SWIFT_XUNIT="$LOG_DIR/swift-xunit.xml"
 SWIFT_XUNIT_ST="$LOG_DIR/swift-xunit-swift-testing.xml"
+# The same run as an event stream: Scripts/trust reads what executed from it instead of running the
+# suite a second time (`trust.mjs evidence`, `trust.mjs baseline`).
+SWIFT_EVENTS="$LOG_DIR/swift-events.jsonl"
 
 trust_tests() {
     local out
@@ -157,8 +160,9 @@ swift_build() {
 }
 
 swift_tests() {
-    rm -f "$SWIFT_XUNIT" "$SWIFT_XUNIT_ST"
-    swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT"
+    rm -f "$SWIFT_XUNIT" "$SWIFT_XUNIT_ST" "$SWIFT_EVENTS"
+    swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT" \
+        --event-stream-output-path "$SWIFT_EVENTS" --event-stream-version 0
 }
 
 # Process-wide numbers (main-thread latency, the watchdog, pool wall-clock, resident memory) are

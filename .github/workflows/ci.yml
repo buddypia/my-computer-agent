@@ -32,25 +32,56 @@ jobs:
           sw_vers
           swift --version
 
-      - name: Cache SwiftPM Dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Restored from the newest main run (branches can read the default branch's caches) and saved only
+      # by main, under a key per commit: a key that never changes is never saved again, which left every
+      # run compiling all of its own modules on top of a stale .build. The path is the same on every
+      # runner, so the restored build is incremental. SwiftPM keys products by absolute path, which is
+      # also why a worktree cannot reuse another checkout's .build locally.
+      - name: Restore SwiftPM build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-
             ${{ runner.os }}-spm-
-
-      - name: Swift Build (release)
-        run: swift build -c release
 
       - name: Quality Gate (main)
         if: github.ref == 'refs/heads/main'
-        env:
-          MCA_GATE_NO_CACHE: '1'
-        run: ./Scripts/gate.sh --force
+        run: node Scripts/trust/trust.mjs baseline --worktree .
 
-      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk run is
-      # never restored from a cache: the branch's own tests run in this job and could have written one.
+      - name: Save SwiftPM build
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+
+      # The trunk side of executed_tests, written by `trust.mjs baseline` above. Only main saves it, so a
+      # branch can only restore what a main run measured; its file name carries the toolchain, and a
+      # baseline from another compiler is a miss (trust.mjs then builds and tests the trunk itself).
+      - name: Save trunk baseline
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tmp/trust/runs
+          key: trust-baseline-${{ runner.os }}-${{ github.sha }}
+
+      - name: Merge base
+        id: base
+        if: github.ref != 'refs/heads/main'
+        run: echo "sha=$(git merge-base origin/main HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore trunk baseline
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tmp/trust/runs
+          key: trust-baseline-${{ runner.os }}-${{ steps.base.outputs.sha }}
+
+      # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk side is
+      # read from main's baseline or measured here before any branch test runs; the branch side is the
+      # gate's own test run.
       - name: Trust evidence (branch)
         if: github.ref != 'refs/heads/main'
         run: node Scripts/trust/trust.mjs evidence --worktree . --out evidence.json
@@ -63,3 +94,26 @@ jobs:
           path: evidence.json
           retention-days: 14
           overwrite: true
+
+  # Its own job, so the release configuration compiles beside the gate instead of before it. Not a
+  # required check by name, but ship waits for every check on the head, so a red one still blocks.
+  release-build:
+    name: Release Build (macOS)
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore SwiftPM build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-
+            ${{ runner.os }}-spm-
+
+      - name: Swift Build (release)
+        run: swift build -c release
