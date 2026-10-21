@@ -700,7 +700,10 @@ function cmdBaseline(args) {
   const { wt, ref } = requireWorktree(args);
   const { head, dirty } = snapshot(wt);
   if (dirty) throw new Error('未コミットの変更がある（baseline は commit についてしか語れない）');
-  if (git(wt, ['rev-parse', ref]).trim() !== head) throw new Error(`HEAD が ${ref} ではない（baseline は trunk の commit にしか作らない）`);
+  // On trunk, not at its tip: main can move between the push and the checkout of its run.
+  if (spawnSync('git', ['-C', wt, 'merge-base', '--is-ancestor', head, ref]).status !== 0) {
+    throw new Error(`HEAD が ${ref} 上にない（baseline は trunk の commit にしか作らない）`);
+  }
   const gate = runGate(wt);
   console.log(`  ${gate.ok ? 'ok  ' : 'FAIL'} ${gate.id.padEnd(16)} ${gate.detail}`);
   // A red trunk still has a baseline: only the tests that passed on it are compared.

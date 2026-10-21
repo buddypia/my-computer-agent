@@ -78,12 +78,13 @@ isolated）。branch 側の実行結果はゲート自身の `swift test` のイ
 - ブランチ自身のテスト（`Tests/**`）も同じ job で走る。trunk 側の結果はそれより**前に**用意する
   （ブランチのテストが比較の基準を書き換えられないように）
 - trunk 側の結果は、main への push の run が `trust.mjs baseline`（ゲートを通し、その実行結果を
-  `<main>/.tmp/trust/runs/<sha>-<toolchain>.json` に置く）で作り、Actions cache に
-  `trust-baseline-<os>-<sha>` として保存する。ブランチの run は merge-base の key で復元するだけで保存しない。
-  cache はブランチから default branch のものを読めるが、ブランチが書いたものは他のブランチから読めない。
-  ブランチ自身の scope に同じ key を書くには `ci.yml` に保存 step を足す（`governance`）か、`run:` の
-  step に渡されない cache の runtime token が要る。復元できなかった（main の run がまだ終わっていない・
-  toolchain が違う）ときは、従来どおりこの job で trunk をビルドして実行する
+  `<main>/.tmp/trust/runs/<sha>-<toolchain>.json` に置く）で作り、その run の artifact `trust-baseline` に
+  する。ブランチの run は merge-base を head に持つ main の push run から取得するだけで、作らない。
+  Actions cache は使わない。ブランチの run は自分の scope に cache を保存でき、同じブランチの後の run は
+  main のものより先にそれを復元する。保存 step を足した commit を後の commit で消せば最終 diff の
+  `ci.yml` は無変更になり、`governance` にも掛からない。main の push run はブランチからは作れない。
+  取得できなかった（main の run がまだ終わっていない・取り消された・期限切れ・toolchain が違う）ときは、
+  従来どおりこの job で trunk をビルドして実行する
 - `.build` も main の run だけが commit ごとの key で保存し、ブランチは最新のものを復元してインクリメンタルに
   ビルドする。release 構成のビルドは別 job（`Release Build (macOS)`）で並行して走る
 - `bar_move`・`review`・`clean`・`stable` は従来どおりローカルで判定する（静的で安い）

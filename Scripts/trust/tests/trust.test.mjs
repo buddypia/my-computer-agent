@@ -586,4 +586,12 @@ test('baseline: refuses a commit that is not the trunk, or a dirty tree, before 
   assert.match(dirty.stderr, /未コミットの変更/);
   for (const r of [branch, dirty]) assert.doesNotMatch(r.stdout, /gate/, 'the gate must not have run');
   assert.ok(!existsSync(join(repo, '.tmp')), 'nothing was written as a baseline');
+
+  // main moved on after this commit was pushed: it is still a trunk commit, so the gate runs.
+  g('checkout', '-q', '--', 'a');
+  commit('c');
+  g('checkout', '-q', '--detach', 'main~1');
+  const behind = baseline();
+  assert.doesNotMatch(behind.stderr, /trunk の commit にしか作らない/);
+  assert.match(behind.stdout, /gate/);
 });

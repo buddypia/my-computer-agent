@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # gh run download of main's trunk baseline
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -57,27 +58,29 @@ jobs:
           path: .build
           key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
 
-      # The trunk side of executed_tests, written by `trust.mjs baseline` above. Only main saves it, so a
-      # branch can only restore what a main run measured; its file name carries the toolchain, and a
-      # baseline from another compiler is a miss (trust.mjs then builds and tests the trunk itself).
-      - name: Save trunk baseline
-        if: github.ref == 'refs/heads/main'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # The trunk side of executed_tests, written by `trust.mjs baseline` above; a red trunk keeps one too.
+      # An artifact of main's push run, not a cache: a branch run can save a cache in its own scope, and
+      # later runs of that branch restore it ahead of main's even once the step that saved it is gone.
+      - name: Upload trunk baseline
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          name: trust-baseline
           path: .tmp/trust/runs
-          key: trust-baseline-${{ runner.os }}-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: ignore
 
-      - name: Merge base
-        id: base
+      # Only a push run on main can have made it. Missing (run cancelled, not finished, expired) or from
+      # another toolchain (the file name carries it): trust.mjs builds and tests the trunk itself.
+      - name: Download trunk baseline
         if: github.ref != 'refs/heads/main'
-        run: echo "sha=$(git merge-base origin/main HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore trunk baseline
-        if: github.ref != 'refs/heads/main'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .tmp/trust/runs
-          key: trust-baseline-${{ runner.os }}-${{ steps.base.outputs.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          base=$(git merge-base origin/main HEAD)
+          run=$(gh run list --workflow ci.yml --branch main --event push --commit "$base" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          [ -n "$run" ] && gh run download "$run" --name trust-baseline --dir .tmp/trust/runs || echo "no trunk baseline for $base"
 
       # gate (G1..G2, no cache) + executed_tests (trunk vs branch), bound to this HEAD. The trunk side is
       # read from main's baseline or measured here before any branch test runs; the branch side is the
