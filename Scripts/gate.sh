@@ -15,7 +15,7 @@
 #
 #   G0  harness    Scripts/harness/check.mjs + its tests (AGENTS.md cap, skill triggers, hooks shape)
 #       classify   what changed? docs-only edits exit 0 without touching swift
-#   G1  build      swift build          (~20s incremental)
+#   G1  build      swift build          (~20s incremental; skipped on non-Swift local changes)
 #   G2  trust      node --test Scripts/trust/tests/*.test.mjs  (~1s)
 #       test       swift test --xunit-output   (~12s)
 #       isolated   whole-process measurements, alone and serial (~25s)
@@ -44,6 +44,22 @@ STATE_DIR="$ROOT/.tmp/gate"
 LOG_DIR="$STATE_DIR/logs"
 MAX_STAGE=2
 FORCE=0
+
+# Resolve shared scratchpad directory in the main checkout (shared across all worktrees).
+resolve_scratchpad_dir() {
+    if [ -d "$ROOT/.git" ]; then
+        printf '%s/.tmp/agent-scratchpad' "$ROOT"
+        return 0
+    fi
+    local common
+    common="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common" ]; then
+        printf '%s/.tmp/agent-scratchpad' "$(dirname "$common")"
+        return 0
+    fi
+    printf '%s/.tmp/agent-scratchpad' "$ROOT"
+}
+SCRATCHPAD_DIR="$(resolve_scratchpad_dir)"
 
 # How many lines of a failing tool's output to surface. Enough to contain a
 # Swift diagnostic with its context, short enough not to bury the agent.
@@ -80,16 +96,20 @@ is_doc_path() {
     esac
 }
 
+# Explicit allowlist of non-Swift repository paths (harness, hooks, trust, evals, docs).
+# Any unknown path or Swift/package/bundle path falls through to return 1 (runs Swift build/tests).
+is_non_swift_path() {
+    case "$1" in
+        .claude/*|.cli/*|.codex/*|.agents/*|.husky/*|Scripts/gate.sh|Scripts/harness/*|Scripts/trust/*|Scripts/eval/*|data/harness/*|data/trust/*|Evals/*|Makefile)
+            return 0 ;;
+        *)
+            is_doc_path "$1" ;;
+    esac
+}
+
 # Paths the working tree has touched, tracked and untracked alike. If the tree
 # is clean the agent may have committed its work already, so fall back to what
-# the branch brought in since it left main, and what HEAD brought in. The branch
-# part: a code commit followed by a docs commit is still a code change. On main
-# it is empty, and HEAD's own commit decides. Not `git show`: a clean merge commit
-# (ship merging main into the branch) shows no paths, and the gate would skip the
-# very tree that is about to land. -m lists a merge against each parent; --root
-# lists every file of a commit with no parent (a root commit, or the tip of a
-# depth-1 clone). --no-renames: a rename lists only its new path, so
-# `git mv a.swift docs/a.txt` would read as docs-only and hide the deleted source file.
+# the branch brought in since it left main, and what HEAD brought in.
 changed_paths() {
     local out
     out="$(
@@ -117,6 +137,47 @@ fingerprint() {
     } | shasum | awk '{print $1}'
 }
 
+# Subsystem content fingerprints for cross-worktree stamp sharing in SCRATCHPAD_DIR.
+subsystem_fingerprint() {
+    {
+        git -C "$ROOT" ls-tree HEAD -- "$@" 2>/dev/null || true
+        git -C "$ROOT" diff HEAD -- "$@" 2>/dev/null || true
+        git -C "$ROOT" ls-files --others --exclude-standard -z -- "$@" 2>/dev/null \
+            | xargs -0 shasum 2>/dev/null || true
+    } | shasum | awk '{print $1}'
+}
+
+# Cross-worktree lock for heavy Swift toolchain invocations so 4+ parallel worktrees
+# do not thrash CPU/RAM simultaneously and cause hook timeouts.
+acquire_swift_slot() {
+    [ "${MCA_GATE_NO_CACHE:-0}" = "1" ] && return 0
+    local lock_dir="$SCRATCHPAD_DIR/locks/swift.lock"
+    mkdir -p "$SCRATCHPAD_DIR/locks" 2>/dev/null || return 0
+    local waited=0
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        local owner_pid
+        owner_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+        if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
+            rm -rf "$lock_dir" 2>/dev/null || true
+            continue
+        fi
+        [ "$waited" -ge 180 ] && break
+        sleep 1
+        waited=$((waited + 1))
+    done
+    printf '%s\n' "$$" > "$lock_dir/pid" 2>/dev/null || true
+}
+
+release_swift_slot() {
+    local lock_dir="$SCRATCHPAD_DIR/locks/swift.lock"
+    local owner_pid
+    owner_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    if [ "$owner_pid" = "$$" ]; then
+        rm -rf "$lock_dir" 2>/dev/null || true
+    fi
+}
+trap 'release_swift_slot' EXIT
+
 # The auto-approval evaluator and its recurrence-prevention registry (docs/trust/auto-approval.md).
 # Cheap, so it also runs on docs-only changes: a checklist guard lives in docs/, and hollowing it out
 # must not be the one edit the gate never looks at. A skipped or todo test fails the stage — a guard
@@ -130,15 +191,26 @@ SWIFT_XUNIT_ST="$LOG_DIR/swift-xunit-swift-testing.xml"
 SWIFT_EVENTS="$LOG_DIR/swift-events.jsonl"
 
 trust_tests() {
-    local out
+    local out trust_fp shared_tap
     mkdir -p "$LOG_DIR"
     rm -f "$TRUST_TAP"
+    if [ "${MCA_GATE_NO_CACHE:-0}" != "1" ] && [ "$FORCE" -eq 0 ]; then
+        trust_fp="$(subsystem_fingerprint Scripts/trust data/trust .claude/scripts .cli Scripts/gate.sh)"
+        shared_tap="$SCRATCHPAD_DIR/stamps/trust-tap-$trust_fp.txt"
+        if [ -n "$trust_fp" ] && [ -f "$shared_tap" ]; then
+            cp "$shared_tap" "$TRUST_TAP" 2>/dev/null && return 0
+        fi
+    fi
     out="$(node --test --test-reporter=tap "$ROOT"/Scripts/trust/tests/*.test.mjs 2>&1)" || { printf '%s\n' "$out"; return 1; }
     printf '%s\n' "$out" > "$TRUST_TAP"
     if printf '%s\n' "$out" | grep -Eq '^# (skipped|todo) [1-9]'; then
         printf '%s\n' "$out" | grep -E '# (SKIP|TODO)|^# (skipped|todo)'
         echo "trust: skipped/todo tests are not allowed in Scripts/trust/tests"
         return 1
+    fi
+    if [ -n "${trust_fp:-}" ]; then
+        mkdir -p "$SCRATCHPAD_DIR/stamps" 2>/dev/null || true
+        cp "$TRUST_TAP" "$SCRATCHPAD_DIR/stamps/trust-tap-$trust_fp.txt" 2>/dev/null || true
     fi
 }
 
@@ -147,22 +219,40 @@ trust_tests() {
 # then fails with "database is locked" although nothing is wrong with the tree. Only that failure
 # is retried; any other is the build's own.
 swift_build() {
-    local out attempt=1
+    if [ "${SWIFT_TOUCHED:-1}" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
+        echo "Build skipped: no Swift paths touched"
+        return 0
+    fi
+    acquire_swift_slot
+    local out attempt=1 rc=0
     until out="$(swift build --package-path "$ROOT" 2>&1)"; do
         printf '%s\n' "$out"
         # A here-string, not a pipe: under pipefail, grep -q quitting early fails a long printf (SIGPIPE).
-        grep -q 'database is locked' <<< "$out" && [ "$attempt" -lt 3 ] || return 1
+        if ! { grep -q 'database is locked' <<< "$out" && [ "$attempt" -lt 3 ]; }; then
+            release_swift_slot
+            return 1
+        fi
         echo "gate: the build database is locked by another build; retrying"
         sleep "${MCA_GATE_LOCK_RETRY_SECONDS:-5}"
         attempt=$((attempt + 1))
     done
+    release_swift_slot
     printf '%s\n' "$out"
+    return "$rc"
 }
 
 swift_tests() {
     rm -f "$SWIFT_XUNIT" "$SWIFT_XUNIT_ST" "$SWIFT_EVENTS"
+    if [ "${SWIFT_TOUCHED:-1}" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
+        echo "Tests skipped: no Swift paths touched"
+        return 0
+    fi
+    acquire_swift_slot
+    local rc=0
     swift test --package-path "$ROOT" --xunit-output "$SWIFT_XUNIT" \
-        --event-stream-output-path "$SWIFT_EVENTS" --event-stream-version 0
+        --event-stream-output-path "$SWIFT_EVENTS" --event-stream-version 0 || rc=$?
+    release_swift_slot
+    return "$rc"
 }
 
 # Process-wide numbers (main-thread latency, the watchdog, pool wall-clock, resident memory) are
@@ -174,10 +264,17 @@ ISOLATED_XUNIT="$LOG_DIR/isolated-xunit.xml"
 ISOLATED_XUNIT_ST="$LOG_DIR/isolated-xunit-swift-testing.xml"
 
 isolated_tests() {
-    local declared ran skipped
+    local declared ran skipped rc=0
     rm -f "$ISOLATED_XUNIT" "$ISOLATED_XUNIT_ST"
+    if [ "${SWIFT_TOUCHED:-1}" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
+        echo "Isolated tests skipped: no Swift paths touched"
+        return 0
+    fi
+    acquire_swift_slot
     MCA_ISOLATED_TIMING=1 swift test --package-path "$ROOT" --skip-build --no-parallel \
-        --filter 'Isolated\(' --xunit-output "$ISOLATED_XUNIT" || return 1
+        --filter 'Isolated\(' --xunit-output "$ISOLATED_XUNIT" || rc=$?
+    release_swift_slot
+    [ "$rc" -eq 0 ] || return 1
     declared="$(grep -rEho '\bfunc[[:space:]]+[A-Za-z0-9_]+Isolated[[:space:]]*\(' "$ROOT/Tests" | wc -l | tr -d ' ')"
     ran="$(grep -o '<testcase ' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
     skipped="$(grep -o '<skipped' "$ISOLATED_XUNIT_ST" 2>/dev/null | wc -l | tr -d ' ')"
@@ -194,8 +291,20 @@ trust_guards() {
 # The agent harness (AGENTS.md, .agents/skills, hooks files) is almost all Markdown, so G0 would class
 # an edit to it as docs-only and skip it. The check is cheap and runs before that classification.
 harness_check() {
-    node "$ROOT/Scripts/harness/check.mjs" --root "$ROOT" &&
-        node --test "$ROOT"/Scripts/harness/tests/*.test.mjs
+    node "$ROOT/Scripts/harness/check.mjs" --root "$ROOT" || return 1
+    local harness_fp stamp_file
+    if [ "${MCA_GATE_NO_CACHE:-0}" != "1" ] && [ "$FORCE" -eq 0 ]; then
+        harness_fp="$(subsystem_fingerprint AGENTS.md CLAUDE.md .agents .claude .cli .codex Scripts/harness data/harness)"
+        stamp_file="$SCRATCHPAD_DIR/stamps/harness-$harness_fp.ok"
+        if [ -n "$harness_fp" ] && [ -f "$stamp_file" ]; then
+            return 0
+        fi
+    fi
+    node --test "$ROOT"/Scripts/harness/tests/*.test.mjs || return 1
+    if [ -n "${harness_fp:-}" ]; then
+        mkdir -p "$SCRATCHPAD_DIR/stamps" 2>/dev/null || true
+        printf '%s\n' "$harness_fp" > "$SCRATCHPAD_DIR/stamps/harness-$harness_fp.ok" 2>/dev/null || true
+    fi
 }
 
 PATHS="$(changed_paths)"
@@ -211,6 +320,16 @@ if [ -z "$PATHS" ]; then
     PATHS="(forced)"
 fi
 
+# Nothing has changed since the last green run, so re-running the toolchain
+# would only re-derive an answer we already have.
+if [ "${MCA_GATE_NO_CACHE:-0}" != "1" ] && [ "$FORCE" -eq 0 ] && [ -f "$STATE_DIR/pass" ]; then
+    CACHED_PASS="$(cat "$STATE_DIR/pass" 2>/dev/null || true)"
+    if [ "$CACHED_PASS" = "$FP:$MAX_STAGE" ] || { [ "$CACHED_PASS" = "$FP:2" ] && [ "$MAX_STAGE" -le 2 ]; }; then
+        echo "GATE PASS  cached (unchanged since last green run, stage<=$MAX_STAGE)"
+        exit 0
+    fi
+fi
+
 if ! harness_out="$(harness_check 2>&1)"; then
     echo "GATE FAIL  harness checks"
     printf '%s\n' "$harness_out" | tail -n "$TAIL_LINES"
@@ -219,9 +338,11 @@ if ! harness_out="$(harness_check 2>&1)"; then
 fi
 
 CODE_TOUCHED=0
+SWIFT_TOUCHED=0
 while IFS= read -r p; do
     [ -n "$p" ] || continue
-    if ! is_doc_path "$p"; then CODE_TOUCHED=1; break; fi
+    if ! is_doc_path "$p"; then CODE_TOUCHED=1; fi
+    if ! is_non_swift_path "$p"; then SWIFT_TOUCHED=1; fi
 done <<< "$PATHS"
 
 if [ "$CODE_TOUCHED" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
@@ -231,14 +352,8 @@ if [ "$CODE_TOUCHED" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
         printf '%s\n' "$trust_out" | tail -n "$TAIL_LINES"
         exit 1
     fi
+    echo "$FP:$MAX_STAGE" > "$STATE_DIR/pass"
     echo "GATE SKIP  docs-only change ($(printf '%s\n' "$PATHS" | wc -l | tr -d ' ') file(s))"
-    exit 0
-fi
-
-# Nothing has changed since the last green run, so re-running the toolchain
-# would only re-derive an answer we already have.
-if [ "${MCA_GATE_NO_CACHE:-0}" != "1" ] && [ -f "$STATE_DIR/pass" ] && [ "$(cat "$STATE_DIR/pass")" = "$FP:$MAX_STAGE" ]; then
-    echo "GATE PASS  cached (unchanged since last green run, stage<=$MAX_STAGE)"
     exit 0
 fi
 
@@ -283,4 +398,7 @@ run_stage 2 guards trust_guards                        || exit 1
 run_stage 3 bundle "$ROOT/Scripts/bundle.sh"          || exit 1
 
 echo "$FP:$MAX_STAGE" > "$STATE_DIR/pass"
+if [ -f "$ROOT/.claude/scripts/agent-scratchpad.mjs" ]; then
+    node "$ROOT/.claude/scripts/agent-scratchpad.mjs" record-gate --worktree "$ROOT" --stage "$MAX_STAGE" --status pass --fp "$FP" >/dev/null 2>&1 || true
+fi
 echo "GATE PASS  stages G1..G$MAX_STAGE"

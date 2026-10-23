@@ -43,6 +43,7 @@ import { answerStorePath, evaluateSteps, readAnswerStore, resolveReviewDiffId } 
 // isAncestor: worktree-new.mjs 의 기존 export 재사용 (merge-base --is-ancestor boolean 화 SSOT)
 import { isAncestor } from '../worktree-new.mjs';
 import { classifyScale } from '../../../.cli/lib/ship-scale.mjs';
+import { removeWorktreeSnapshot, updateWorktreeSnapshot } from '../../../.cli/lib/agent-scratchpad.mjs';
 import { appendJsonlAtomicSync } from '../lib/atomic-fs.mjs';
 import {
   assessTrunk,
@@ -940,8 +941,9 @@ function createAndMergePr({
         
         const resolved = tryAutoResolveConflicts(worktreeDir, conflictingFiles);
         if (resolved) {
+          const hasGateSh = existsSync(join(worktreeDir, 'Scripts', 'gate.sh'));
           const hasMakefile = existsSync(join(worktreeDir, 'Makefile'));
-          const validateCmd = hasMakefile ? 'make q.check' : (existsSync(join(worktreeDir, 'package.json')) ? 'npm test' : null);
+          const validateCmd = hasGateSh ? 'Scripts/gate.sh --stage 1' : (hasMakefile ? 'make q.check' : (existsSync(join(worktreeDir, 'package.json')) ? 'npm test' : null));
           if (validateCmd) {
             console.log(`[create-pr] Conflict resolved. Running validation (${validateCmd})...`);
             try {
@@ -2001,8 +2003,9 @@ function cmdShipWorktree(args) {
         throw mergeErr;
       }
       
+      const hasGateSh = existsSync(join(absWtPath, 'Scripts', 'gate.sh'));
       const hasMakefile = existsSync(join(absWtPath, 'Makefile'));
-      const validateCmd = hasMakefile ? 'make q.check' : (existsSync(join(absWtPath, 'package.json')) ? 'npm test' : null);
+      const validateCmd = hasGateSh ? 'Scripts/gate.sh --stage 1' : (hasMakefile ? 'make q.check' : (existsSync(join(absWtPath, 'package.json')) ? 'npm test' : null));
       if (validateCmd) {
         console.log(`[ship-worktree] Auto-resolution complete. Running validation tool (${validateCmd})...`);
         try {
@@ -2435,7 +2438,9 @@ function cmdCleanupWorktree(args, { verifiedMerged = false } = {}) {
     warnings.push(...describeWorktreeResidue(reapWorktreeResidue(absWtPath)));
   }
   const worktreeCleaned = !existsSync(absWtPath);
+  const cleanupBranch = branch || branchFromWorktreePath(absWtPath);
   if (branch) deleteBranchAndStashes(branch);
+  if (cleanupBranch) removeWorktreeSnapshot(PROJECT_DIR, cleanupBranch);
 
   clearWorktreeFromContext(wtPath, warnings);
 

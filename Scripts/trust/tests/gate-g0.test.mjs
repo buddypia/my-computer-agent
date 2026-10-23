@@ -153,3 +153,13 @@ test('G1 gives up after three locked attempts, and never retries a real build fa
   assert.equal(broken.status, 1);
   assert.equal(broken.runs, 1);
 });
+
+test('a non-Swift harness/hook change skips invoking swift build unless --force is passed', () => {
+  const root = repo('non-swift');
+  git(root, 'switch', '-q', '-c', 'feature/hooks-only');
+  commit(root, '.cli/hooks/guard.mjs');
+  const r = gate(root, 'ok');
+  assert.match(r.out, /GATE RUN/);
+  assert.equal(r.runs, 0, 'swift build is not invoked when only .cli/ changed');
+  assert.equal(r.status, 0, r.out);
+});

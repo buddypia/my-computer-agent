@@ -44,14 +44,19 @@ COUNTER="$STATE_DIR/retries-$SESSION"
 # A session started in the main checkout edits in its worktree, so gating $ROOT alone ended the turn
 # on a tree nobody had touched while the edited one was never built.
 owned_worktrees() {
+    [ -d "$ROOT/.git/worktrees" ] || return 0
     node --input-type=module -e '
 const [root, session] = process.argv.slice(1);
-const { execFileSync } = await import("node:child_process");
+const { existsSync, readdirSync, readFileSync } = await import("node:fs");
+const { dirname, join } = await import("node:path");
 const { readOwnerLease } = await import(`${root}/.cli/lib/worktree-owner-lease.mjs`);
-const list = execFileSync("git", ["-C", root, "worktree", "list", "--porcelain"], { encoding: "utf-8" });
-for (const line of list.split("\n")) {
-  const wt = line.startsWith("worktree ") ? line.slice("worktree ".length) : null;
-  if (!wt || wt === root) continue;
+const wtMetaDir = join(root, ".git", "worktrees");
+if (!existsSync(wtMetaDir)) process.exit(0);
+for (const entry of readdirSync(wtMetaDir)) {
+  const gitdirFile = join(wtMetaDir, entry, "gitdir");
+  if (!existsSync(gitdirFile)) continue;
+  const wt = dirname(readFileSync(gitdirFile, "utf-8").trim());
+  if (!wt || wt === root || !existsSync(wt)) continue;
   const lease = readOwnerLease(wt);
   if (lease.owner === session && lease.fresh) console.log(wt);
 }' "$ROOT" "$SESSION" 2>/dev/null

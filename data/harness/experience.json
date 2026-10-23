@@ -51,6 +51,31 @@
         "evidence": [1, 2],
         "confidence": "medium（同じ hook の 2 件の修正と回帰テストが支える。他の hook では未確認）"
       }
+    },
+    {
+      "id": "HX-003",
+      "at": "2026-10-24",
+      "change": "feature/parallel-worktree-gate-opt",
+      "edits": [
+        {
+          "component": ".cli/_cli-dispatch.mjs",
+          "change": "カンマ区切りの複数 hook モジュールを 1 つの Node プロセスで順次実行する runModulesBatch と、`[ -d .git ] && pwd` の短絡・純 FS による git common dir 解決（.cli/lib/agent-scratchpad.mjs）を入れた",
+          "observed": "1 回のツール呼び出しで並列起動していた 6 個の PreToolUse Node VM と git rev-parse が 1 プロセスに統合され、高負荷下での 5 秒 hook タイムアウト（signal: killed）が解消した",
+          "verdict": "helped"
+        },
+        {
+          "component": "Scripts/gate.sh",
+          "change": "pass キャッシュ判定を harness_check より前に移し、非 Swift 変更での swift build スキップと、`<main>/.tmp/agent-scratchpad` による worktree 間 harness/trust スタンプ共有を入れた",
+          "observed": "未変更ツリーでの再実行と非 Swift worktree の G1 ゲートで swift build が 0 回になり、並列 worktree 間で未変更サブシステムの単体テスト再実行が省略された",
+          "verdict": "helped"
+        }
+      ],
+      "lesson": {
+        "cue": "並列 AI セッションが複数の worktree で同時に hook や検証ゲート（Scripts/gate.sh, .cli/_cli-dispatch.mjs）を走らせる",
+        "lesson": ".cli/_cli-dispatch.mjs では同一イベントの複数 hook を 1 つの Node VM に束ね、Scripts/gate.sh では pass キャッシュと `<main>/.tmp/agent-scratchpad` の共有スタンプを先に確認して未変更サブシステムのプロセス起動を省く",
+        "evidence": [1, 2],
+        "confidence": "high（実測の hook タイムアウト解消と gate-g0 / check.test.mjs の単体テストで確認）"
+      }
     }
   ]
 }

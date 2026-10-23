@@ -39,6 +39,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { dirname, join } from 'node:path';
 
 import { isTrunkBranch, loadWorktreePolicy } from './trunk-branch.mjs';
+import { resolveGitDirsPure } from './agent-scratchpad.mjs';
 
 export const HOOK_NAME = 'reference-transaction';
 export const GUARD_SCRIPT_REL = '.claude/scripts/trunk-ref-guard.mjs';
@@ -173,11 +174,17 @@ export function ensureTrunkRefGuardInstalled(projectDir, { git = defaultGit } = 
   if (!projectDir || !existsSync(join(projectDir, GUARD_SCRIPT_REL))) return { status: 'skipped' };
   let hooksDir;
   let mainDir;
-  try {
-    hooksDir = git(projectDir, 'rev-parse', '--path-format=absolute', '--git-path', 'hooks');
-    mainDir = dirname(git(projectDir, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
-  } catch {
-    return { status: 'skipped' };
+  const pureDirs = git === defaultGit ? resolveGitDirsPure(projectDir) : null;
+  if (pureDirs && !pureDirs.hasCustomHooksPath) {
+    hooksDir = pureDirs.hooksDir;
+    mainDir = pureDirs.mainRoot;
+  } else {
+    try {
+      hooksDir = git(projectDir, 'rev-parse', '--path-format=absolute', '--git-path', 'hooks');
+      mainDir = dirname(git(projectDir, 'rev-parse', '--path-format=absolute', '--git-common-dir'));
+    } catch {
+      return { status: 'skipped' };
+    }
   }
   if (loadWorktreePolicy(mainDir)?.trunk_ref_guard === false) return { status: 'disabled' };
   const path = join(hooksDir, HOOK_NAME);
