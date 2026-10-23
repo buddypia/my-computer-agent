@@ -16,6 +16,16 @@ globalThis.__HOOK_ORCHESTRATOR__ = true;
 const { readsHeldout } = await import('../../../.cli/hooks/heldout-guard.mjs');
 const { findRoot, isHarnessPath, run: lintRun } = await import('../../../.cli/hooks/harness-lint-guard.mjs');
 const { loadHints, matchHints, run: hintRun } = await import('../../../.cli/hooks/error-hint.mjs');
+const { runModulesBatch } = await import('../../../.cli/_cli-dispatch.mjs');
+const {
+  findOverlappingWorktrees,
+  hasVerificationStamp,
+  removeWorktreeSnapshot,
+  resolveCommonRepoRoot,
+  resolveGitDirsPure,
+  updateWorktreeSnapshot,
+  writeVerificationStamp,
+} = await import('../../../.cli/lib/agent-scratchpad.mjs');
 
 let scratch;
 let n = 0;
@@ -302,4 +312,52 @@ test('--base reports the always-on character delta against a git ref', () => {
 test('this repository\'s harness passes its own check', () => {
   const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
   assert.deepEqual(checkHarness(repo).errors, []);
+});
+
+test('agent-scratchpad resolves common git dirs in pure FS and shares stamps and worktree snapshots', () => {
+  const root = tree();
+  mkdirSync(join(root, '.git', 'worktrees', 'wt1'), { recursive: true });
+  write(root, '.git/config', '[core]\n\trepositoryformatversion = 0\n');
+  write(root, '.git/worktrees/wt1/commondir', '../..\n');
+  const wt = join(root, '.worktrees/feature/wt1');
+  write(wt, '.git', `gitdir: ${join(root, '.git/worktrees/wt1')}\n`);
+
+  const pureMain = resolveGitDirsPure(root);
+  assert.equal(pureMain.mainRoot, root);
+  assert.equal(pureMain.hasCustomHooksPath, false);
+  const pureWt = resolveGitDirsPure(wt);
+  assert.equal(pureWt.mainRoot, root);
+  assert.equal(resolveCommonRepoRoot(wt), root);
+
+  const hash = 'a'.repeat(40);
+  assert.equal(hasVerificationStamp(wt, 'harness', hash), false);
+  assert.equal(writeVerificationStamp(root, 'harness', hash), true);
+  assert.equal(hasVerificationStamp(wt, 'harness', hash), true, 'worktree sees stamp written on main');
+
+  updateWorktreeSnapshot(wt, 'feature/wt1', { worktree_path: wt, changed_files: ['Sources/A.swift', 'README.md'] });
+  const wt2 = join(root, '.worktrees/feature/wt2');
+  mkdirSync(wt2, { recursive: true });
+  updateWorktreeSnapshot(wt2, 'feature/wt2', { worktree_path: wt2, changed_files: ['Sources/A.swift'] });
+  const overlaps = findOverlappingWorktrees(root, 'feature/wt1', ['Sources/A.swift', 'README.md']);
+  assert.equal(overlaps.length, 1);
+  assert.equal(overlaps[0].branch, 'feature/wt2');
+  assert.deepEqual(overlaps[0].overlapping_files, ['Sources/A.swift']);
+
+  removeWorktreeSnapshot(root, 'feature/wt2');
+  assert.deepEqual(findOverlappingWorktrees(root, 'feature/wt1', ['Sources/A.swift']), []);
+});
+
+test('_cli-dispatch runModulesBatch runs multiple hooks in-process and short-circuits on deny', async () => {
+  const root = tree();
+  write(root, '.cli/hooks/allow1.mjs', 'export async function run() { return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "w1" } }; }\n');
+  write(root, '.cli/hooks/allow2.mjs', 'export async function run() { return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "w2" } }; }\n');
+  write(root, '.cli/hooks/deny1.mjs', 'export async function run() { return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "stop" } }; }\n');
+
+  const merged = await runModulesBatch([join(root, '.cli/hooks/allow1.mjs'), join(root, '.cli/hooks/allow2.mjs')], {});
+  assert.equal(merged.hookSpecificOutput.permissionDecision, 'allow');
+  assert.equal(merged.hookSpecificOutput.permissionDecisionReason, 'w1\n\nw2');
+
+  const denied = await runModulesBatch([join(root, '.cli/hooks/allow1.mjs'), join(root, '.cli/hooks/deny1.mjs'), join(root, '.cli/hooks/allow2.mjs')], {});
+  assert.equal(denied.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(denied.hookSpecificOutput.permissionDecisionReason, 'stop');
 });

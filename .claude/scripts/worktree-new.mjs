@@ -35,6 +35,7 @@ import { existsSync, realpathSync, readFileSync, writeFileSync, mkdirSync } from
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readConfiguredShipBaseBranch, resolveShipBaseBranchStrict } from '../../.cli/lib/ship-base-branch.mjs';
+import { updateWorktreeSnapshot } from '../../.cli/lib/agent-scratchpad.mjs';
 import { INHERITED_REPOSITORY_POINTERS, withoutInheritedRepository } from '../../.cli/lib/utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -573,6 +574,15 @@ export function runWorktreeNew(opts) {
   }
 
   result.ok = true;
+  if (!dryRun && gitFn === runGit) {
+    updateWorktreeSnapshot(cwd, branch, {
+      worktree_path: wtPathAbs,
+      base_sha: result.base_sha,
+      head_sha: result.base_sha,
+      dirty: false,
+      changed_files: [],
+    });
+  }
   return result;
 }
 

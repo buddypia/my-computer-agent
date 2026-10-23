@@ -19,7 +19,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writeJsonAtomicSync } from './atomic-fs.mjs';
 import { defaultGit, measureShipScale } from '../../../.cli/lib/ship-scale.mjs';
-import { resolveWorktreePlanPath } from '../../../.cli/lib/worktree-plan-path.mjs';
+import { resolveWorktreePlanPath, inferBranchFromWorktreePath } from '../../../.cli/lib/worktree-plan-path.mjs';
+import { readWorktreeSnapshot, updateWorktreeSnapshot } from '../../../.cli/lib/agent-scratchpad.mjs';
 import { parseUncheckedPlanItems } from '../../../.cli/lib/worktree-plan-status.mjs';
 import { resolveShipBaseBranch } from '../../../.cli/lib/ship-base-branch.mjs';
 import {
@@ -147,6 +148,29 @@ function resolveQuestion(def, ctx) {
 }
 
 export function resolveReviewDiffId(worktreeAbs, baseBranch, gitFn = defaultGit) {
+  if (gitFn === defaultGit && worktreeAbs) {
+    try {
+      const branch = inferBranchFromWorktreePath(worktreeAbs);
+      if (branch) {
+        const snap = readWorktreeSnapshot(worktreeAbs, branch);
+        if (snap?.review_diff_id && snap.head_sha && snap.base_sha && snap.dirty === false) {
+          const curHead = String(gitFn(worktreeAbs, ['rev-parse', 'HEAD'])).trim();
+          let curBase = null;
+          for (const ref of [`origin/${baseBranch}`, baseBranch]) {
+            try {
+              curBase = String(gitFn(worktreeAbs, ['rev-parse', ref])).trim();
+              if (curBase) break;
+            } catch { /* next */ }
+          }
+          if (curHead === snap.head_sha && curBase === snap.base_sha) {
+            return snap.review_diff_id;
+          }
+        }
+      }
+    } catch {
+      /* fall through to git diff */
+    }
+  }
   for (const ref of [`origin/${baseBranch}`, baseBranch]) {
     try {
       const diff = gitFn(worktreeAbs, ['diff', `${ref}...HEAD`]);
@@ -425,6 +449,28 @@ function buildStepContext({
     injected(landings, () => readTrunkLandings(baseBranch, ctx.git)),
   );
   ctx.autoApproval = autoApproval ?? null;
+  if (gitFn === defaultGit && worktreeAbs && branch && resolvedHead) {
+    try {
+      const statusOut = String(gitFn(worktreeAbs, ['status', '--porcelain', '--untracked-files=all'])).trim();
+      let baseSha = null;
+      for (const ref of [`origin/${baseBranch}`, baseBranch]) {
+        try {
+          baseSha = String(gitFn(worktreeAbs, ['rev-parse', ref])).trim();
+          if (baseSha) break;
+        } catch { /* next */ }
+      }
+      updateWorktreeSnapshot(projectDir || worktreeAbs, branch, {
+        worktree_path: worktreeAbs,
+        head_sha: resolvedHead,
+        base_sha: baseSha,
+        dirty: Boolean(statusOut),
+        review_diff_id: resolvedDiffId,
+        scale: ctx.scale,
+      });
+    } catch {
+      /* fail-open */
+    }
+  }
   return ctx;
 }
 
