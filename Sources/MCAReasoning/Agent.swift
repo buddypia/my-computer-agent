@@ -326,8 +326,8 @@ public actor Agent {
         let definitions = await tools.definitions()
         let task: AgentTask = images.isEmpty ? .answer : .vision
 
-        // Track tool calls executed during this answer turn to detect and break infinite loops
-        var executedToolSignatures = Set<String>()
+        // The previous round's calls, to detect a model repeating itself.
+        var previousRoundSignatures = Set<String>()
         var toolExecutions: [ToolExecutionRecord] = []
 
         // Bounded so a model that keeps calling tools cannot loop forever.
@@ -396,10 +396,12 @@ public actor Agent {
                     lastResponse: response)
             }
 
-            // If every tool call in this round has already been executed earlier in this turn,
-            // the model is stuck in a loop. Break immediately and force a final text response.
+            // A round that only repeats the round before it is stuck: nothing ran in between
+            // that could make the same calls come back different. Compared with the previous
+            // round, not the whole turn — observe, act, observe again is how a GUI task is
+            // checked, and the second identical `inspect_ui_elements` sees a changed screen.
             let signatures = response.toolCalls.map { "\($0.name):\(String(decoding: $0.arguments, as: UTF8.self))" }
-            let allDuplicates = !signatures.isEmpty && signatures.allSatisfy { executedToolSignatures.contains($0) }
+            let allDuplicates = !signatures.isEmpty && signatures.allSatisfy { previousRoundSignatures.contains($0) }
             if allDuplicates {
                 log.warning("Detected duplicate tool call loop in answer turn, forcing final text response")
                 let fallback = try await router.run(
@@ -427,9 +429,7 @@ public actor Agent {
                     reasonNote: note)
             }
 
-            for sig in signatures {
-                executedToolSignatures.insert(sig)
-            }
+            previousRoundSignatures = Set(signatures)
 
             transcript.append(.toolCalls(response.toolCalls))
             for call in response.toolCalls {

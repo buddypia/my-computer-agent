@@ -1742,8 +1742,10 @@ final class Copilot {
                     self.hudState.endStreaming(text: "The requested browser window is unavailable; no action was executed.")
                     return
                 }
-                // 3. Routing (pure; graded by Evals/system-one)
-                let route = RequestRoute.decide(question: question, triage: triage)
+                // 3. Routing (pure; keyless case graded by Evals/system-one, the model case by Evals/agent-loop)
+                let route = RequestRoute.decide(
+                    question: question, triage: triage,
+                    answerModelAvailable: !self.router.usableChain(for: .answer).isEmpty)
 
                 if route == .autonomousLoop {
                     let goalToRun = explicitGoal ?? question

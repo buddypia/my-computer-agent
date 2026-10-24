@@ -8,62 +8,6 @@ import OSLog
 
 public typealias AutonomousCoordinatorFactory = @Sendable (AutonomousLoopConfig, Bool) -> TwoTierAutonomousLoopCoordinator
 
-/// Structured output returned by the `autonomous_act` MCP tool.
-public struct AutonomousActOutput: Codable, Sendable, Equatable {
-    /// Whether the autonomous goal was successfully accomplished.
-    public let isSuccess: Bool
-
-    /// Total number of micro-action steps executed by System 1.
-    public let totalSteps: Int
-
-    /// Number of subgoals fully accomplished and verified.
-    public let subgoalsCompleted: Int
-
-    /// Total number of subgoals decomposed by System 2.
-    public let totalSubgoals: Int
-
-    /// Human- and machine-readable execution summary.
-    public let summary: String
-
-    /// Total elapsed execution duration in seconds.
-    public let durationSeconds: Double
-
-    /// Machine-parseable termination identifier.
-    public let terminationReason: String?
-
-    public init(
-        isSuccess: Bool,
-        totalSteps: Int,
-        subgoalsCompleted: Int,
-        totalSubgoals: Int,
-        summary: String,
-        durationSeconds: Double,
-        terminationReason: String? = nil
-    ) {
-        self.isSuccess = isSuccess
-        self.totalSteps = totalSteps
-        self.subgoalsCompleted = subgoalsCompleted
-        self.totalSubgoals = totalSubgoals
-        self.summary = summary
-        self.durationSeconds = durationSeconds
-        self.terminationReason = terminationReason
-    }
-
-    public init(summary: ExecutionSummary) {
-        self.isSuccess = summary.isSuccess
-        self.totalSteps = summary.totalSteps
-        self.subgoalsCompleted = summary.subgoalsCompleted
-        self.totalSubgoals = summary.totalSubgoals
-        self.summary = summary.finalMessage.isEmpty
-            ? (summary.isSuccess ? "Goal completed successfully." : "Autonomous execution ended.")
-            : summary.finalMessage
-        self.durationSeconds = summary.durationSeconds
-        self.terminationReason = summary.terminationReason.isEmpty
-            ? (summary.isSuccess ? "completed" : "terminated")
-            : summary.terminationReason
-    }
-}
-
 private final class ActiveTokenRegistry: @unchecked Sendable {
     private let lock = NSLock()
     private var tokens: [ObjectIdentifier: CancellationToken] = [:]
@@ -803,46 +747,7 @@ public actor ContextMCPServer {
         serverInstance?.registerActiveToken(token, id: tokenID)
         defer { serverInstance?.unregisterActiveToken(id: tokenID) }
 
-        do {
-            let summary = try await withTaskCancellationHandler {
-                try await coordinator.execute(goal: trimmedGoal, cancellationToken: token)
-            } onCancel: {
-                token.cancel()
-            }
-            let output = AutonomousActOutput(summary: summary)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let jsonData = try encoder.encode(output)
-            return String(decoding: jsonData, as: UTF8.self)
-        } catch let error as LoopExecutionError {
-            let output = AutonomousActOutput(
-                isSuccess: false,
-                totalSteps: 0,
-                subgoalsCompleted: 0,
-                totalSubgoals: 0,
-                summary: "Autonomous loop execution ended with error: \(error.localizedDescription)",
-                durationSeconds: 0.0,
-                terminationReason: "\(error)"
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let jsonData = try encoder.encode(output)
-            return String(decoding: jsonData, as: UTF8.self)
-        } catch {
-            let output = AutonomousActOutput(
-                isSuccess: false,
-                totalSteps: 0,
-                subgoalsCompleted: 0,
-                totalSubgoals: 0,
-                summary: "Execution failed: \(error.localizedDescription)",
-                durationSeconds: 0.0,
-                terminationReason: "executionFailed"
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let jsonData = try encoder.encode(output)
-            return String(decoding: jsonData, as: UTF8.self)
-        }
+        return await AutonomousActOutput.run(coordinator, goal: trimmedGoal, cancellationToken: token).json
     }
 
     /// Publishes an `AgentTool` definition unchanged: the JSON Schema the
