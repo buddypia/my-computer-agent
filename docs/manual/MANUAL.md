@@ -236,7 +236,7 @@ Run `mca browser help` for the full list.
 | `search_context` | Search what the user has seen and heard (query, last N minutes, app, limit). |
 | `recent_activity` | What the user has been doing recently. |
 | `conversation_history` | Recent transcribed conversation (`me`, `others` or `all`). |
-| `computer` | Mouse and keyboard actions at coordinates. |
+| `computer` | Look at and operate the desktop: `screenshot` (returned as an image), mouse and keyboard at coordinates, `wait`. |
 | `click_element` | Click a UI element by title or label. |
 | `run_applescript` | Run AppleScript. |
 | `inspect_ui_elements` | List actionable elements of the focused window. |
@@ -258,11 +258,28 @@ command = "/path/to/MyComputerAgent.app/Contents/MacOS/mca"
 args = ["mcp"]
 ```
 
+**Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project) — with computer use turned on:
+
+```json
+{
+  "mcpServers": {
+    "my-computer-agent": {
+      "command": "/path/to/MyComputerAgent.app/Contents/MacOS/mca",
+      "args": ["mcp", "--computer-use"]
+    }
+  }
+}
+```
+
+**Computer use (look, act, check).** With `--computer-use`, any of these clients can drive the Mac the way Cursor's own Computer Use does: call `computer` with `{"action": "screenshot"}` to get an image of the main display, act with coordinates read off that image (`left_click`, `left_click_drag`, `scroll`, `type`, `key`, `wait`, …), then take another screenshot to check the result. Coordinates are in pixels of the latest screenshot, origin at its top-left. A display wider than 1568 px is shrunk before it is sent, and the text that comes with the image says by how much; `mca` maps your coordinates back to the screen. Only the main display is captured. Run `mca doctor` first: its *Computer use (MCP)* section takes a test screenshot and shows its size.
+
 Notes:
 
 - The server reads the same history database as the app, so run the app (or have run it) first for there to be anything to search.
-- Permissions are attributed to the program that launched the server (your terminal or editor). The computer-control tools need Accessibility for that program. Searching history needs no special permission.
-- **Dangerous tools are refused over MCP by default.** An MCP client has no way to show you a confirmation, so `run_applescript`, `computer`, `click_element`, `typesafe_act`, `autonomous_act` (when not a dry run), the browser tools that act on a page (`browser_navigate`, `browser_element`, `browser_act`, `browser_tabs` when it opens, switches or closes a tab, and `browser_read` when given a `path`) and `browser_evaluate` return an error. Reading tools (search, history, `inspect_ui_elements`, `browser_snapshot`, `browser_observe`, `browser_extract`, `browser_wait`, and `browser_read` / `browser_tabs` in their reading forms) work as usual. To allow the gated tools for a client you trust, set `"mcpAllowDangerousTools": true` in `config.json` and restart the client. See [SECURITY.md](../../SECURITY.md) section 5.
+- Permissions are attributed to the program that launched the server (your terminal or editor). The computer-control tools need Accessibility for that program, and `screenshot` needs Screen Recording for it. For Cursor, grant both to Cursor itself. Searching history needs no special permission.
+- **Dangerous tools are refused over MCP by default.** An MCP client has no way to show you a confirmation, so `run_applescript`, `computer` (including `screenshot`), `click_element`, `typesafe_act`, `autonomous_act` (when not a dry run), the browser tools that act on a page (`browser_navigate`, `browser_element`, `browser_act`, `browser_tabs` when it opens, switches or closes a tab, and `browser_read` when given a `path`) and `browser_evaluate` return an error. Reading tools (search, history, `inspect_ui_elements`, `browser_snapshot`, `browser_observe`, `browser_extract`, `browser_wait`, and `browser_read` / `browser_tabs` in their reading forms) work as usual. To allow the gated tools for a client you trust, set `"mcpAllowDangerousTools": true` in `config.json` and restart the client. See [SECURITY.md](../../SECURITY.md) section 5.
+- **`--computer-use` is the narrower opt-in.** `mca mcp --computer-use` allows `computer` only (screen, mouse, keyboard). AppleScript, `click_element`, `typesafe_act`, `autonomous_act` and the browser tools that act on a page stay refused. The server prints a notice to stderr when it is on. Everything the connected agent sees on screen goes to that agent's model provider, so connect only clients you trust. Password-manager windows and the windows in your exclusion list are left out of screenshots.
+- `click_element` does not work over MCP yet (it needs the app's own observation of the window). Use `inspect_ui_elements` and `computer`; when the screenshot was shrunk, `inspect_ui_elements` coordinates are in screen points, not screenshot pixels.
 - `computer`, `click_element`, `run_applescript` and the act tools let the connected agent operate your Mac. Only connect clients you trust, and prefer `dry_run` for experiments.
 - Provider keys are resolved the same way as in the app: environment variable first (for example `GEMINI_API_KEY`, inherited from the client's environment), then the keychain.
 

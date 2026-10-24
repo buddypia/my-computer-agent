@@ -23,6 +23,25 @@ public enum ImageEncoder {
         maximumDimension: Int = 1400,
         quality: Double = 0.7
     ) -> Data? {
+        encodedJPEG(image, maximumDimension: maximumDimension, quality: quality)?.data
+    }
+
+    /// JPEG bytes together with the pixel size actually delivered.
+    ///
+    /// A caller that lets a model point at the picture (computer use) has to map
+    /// the model's pixel coordinates back onto the screen, so it needs the size
+    /// after scaling, not the size it asked for.
+    public struct EncodedImage: Sendable {
+        public let data: Data
+        public let width: Int
+        public let height: Int
+    }
+
+    public static func encodedJPEG(
+        _ image: CGImage,
+        maximumDimension: Int = 1400,
+        quality: Double = 0.7
+    ) -> EncodedImage? {
         let source = downscale(image, maximumDimension: maximumDimension) ?? image
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
@@ -33,7 +52,7 @@ public enum ImageEncoder {
             kCGImageDestinationLossyCompressionQuality: quality,
         ] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
-        return data as Data
+        return EncodedImage(data: data as Data, width: source.width, height: source.height)
     }
 
     /// Redraws the image no larger than `maximumDimension` on its longest edge.

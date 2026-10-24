@@ -236,7 +236,7 @@ back | forward | reload
 | `search_context` | 사용자가 보고 들은 것을 검색합니다(검색어, 최근 N분, 앱, 건수). |
 | `recent_activity` | 사용자가 최근에 하던 일. |
 | `conversation_history` | 최근 대화의 문자 기록(`me`, `others`, `all`). |
-| `computer` | 좌표를 지정한 마우스와 키보드 조작. |
+| `computer` | 데스크톱을 보고 조작합니다. `screenshot`(이미지로 반환), 좌표를 지정한 마우스와 키보드 조작, `wait`. |
 | `click_element` | 제목이나 레이블로 UI 요소를 클릭합니다. |
 | `run_applescript` | AppleScript를 실행합니다. |
 | `inspect_ui_elements` | 활성 윈도우의 조작 가능한 요소를 나열합니다. |
@@ -258,11 +258,28 @@ command = "/path/to/MyComputerAgent.app/Contents/MacOS/mca"
 args = ["mcp"]
 ```
 
+**Cursor**(`~/.cursor/mcp.json` 또는 프로젝트의 `.cursor/mcp.json`) — 컴퓨터 조작을 켜는 경우:
+
+```json
+{
+  "mcpServers": {
+    "my-computer-agent": {
+      "command": "/path/to/MyComputerAgent.app/Contents/MacOS/mca",
+      "args": ["mcp", "--computer-use"]
+    }
+  }
+}
+```
+
+**컴퓨터 조작(보고, 조작하고, 확인하기).** `--computer-use`를 붙이면 이 클라이언트들이 Cursor 자체의 Computer Use와 같은 방식으로 Mac을 조작할 수 있습니다. `computer`에 `{"action": "screenshot"}`을 보내 메인 디스플레이 이미지를 받고, 그 이미지에서 읽은 좌표로 조작한 뒤(`left_click`, `left_click_drag`, `scroll`, `type`, `key`, `wait` 등), 다시 스크린샷을 찍어 결과를 확인합니다. 좌표는 가장 최근 스크린샷의 픽셀 단위이고 원점은 왼쪽 위입니다. 1568px보다 넓은 디스플레이는 줄여서 전송되며, 이미지와 함께 오는 텍스트에 축소 비율이 적혀 있습니다. `mca`가 전달받은 좌표를 화면 좌표로 되돌립니다. 촬영 대상은 메인 디스플레이뿐입니다. 먼저 `mca doctor`를 실행하세요. *Computer use (MCP)* 항목에서 테스트 촬영을 하고 크기를 보여 줍니다.
+
 참고 사항:
 
 - 서버는 앱과 같은 기록 데이터베이스를 읽습니다. 검색할 내용이 있도록 앱을 먼저 실행해 두세요(과거에 실행한 적이 있으면 됩니다).
-- 권한은 서버를 실행한 프로그램(터미널이나 편집기)에 부여됩니다. 컴퓨터 조작 도구에는 그 프로그램의 손쉬운 사용 권한이 필요합니다. 기록 검색에는 별도 권한이 필요 없습니다.
-- **위험한 도구는 MCP를 통하면 기본적으로 거부됩니다.** MCP 클라이언트에는 사용자에게 확인을 보여 줄 방법이 없으므로 `run_applescript`, `computer`, `click_element`, `typesafe_act`, `autonomous_act`(드라이런이 아닐 때), 페이지를 조작하는 브라우저 도구(`browser_navigate`, `browser_element`, `browser_act`, 탭을 열거나 전환하거나 닫는 `browser_tabs`, `path`를 지정한 `browser_read`), 그리고 `browser_evaluate`는 오류를 반환합니다. 읽기 도구(검색, 기록, `inspect_ui_elements`, `browser_snapshot`, `browser_observe`, `browser_extract`, `browser_wait`, 읽기 용도의 `browser_read`와 `browser_tabs`)는 그대로 동작합니다. 신뢰하는 클라이언트에 한해 허용하려면 `config.json`에 `"mcpAllowDangerousTools": true`를 설정하고 클라이언트를 다시 시작하세요. 자세한 내용은 [SECURITY.ko.md](../../SECURITY.ko.md) 5항을 참조하세요.
+- 권한은 서버를 실행한 프로그램(터미널이나 편집기)에 부여됩니다. 컴퓨터 조작 도구에는 그 프로그램의 손쉬운 사용 권한이 필요하고, `screenshot`에는 화면 기록 권한도 필요합니다. Cursor의 경우 두 권한 모두 Cursor 자체에 부여하세요. 기록 검색에는 별도 권한이 필요 없습니다.
+- **위험한 도구는 MCP를 통하면 기본적으로 거부됩니다.** MCP 클라이언트에는 사용자에게 확인을 보여 줄 방법이 없으므로 `run_applescript`, `computer`(`screenshot` 포함), `click_element`, `typesafe_act`, `autonomous_act`(드라이런이 아닐 때), 페이지를 조작하는 브라우저 도구(`browser_navigate`, `browser_element`, `browser_act`, 탭을 열거나 전환하거나 닫는 `browser_tabs`, `path`를 지정한 `browser_read`), 그리고 `browser_evaluate`는 오류를 반환합니다. 읽기 도구(검색, 기록, `inspect_ui_elements`, `browser_snapshot`, `browser_observe`, `browser_extract`, `browser_wait`, 읽기 용도의 `browser_read`와 `browser_tabs`)는 그대로 동작합니다. 신뢰하는 클라이언트에 한해 허용하려면 `config.json`에 `"mcpAllowDangerousTools": true`를 설정하고 클라이언트를 다시 시작하세요. 자세한 내용은 [SECURITY.ko.md](../../SECURITY.ko.md) 5항을 참조하세요.
+- **`--computer-use`는 더 좁은 허용입니다.** `mca mcp --computer-use`는 `computer`(화면·마우스·키보드)만 허용합니다. AppleScript, `click_element`, `typesafe_act`, `autonomous_act`, 페이지를 조작하는 브라우저 도구는 계속 거부됩니다. 켜져 있으면 서버가 stderr에 알림을 출력합니다. 연결된 에이전트가 화면에서 본 모든 것은 그 에이전트의 모델 프로바이더로 전송되므로 신뢰할 수 있는 클라이언트만 연결하세요. 비밀번호 관리자 윈도우와 제외 목록에 있는 윈도우는 스크린샷에 나오지 않습니다.
+- `click_element`는 MCP를 통해서는 아직 동작하지 않습니다(앱 자체의 윈도우 관찰이 전제이기 때문입니다). `inspect_ui_elements`와 `computer`를 사용하세요. 스크린샷이 축소된 경우 `inspect_ui_elements`의 좌표는 스크린샷 픽셀이 아니라 화면 포인트 단위입니다.
 - `computer`, `click_element`, `run_applescript`, act 계열 도구는 연결된 에이전트가 사용자의 Mac을 조작하게 합니다. 신뢰할 수 있는 클라이언트만 연결하고, 시험할 때는 `dry_run`을 사용하세요.
 - 프로바이더 키는 앱과 같은 순서로 확인합니다. 먼저 환경 변수(예: `GEMINI_API_KEY`, 클라이언트의 환경에서 물려받음), 그다음 키체인입니다.
 

@@ -57,19 +57,51 @@ public enum KeystrokeApproval {
 ///
 /// `type` and `key` go through `approver` (see ``KeystrokeApproval``); pointer
 /// actions do not. The default refuses.
+///
+/// Pointer actions need a task-scoped ``ActionAuthorization`` (the chat UI's
+/// approval card) and fail closed without one. `trustsCallerApproval` is for the
+/// one caller that has already approved each call as a whole — the MCP server
+/// after its approver (the user's explicit opt-in) said yes — and only takes the
+/// place of that missing session. It never overrides a session that exists.
+///
+/// `screenshot` (see ``captureScreenshot()``) and `wait` complete the Anthropic
+/// Computer Use action set. They are not in ``definition``: the in-app agent
+/// already receives the screen through its own channel, and a text-only tool
+/// result cannot carry the picture.
 public struct ComputerActionTool: AgentTool {
     private let synthesizer: any EventSynthesizing
     private let approver: any ToolApproving
     private let frontmostApp: @Sendable () -> String?
+    private let screenshots: any ScreenshotProviding
+    private let screenSpace: ComputerScreenSpace
+    private let trustsCallerApproval: Bool
+
+    /// Longest `wait` honoured, in seconds. A model that asks for minutes is
+    /// stuck, and the call would hold the whole MCP request open.
+    static let maximumWaitSeconds = 10.0
 
     public init(
         synthesizer: any EventSynthesizing = EventSynthesizer(),
         approver: any ToolApproving = DenyAllToolApprover(),
-        frontmostApp: @escaping @Sendable () -> String? = KeystrokeApproval.frontmostAppName
+        frontmostApp: @escaping @Sendable () -> String? = KeystrokeApproval.frontmostAppName,
+        screenshots: any ScreenshotProviding = DisplayScreenshotProvider(),
+        screenSpace: ComputerScreenSpace = .shared,
+        trustsCallerApproval: Bool = false
     ) {
         self.synthesizer = synthesizer
         self.approver = approver
         self.frontmostApp = frontmostApp
+        self.screenshots = screenshots
+        self.screenSpace = screenSpace
+        self.trustsCallerApproval = trustsCallerApproval
+    }
+
+    /// Captures the main display and adopts its pixel space for the coordinates
+    /// of the calls that follow. Read-only: it moves nothing.
+    public func captureScreenshot() async throws -> ComputerScreenshot {
+        let screenshot = try await screenshots.captureMainDisplay()
+        screenSpace.adopt(screenshot)
+        return screenshot
     }
 
     public var definition: ToolDefinition {
@@ -146,12 +178,15 @@ public struct ComputerActionTool: AgentTool {
         }
 
         func extractPoint(_ key: String) -> CGPoint? {
+            // The model points into the latest screenshot; events are in screen points.
             func validPoint(_ x: Double, _ y: Double) -> CGPoint? {
-                guard x.isFinite, y.isFinite,
-                      x >= Double(Int32.min), x <= Double(Int32.max),
-                      y >= Double(Int32.min), y <= Double(Int32.max)
+                guard x.isFinite, y.isFinite else { return nil }
+                let mapped = screenSpace.screenPoint(fromImage: CGPoint(x: x, y: y))
+                guard mapped.x.isFinite, mapped.y.isFinite,
+                      mapped.x >= Double(Int32.min), mapped.x <= Double(Int32.max),
+                      mapped.y >= Double(Int32.min), mapped.y <= Double(Int32.max)
                 else { return nil }
-                return CGPoint(x: x, y: y)
+                return mapped
             }
             if let arr = parsed[key] as? [Double], arr.count >= 2 {
                 return validPoint(arr[0], arr[1])
@@ -168,8 +203,27 @@ public struct ComputerActionTool: AgentTool {
             return nil
         }
 
-        let supported = ["mouse_move", "left_click", "right_click", "double_click", "triple_click", "middle_click", "left_click_drag", "scroll", "type", "key", "cursor_position"]
+        let supported = ["mouse_move", "left_click", "right_click", "double_click", "triple_click", "middle_click", "left_click_drag", "scroll", "type", "key", "cursor_position", "wait", "screenshot"]
         guard supported.contains(action) else { return "Error: Unsupported action '\(action)'." }
+        if action == "screenshot" {
+            // A text result cannot carry the picture; ``captureScreenshot()`` can, for callers
+            // that deliver images (the MCP server). Not captured here so the frame is not wasted.
+            return "Error: 'screenshot' returns an image and is only available through an MCP client that supports image results."
+        }
+        if action == "wait" {
+            // Observes nothing and moves nothing, so there is nothing to approve.
+            var requested = 1.0
+            if let raw = parsed["duration"] {
+                guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                    return "Error: 'duration' must be a non-negative number of seconds."
+                }
+                requested = number.doubleValue
+            }
+            guard requested.isFinite, requested >= 0 else { return "Error: 'duration' must be a non-negative number of seconds." }
+            let seconds = min(requested, Self.maximumWaitSeconds)
+            try await Task.sleep(for: .seconds(seconds))
+            return "Waited \(seconds) seconds."
+        }
         if action == "type", parsed.string("text") == nil { return "Error: 'text' parameter is required for 'type' action." }
         if action == "key", parsed.string("key") == nil { return "Error: 'key' parameter is required for 'key' action." }
         if action == "left_click_drag", extractPoint("start_coordinate") == nil || extractPoint("coordinate") == nil {
@@ -196,7 +250,9 @@ public struct ComputerActionTool: AgentTool {
         let actionPoint = coordinateActions.contains(action) ? (try extractPoint("coordinate") ?? synthesizer.cursorPosition()) : extractPoint("coordinate")
         let resolvedDetails = String(decoding: arguments, as: UTF8.self) + (actionPoint.map { "\nResolved coordinate: [\($0.x), \($0.y)]" } ?? "")
         let unscopedKeystroke = ActionAuthorization.current == nil && ["type", "key"].contains(action)
-        if action != "cursor_position", !unscopedKeystroke {
+        // The MCP server approved this call as a whole; there is no chat session to ask.
+        let approvedByCaller = ActionAuthorization.current == nil && trustsCallerApproval
+        if action != "cursor_position", !unscopedKeystroke, !approvedByCaller {
             try await DesktopActionAuthorization.requireApproval(operation: action, details: resolvedDetails, requestedPID: targetPID)
         }
         try Task.checkCancellation()
@@ -297,7 +353,7 @@ public struct ComputerActionTool: AgentTool {
                 return "Pressed key '\(key)'."
 
             case "cursor_position":
-                let pos = try synthesizer.cursorPosition()
+                let pos = screenSpace.imagePoint(fromScreen: try synthesizer.cursorPosition())
                 return "Current cursor position: [\(Int(pos.x)), \(Int(pos.y))]."
 
             default:

@@ -43,7 +43,8 @@ case "run":
 case "doctor":
     runBlocking { await runDoctor() }
 case "mcp":
-    runBlocking { await runMCPServer() }
+    let computerUse = rest.contains("--computer-use")
+    runBlocking { await runMCPServer(computerUse: computerUse) }
 case "ask":
     runBlocking { await runAsk(question: rest.joined(separator: " ")) }
 case "act":
@@ -129,6 +130,33 @@ func runDoctor() async {
         print("")
     }
 
+    // What an MCP client doing computer use (`mca mcp --computer-use`) would get.
+    // Captured only when Screen Recording is in place, so the check never raises
+    // a permission prompt of its own.
+    print("Computer use (MCP)")
+    // `inheritedFromParent` is a grant that macOS reports for the program that
+    // launched this one, which is exactly the process an MCP server runs under.
+    let screenReady = status.requirements.contains {
+        $0.id == .screenCapture && ($0.state == .granted || $0.state == .inheritedFromParent)
+    }
+    if screenReady {
+        do {
+            let shot = try await DisplayScreenshotProvider().captureMainDisplay()
+            print("  ✓ screenshot \(shot.width)x\(shot.height) px, \(shot.jpeg.count / 1024) KB "
+                + "(main display \(Int(shot.displayPoints.width))x\(Int(shot.displayPoints.height)) points)")
+        } catch {
+            print("  ✗ screenshot failed: \(error)")
+        }
+    } else {
+        print("  · screenshot not checked: Screen Recording is not granted to this process or its parent")
+    }
+    if ((try? AgentConfiguration.load()) ?? AgentConfiguration()).mcpAllowDangerousTools {
+        print("  ✓ config.json mcpAllowDangerousTools is true: MCP clients may use every acting tool")
+    } else {
+        print("  · off by default: start the server with `mca mcp --computer-use` to allow the screen and the mouse and keyboard")
+    }
+    print("")
+
     print("Models")
     if let reason = AppleOnDeviceExecutor.unavailableReason {
         print("  ✗ on-device gate: \(reason)")
@@ -202,15 +230,32 @@ func runDoctor() async {
     }
 }
 
-func runMCPServer() async {
+func runMCPServer(computerUse: Bool = false) async {
     let configuration = (try? AgentConfiguration.load()) ?? AgentConfiguration()
     do {
         let store = try SQLiteContextStore(url: configuration.databaseURL)
         // A stdio server has nobody to ask, so tools that act on the machine
-        // are refused unless the user has opted in in config.json.
-        let approver: any ToolApproving = configuration.mcpAllowDangerousTools
-            ? AutoApproveToolApprover()
-            : ContextMCPServer.defaultApprover
+        // are refused unless the user has opted in: in config.json for all of
+        // them, or with `--computer-use` for the screen and the mouse and
+        // keyboard only.
+        let approver: any ToolApproving
+        if configuration.mcpAllowDangerousTools {
+            approver = AutoApproveToolApprover()
+        } else if computerUse {
+            approver = AllowListToolApprover(
+                allowing: ContextMCPServer.computerUseTools,
+                otherwise: ContextMCPServer.defaultApprover)
+        } else {
+            approver = ContextMCPServer.defaultApprover
+        }
+        if computerUse || configuration.mcpAllowDangerousTools {
+            // stdout carries the protocol, so the notice goes to stderr.
+            FileHandle.standardError.write(Data("""
+                my-computer-agent: computer use is ON — the connected MCP client can see your main \
+                display and control the mouse and keyboard.
+
+                """.utf8))
+        }
         var extraTools: [any AgentTool] = []
         if configuration.browser.enabled {
             let router = ModelRouter(policy: configuration.routing, credentials: CredentialStore())
@@ -460,6 +505,8 @@ func printUsage() {
           browser   Drive a browser: navigate, snapshot (refs), click/fill/press, act/extract
           search    Search recorded history
           mcp       Serve recorded context over MCP on stdio
+                    (--computer-use also lets the client see the screen and
+                     drive the mouse and keyboard; see docs/manual section 7)
           auth      Store a provider API key in the keychain
 
         Global Options:

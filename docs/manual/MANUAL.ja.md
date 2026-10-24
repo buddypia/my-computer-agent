@@ -236,7 +236,7 @@ back | forward | reload
 | `search_context` | ユーザーが見聞きしたことを検索します（検索語、直近 N 分、アプリ、件数）。 |
 | `recent_activity` | ユーザーが最近していたこと。 |
 | `conversation_history` | 直近の会話の文字起こし（`me`、`others`、`all`）。 |
-| `computer` | 座標を指定したマウスとキーボードの操作。 |
+| `computer` | デスクトップを見て操作します。`screenshot`（画像で返ります）、座標を指定したマウスとキーボードの操作、`wait`。 |
 | `click_element` | タイトルやラベルで UI 要素をクリックします。 |
 | `run_applescript` | AppleScript を実行します。 |
 | `inspect_ui_elements` | アクティブなウインドウの操作可能な要素を一覧します。 |
@@ -258,11 +258,28 @@ command = "/path/to/MyComputerAgent.app/Contents/MacOS/mca"
 args = ["mcp"]
 ```
 
+**Cursor**（`~/.cursor/mcp.json`、またはプロジェクトの `.cursor/mcp.json`）— コンピューター操作を有効にする場合:
+
+```json
+{
+  "mcpServers": {
+    "my-computer-agent": {
+      "command": "/path/to/MyComputerAgent.app/Contents/MacOS/mca",
+      "args": ["mcp", "--computer-use"]
+    }
+  }
+}
+```
+
+**コンピューター操作（見る・操作する・確かめる）。** `--computer-use` を付けると、これらのクライアントは Cursor 自身の Computer Use と同じ要領で Mac を操作できます。`computer` に `{"action": "screenshot"}` を渡してメインディスプレイの画像を受け取り、その画像から読み取った座標で操作し（`left_click`、`left_click_drag`、`scroll`、`type`、`key`、`wait` など）、もう一度スクリーンショットを撮って結果を確かめます。座標は直近のスクリーンショットの画素で、原点は左上です。1568 px より広いディスプレイは縮小して送られ、画像に添えるテキストに縮小率が書かれます。`mca` は渡された座標を画面の座標に戻します。撮影するのはメインディスプレイだけです。先に `mca doctor` を実行してください。*Computer use (MCP)* の項目でテスト撮影を行い、サイズを表示します。
+
 補足:
 
 - サーバーはアプリと同じ履歴データベースを読みます。検索できる内容が入るように、先にアプリを起動しておいてください（過去に起動していれば構いません）。
-- 権限は、サーバーを起動したプログラム（ターミナルやエディタ）に紐付きます。コンピューター操作系のツールには、そのプログラムのアクセシビリティ権限が必要です。履歴の検索には特別な権限は要りません。
-- **危険なツールは、MCP 経由では既定で拒否されます。** MCP クライアントにはあなたへ確認を表示する手段がないため、`run_applescript`、`computer`、`click_element`、`typesafe_act`、`autonomous_act`（ドライランでない場合）、ページを操作するブラウザツール（`browser_navigate`、`browser_element`、`browser_act`、タブを開く・切り替える・閉じる場合の `browser_tabs`、`path` を指定した `browser_read`）、そして `browser_evaluate` はエラーを返します。読み取り系のツール（検索、履歴、`inspect_ui_elements`、`browser_snapshot`、`browser_observe`、`browser_extract`、`browser_wait`、読み取り用途の `browser_read` と `browser_tabs`）は通常どおり使えます。信頼できるクライアントに対してのみ許可したい場合は、`config.json` に `"mcpAllowDangerousTools": true` を設定し、クライアントを再起動してください。詳しくは [SECURITY.ja.md](../../SECURITY.ja.md) の第5項を参照してください。
+- 権限は、サーバーを起動したプログラム（ターミナルやエディタ）に紐付きます。コンピューター操作系のツールには、そのプログラムのアクセシビリティ権限が必要で、`screenshot` には画面収録の権限も必要です。Cursor の場合は、どちらも Cursor 自体に許可してください。履歴の検索には特別な権限は要りません。
+- **危険なツールは、MCP 経由では既定で拒否されます。** MCP クライアントにはあなたへ確認を表示する手段がないため、`run_applescript`、`computer`（`screenshot` を含む）、`click_element`、`typesafe_act`、`autonomous_act`（ドライランでない場合）、ページを操作するブラウザツール（`browser_navigate`、`browser_element`、`browser_act`、タブを開く・切り替える・閉じる場合の `browser_tabs`、`path` を指定した `browser_read`）、そして `browser_evaluate` はエラーを返します。読み取り系のツール（検索、履歴、`inspect_ui_elements`、`browser_snapshot`、`browser_observe`、`browser_extract`、`browser_wait`、読み取り用途の `browser_read` と `browser_tabs`）は通常どおり使えます。信頼できるクライアントに対してのみ許可したい場合は、`config.json` に `"mcpAllowDangerousTools": true` を設定し、クライアントを再起動してください。詳しくは [SECURITY.ja.md](../../SECURITY.ja.md) の第5項を参照してください。
+- **`--computer-use` はより狭い許可です。** `mca mcp --computer-use` は `computer`（画面・マウス・キーボード）だけを許可します。AppleScript、`click_element`、`typesafe_act`、`autonomous_act`、ページを操作するブラウザツールは引き続き拒否されます。有効なときは、サーバーが stderr に通知を出します。接続したエージェントが画面で見たものはすべて、そのエージェントのモデルプロバイダに送られるので、信頼できるクライアントだけを接続してください。パスワード管理アプリのウインドウと、除外リストにあるウインドウはスクリーンショットに写りません。
+- `click_element` は MCP 経由ではまだ動きません（アプリ自身によるウインドウの観測が前提のため）。`inspect_ui_elements` と `computer` を使ってください。スクリーンショットが縮小されているときは、`inspect_ui_elements` の座標はスクリーンショットの画素ではなく画面のポイントです。
 - `computer`、`click_element`、`run_applescript`、act 系のツールは、接続したエージェントにあなたの Mac を操作させます。信頼できるクライアントだけを接続し、試すときは `dry_run` を使ってください。
 - プロバイダのキーはアプリと同じ順で解決されます。まず環境変数（たとえば `GEMINI_API_KEY`。クライアントの環境から引き継がれます）、次にキーチェーンです。
 

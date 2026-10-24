@@ -34,7 +34,7 @@ macOS向けのローカルファーストなマルチモーダル・デスクト
 | **覚える (Remembers)** | SQLite + FTS5 全文検索、およびオンデバイスのクエリ拡張機能を搭載。完全一致だけでなく文脈の意味による検索が可能です。 |
 | **助言する (Advises)** | オンデバイスモデルがすべてのスキャンを一次判定（トリアージ）し、原則として沈黙を保ちます。ゲートを通過した重要なイベントのみがクラウドモデルに送られます。チャットで「**画面を見守る (Watch my screen)**」を有効にすると、タイマー周期で画面そのものの画像も分析し、誤り・エラー・リスク・効率的な手順を発見した時のみ発言します（既定はオフ、アプリ起動時も必ずオフで始まります）。 |
 | **見せる (Shows)** | ✨ メニューバーアイコンや ⌥Space からワンクリックで開くチャットウィンドウ。回答と自発的な助言が単一スレッドに整理されます。メニューバーのポップオーバーに加え、フルスクリーンアプリの前面にも常時表示でき、エディタからフォーカスを奪わず、クリックスルーも可能なフローティング `NSPanel` オーバーレイも利用できます。 |
-| **共有する (Shares)** | 記録されたコンテキストおよびGUI操作ツール群（`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`）を、MCP（Model Context Protocol）サーバーとして外部エージェント（Claude Code、Codex等）に標準入出力経由で提供します。Macやブラウザを操作するツールは、`config.json` に `"mcpAllowDangerousTools": true` を設定しない限り MCP 経由では拒否されます。 |
+| **共有する (Shares)** | 記録されたコンテキストおよびGUI操作ツール群（`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`）を、MCP（Model Context Protocol）サーバーとして外部エージェント（Claude Code、Codex等）に標準入出力経由で提供します。Macやブラウザを操作するツールは、`config.json` に `"mcpAllowDangerousTools": true` を設定するか、画面とマウス・キーボードだけを許可する `mca mcp --computer-use` で起動しない限り MCP 経由では拒否されます。`computer` はスクリーンショットを返せるので、Cursor の Computer Use のように、クライアントが見て・操作して・確かめられます。 |
 
 ---
 
