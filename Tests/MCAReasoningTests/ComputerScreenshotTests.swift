@@ -182,9 +182,9 @@ struct ComputerWaitTests {
         #expect(result.hasPrefix("Error: 'duration'"))
     }
 
-    @Test("the longest wait is capped")
+    @Test("the longest wait is the standard's 300 seconds")
     func waitCap() {
-        #expect(ComputerActionTool.maximumWaitSeconds == 10)
+        #expect(ComputerActionTool.maximumWaitSeconds == 300)
     }
 
     @Test("screenshot through invoke explains that the image needs an MCP client")

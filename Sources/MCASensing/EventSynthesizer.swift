@@ -20,6 +20,23 @@ public enum MouseButton: String, Sendable, CaseIterable {
 public struct EventSynthesizer: Sendable {
     @TaskLocal public static var expectedTargetPID: pid_t?
     @TaskLocal public static var expectedTargetWindowID: UInt32?
+    /// Modifier keys held for the duration of one click, drag or scroll (the `text`
+    /// parameter of the standard computer-use actions). Applied to the events' flags
+    /// rather than by pressing the keys, so nothing is left held if the task ends.
+    @TaskLocal public static var modifierFlags: CGEventFlags = []
+    /// Whether `leftMouse(down: true)` has not yet been matched by an up, in which
+    /// case cursor moves are drags.
+    private static let heldButton = HeldButton()
+
+    private final class HeldButton: @unchecked Sendable {
+        private let lock = NSLock()
+        private var held = false
+        var value: Bool {
+            get { lock.withLock { held } }
+            set { lock.withLock { held = newValue } }
+        }
+    }
+
     public enum SynthesizerError: LocalizedError, Sendable {
         case accessibilityPermissionDenied
         case coordinateOutOfBounds(x: Double, y: Double)
@@ -27,9 +44,12 @@ public struct EventSynthesizer: Sendable {
         case eventCreationFailed
         case inputTooLong(Int)
         case targetChanged
+        case unsupported(String)
 
         public var errorDescription: String? {
             switch self {
+            case .unsupported(let what):
+                return "\(what) is not supported by this input backend."
             case .accessibilityPermissionDenied:
                 return """
                     Accessibility permission is not granted. \
@@ -74,7 +94,7 @@ public struct EventSynthesizer: Sendable {
 
         guard let event = CGEvent(
             mouseEventSource: nil,
-            mouseType: .mouseMoved,
+            mouseType: Self.heldButton.value ? .leftMouseDragged : .mouseMoved,
             mouseCursorPosition: point,
             mouseButton: .left
         ) else {
@@ -83,6 +103,75 @@ public struct EventSynthesizer: Sendable {
         try ensureInputTarget()
         try validateCoordinate(point)
         event.post(tap: .cghidEventTap)
+    }
+
+    /// Presses or releases the left button at the current cursor position, for drags
+    /// that `drag(from:to:)` cannot express. Moves made while it is down are drags.
+    public func leftMouse(down: Bool) throws {
+        try ensureTrusted()
+        let point = try cursorPosition()
+        try validateCoordinate(point)
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else {
+            throw SynthesizerError.eventCreationFailed
+        }
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
+        try ensureInputTarget()
+        try validateCoordinate(point)
+        event.post(tap: .cghidEventTap)
+        Self.heldButton.value = down
+    }
+
+    /// Presses or releases one key (or a modifier-only chord such as "shift"), for
+    /// `hold_key`. The caller owns the matching release.
+    public func keyEvent(_ chord: String, down: Bool) throws {
+        try ensureTrusted()
+        if let modifiers = try? Self.parseModifiers(chord), !modifiers.isEmpty {
+            var accumulated: CGEventFlags = []
+            for (code, flag) in Self.modifierKeys where modifiers.contains(flag) {
+                accumulated.insert(flag)
+                guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else {
+                    throw SynthesizerError.eventCreationFailed
+                }
+                event.flags = down ? accumulated : []
+                try ensureInputTarget()
+                event.post(tap: .cghidEventTap)
+            }
+            return
+        }
+        let (keyCode, flags) = try parseKeyChord(chord)
+        guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: down) else {
+            throw SynthesizerError.eventCreationFailed
+        }
+        if !flags.isEmpty { event.flags = flags }
+        try ensureInputTarget()
+        event.post(tap: .cghidEventTap)
+    }
+
+    private static let modifierKeys: [(UInt16, CGEventFlags)] = [
+        (UInt16(kVK_Control), .maskControl), (UInt16(kVK_Option), .maskAlternate),
+        (UInt16(kVK_Shift), .maskShift), (UInt16(kVK_Command), .maskCommand),
+    ]
+
+    /// Parses `"shift"` or a `+`-joined combination such as `"ctrl+shift"` (the `text`
+    /// modifier of the standard click and scroll actions; `super` is Command).
+    public static func parseModifiers(_ text: String) throws -> CGEventFlags {
+        var flags: CGEventFlags = []
+        for part in text.split(separator: "+").map({ $0.trimmingCharacters(in: .whitespaces).lowercased() }) {
+            switch part {
+            case "cmd", "command", "super": flags.insert(.maskCommand)
+            case "shift": flags.insert(.maskShift)
+            case "opt", "option", "alt": flags.insert(.maskAlternate)
+            case "ctrl", "control": flags.insert(.maskControl)
+            default: throw SynthesizerError.unknownKey(part)
+            }
+        }
+        return flags
     }
 
     /// Performs a mouse click (single, double, or triple) at the specified or current position.
@@ -140,6 +229,10 @@ public struct EventSynthesizer: Sendable {
         let count = Int64(max(1, clickCount))
         downEvent.setIntegerValueField(.mouseEventClickState, value: count)
         upEvent.setIntegerValueField(.mouseEventClickState, value: count)
+        if !Self.modifierFlags.isEmpty {
+            downEvent.flags = Self.modifierFlags
+            upEvent.flags = Self.modifierFlags
+        }
 
         downEvent.post(tap: .cghidEventTap)
         // Brief pause to allow the OS and target app to register mouse-down
@@ -178,6 +271,7 @@ public struct EventSynthesizer: Sendable {
             post: { type, point in
                 let event = type == .leftMouseDown ? downEvent : (type == .leftMouseDragged ? dragEvent : upEvent)
                 event.location = point
+                if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
                 event.post(tap: .cghidEventTap)
             },
             pause: { Thread.sleep(forTimeInterval: $0) })
@@ -284,6 +378,7 @@ public struct EventSynthesizer: Sendable {
         event.location = targetPoint
         try ensureInputTarget()
         try validateCoordinate(targetPoint)
+        if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
         event.post(tap: .cghidEventTap)
     }
 
@@ -328,6 +423,7 @@ public struct EventSynthesizer: Sendable {
     /// Emergency release of all mouse buttons and keyboard modifiers.
     /// Ensures the system HID is not left in a dragging or modifier-down state if an action loop is interrupted.
     public func releaseAllHeldEvents() {
+        Self.heldButton.value = false
         guard isTrusted else { return }
         let currentPoint = (try? cursorPosition()) ?? CGPoint(x: 100, y: 100)
 
@@ -680,10 +776,16 @@ public protocol EventSynthesizing: Sendable {
     func typeText(_ text: String) throws
     func pressKey(_ key: String) throws
     func releaseAllHeldEvents()
+    /// Left button down/up at the cursor, for the standard `left_mouse_down` / `left_mouse_up`.
+    func leftMouse(down: Bool) throws
+    /// One key (or modifier-only chord) down/up, for the standard `hold_key`.
+    func keyEvent(_ chord: String, down: Bool) throws
 }
 
 public extension EventSynthesizing {
     var isSimulation: Bool { false }
+    func leftMouse(down: Bool) throws { throw EventSynthesizer.SynthesizerError.unsupported("Separate mouse down/up") }
+    func keyEvent(_ chord: String, down: Bool) throws { throw EventSynthesizer.SynthesizerError.unsupported("Holding a key") }
     func click(at point: CGPoint? = nil, button: MouseButton = .left, clickCount: Int = 1) throws {
         try click(at: point, button: button, clickCount: clickCount)
     }
@@ -730,7 +832,7 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
 
     public func click(at point: CGPoint?, button: MouseButton, clickCount: Int) throws {
         let ptStr = point.map { "(\(Int($0.x)), \(Int($0.y)))" } ?? "current"
-        let msg = "click(at: \(ptStr), button: \(button), clickCount: \(clickCount))"
+        let msg = Self.withModifiers("click(at: \(ptStr), button: \(button), clickCount: \(clickCount))")
         log.info("[DRY-RUN] \(msg)")
         lock.lock()
         _recordedActions.append(msg)
@@ -739,7 +841,7 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
     }
 
     public func drag(from start: CGPoint, to end: CGPoint) throws {
-        let msg = "drag(from: (\(Int(start.x)), \(Int(start.y))), to: (\(Int(end.x)), \(Int(end.y))))"
+        let msg = Self.withModifiers("drag(from: (\(Int(start.x)), \(Int(start.y))), to: (\(Int(end.x)), \(Int(end.y))))")
         log.info("[DRY-RUN] \(msg)")
         lock.lock()
         _recordedActions.append(msg)
@@ -749,7 +851,7 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
 
     public func scroll(deltaX: Int32, deltaY: Int32, at point: CGPoint?, targetPID: pid_t?) throws {
         let ptStr = point.map { "(\(Int($0.x)), \(Int($0.y)))" } ?? "current"
-        let msg = "scroll(deltaX: \(deltaX), deltaY: \(deltaY), at: \(ptStr))"
+        let msg = Self.withModifiers("scroll(deltaX: \(deltaX), deltaY: \(deltaY), at: \(ptStr))")
         log.info("[DRY-RUN] \(msg)")
         lock.lock()
         _recordedActions.append(msg)
@@ -782,6 +884,30 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
         _recordedActions.append(msg)
         lock.unlock()
         onAction?(msg)
+    }
+
+    public func leftMouse(down: Bool) throws { record("leftMouse(down: \(down))") }
+
+    public func keyEvent(_ chord: String, down: Bool) throws { record("keyEvent(\"\(chord)\", down: \(down))") }
+
+    private func record(_ message: String) {
+        let msg = Self.withModifiers(message)
+        log.info("[DRY-RUN] \(msg)")
+        lock.lock()
+        _recordedActions.append(msg)
+        lock.unlock()
+        onAction?(msg)
+    }
+
+    /// Modifiers held by the caller (`text` on a click) are part of what was requested.
+    private static func withModifiers(_ message: String) -> String {
+        let flags = EventSynthesizer.modifierFlags
+        return flags.isEmpty ? message : "\(message) [modifiers: \(modifierNames(flags))]"
+    }
+
+    private static func modifierNames(_ flags: CGEventFlags) -> String {
+        [(CGEventFlags.maskControl, "ctrl"), (.maskAlternate, "alt"), (.maskShift, "shift"), (.maskCommand, "cmd")]
+            .filter { flags.contains($0.0) }.map(\.1).joined(separator: "+")
     }
 
     public func reset() {

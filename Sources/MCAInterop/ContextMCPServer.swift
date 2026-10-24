@@ -216,7 +216,7 @@ public actor ContextMCPServer {
                         approver: approver,
                         computerTool: computerTool)
                 }
-                return CallTool.Result(content: content, isError: false)
+                return CallTool.Result(content: content, isError: Self.reportsError(content))
             } catch {
                 // Reported as a tool error rather than thrown, so the calling
                 // model can read the message and adjust instead of the whole
@@ -226,6 +226,13 @@ public actor ContextMCPServer {
                     isError: true)
             }
         }
+    }
+
+    /// MCP clients tell a failed call from a result by `isError`, not by the text. The tools
+    /// report failures (a refusal, a bad argument, a failed input) as text beginning `Error:`.
+    static func reportsError(_ content: [MCP.Tool.Content]) -> Bool {
+        guard case .text(let text, _, _)? = content.first else { return false }
+        return text.hasPrefix("Error:")
     }
 
     // MARK: - Tools
@@ -307,39 +314,59 @@ public actor ContextMCPServer {
             MCP.Tool(
                 name: "computer",
                 description: """
-                    Look at and operate the macOS desktop, like Anthropic Computer Use. \
-                    Start with action "screenshot" (an image of the main display), then \
-                    act with coordinates in the pixel space of the latest screenshot \
-                    (origin top-left) and take another screenshot to verify. Supports \
-                    mouse moves, clicks, drags, scrolling, typing, key combinations, \
-                    waiting and the cursor position. Main display only.
+                    Look at and operate the macOS desktop, with the same actions as \
+                    Anthropic's computer use tool. Start with action "screenshot" (an \
+                    image of the main display), then act with coordinates in the pixel \
+                    space of the latest screenshot (origin top-left) and take another \
+                    screenshot to verify. Use "zoom" to read small text. Main display only.
                     """,
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "action": .object([
                             "type": .string("string"),
-                            "description": .string("The action: 'screenshot', 'mouse_move', 'left_click', 'right_click', 'double_click', 'triple_click', 'middle_click', 'left_click_drag', 'scroll', 'type', 'key', 'cursor_position', 'wait'."),
+                            "enum": .array(ContextMCPServer.computerActions.map { .string($0) }),
+                            "description": .string("The action to perform: " + ContextMCPServer.computerActions.joined(separator: ", ") + "."),
                         ]),
                         "coordinate": .object([
                             "type": .string("array"),
-                            "description": .string("Target [x, y] in pixels of the latest screenshot, origin at its top-left."),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("Target [x, y] in pixels of the latest screenshot, origin at its top-left. Omit to use the current cursor position."),
                         ]),
                         "start_coordinate": .object([
                             "type": .string("array"),
-                            "description": .string("Start [x, y] for drag, in pixels of the latest screenshot."),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("Start [x, y] for left_click_drag, in pixels of the latest screenshot."),
+                        ]),
+                        "region": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("[x0, y0, x1, y1] for zoom: top-left and bottom-right corners, in pixels of the latest screenshot."),
                         ]),
                         "duration": .object([
                             "type": .string("number"),
-                            "description": .string("Seconds to wait when action is 'wait' (default 1, at most 10)."),
+                            "description": .string("Seconds for wait (default 1) or hold_key; at most 300."),
+                        ]),
+                        "scroll_direction": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")]),
+                            "description": .string("Direction for scroll."),
+                        ]),
+                        "scroll_amount": .object([
+                            "type": .string("integer"),
+                            "description": .string("Number of scroll-wheel clicks for scroll (default 5)."),
+                        ]),
+                        "repeat": .object([
+                            "type": .string("integer"),
+                            "description": .string("For key: press it this many times (1 to 100, default 1)."),
                         ]),
                         "delta_y": .object([
                             "type": .string("integer"),
-                            "description": .string("Vertical scroll delta (negative scrolls down, positive scrolls up)."),
+                            "description": .string("Older spelling of scroll: vertical wheel clicks (negative scrolls down, positive up). Prefer scroll_direction."),
                         ]),
                         "delta_x": .object([
                             "type": .string("integer"),
-                            "description": .string("Horizontal scroll delta."),
+                            "description": .string("Older spelling of scroll: horizontal wheel clicks. Prefer scroll_direction."),
                         ]),
                         "target_pid": .object([
                             "type": .string("integer"),
@@ -347,11 +374,11 @@ public actor ContextMCPServer {
                         ]),
                         "text": .object([
                             "type": .string("string"),
-                            "description": .string("Text to type when action is 'type'."),
+                            "description": .string("For type: the text. For key and hold_key: the key or a '+'-joined combination (e.g. 'Return', 'cmd+c'). For clicks, drag and scroll: modifier keys to hold (shift, ctrl, alt, super), e.g. 'shift' or 'ctrl+shift'."),
                         ]),
                         "key": .object([
                             "type": .string("string"),
-                            "description": .string("Key or chord to press (e.g. 'Return', 'cmd+c')."),
+                            "description": .string("Older spelling of text for key and hold_key."),
                         ]),
                     ]),
                     "required": .array([.string("action")]),
@@ -403,7 +430,8 @@ public actor ContextMCPServer {
             MCP.Tool(
                 name: "inspect_ui_elements",
                 description: """
-                    Inspect actionable UI elements of the active window with exact screen coordinates, \
+                    Inspect actionable UI elements of the active window with their bounds, in the \
+                    same pixel space as computer coordinates (the latest screenshot's), \
                     applying strict privacy filtering to redact passwords and tokens.
                     """,
                 inputSchema: .object([
@@ -537,6 +565,14 @@ public actor ContextMCPServer {
         return try await body()
     }
 
+    /// The actions of the `computer` tool, in the order and with the names of Anthropic's
+    /// computer use toolset (`screenshot`, `zoom`, the clicks, `scroll`, `type`, `key`, …).
+    public static let computerActions = [
+        "screenshot", "zoom", "left_click", "right_click", "middle_click", "double_click", "triple_click",
+        "left_click_drag", "mouse_move", "left_mouse_down", "left_mouse_up", "cursor_position",
+        "scroll", "type", "key", "hold_key", "wait",
+    ]
+
     /// The tools an MCP client may use after `mca mcp --computer-use`: seeing the
     /// screen and driving the mouse and keyboard, nothing else. AppleScript, the
     /// browser tools that act on a page and the autonomous loops stay gated.
@@ -560,18 +596,22 @@ public actor ContextMCPServer {
         approver: any ToolApproving = ContextMCPServer.defaultApprover,
         computerTool: ComputerActionTool? = nil
     ) async throws -> [MCP.Tool.Content] {
-        if name == "computer", case .string("screenshot")? = arguments["action"] {
-            // Capturing is read-only but puts the whole desktop in front of the
-            // client, so it needs the same opt-in as driving the mouse.
+        if name == "computer", case .string(let action)? = arguments["action"], action == "screenshot" || action == "zoom" {
+            // Capturing is read-only but puts the display in front of the client, so it needs
+            // the same opt-in as driving the mouse.
             if let refusal = await approver.gate(ToolApprovalRequest(
                 toolName: name, title: "Capture the screen", detail: "Take a screenshot of the main display")) {
                 return [.text(text: refusal, annotations: nil, _meta: nil)]
             }
+            let tool = computerTool ?? liveComputerTool()
             let screenshot: ComputerScreenshot
             do {
-                screenshot = try await (computerTool ?? liveComputerTool()).captureScreenshot()
+                screenshot = action == "zoom"
+                    ? try await tool.captureZoom(arguments: try jsonFromMCPArguments(arguments))
+                    : try await tool.captureScreenshot()
             } catch {
-                throw ScreenshotError.unavailable("Screenshot failed: \(error)")
+                let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                throw ScreenshotError.unavailable("\(action == "zoom" ? "Zoom" : "Screenshot") failed: \(reason)")
             }
             return [
                 .image(data: screenshot.jpeg.base64EncodedString(), mimeType: "image/jpeg", annotations: nil, _meta: nil),
@@ -671,7 +711,8 @@ public actor ContextMCPServer {
             return try await tool.invoke(arguments: data)
 
         case "inspect_ui_elements":
-            let tool = InspectUIElementsTool()
+            // Bounds in the pixels `computer` reads, so a returned element can be clicked as is.
+            let tool = InspectUIElementsTool(screenSpace: (computerTool ?? liveComputerTool()).coordinateSpace)
             let data = try jsonFromMCPArguments(arguments)
             return try await tool.invoke(arguments: data)
 
