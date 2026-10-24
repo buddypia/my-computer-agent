@@ -66,6 +66,27 @@ public struct AutoApproveToolApprover: ToolApproving {
     }
 }
 
+/// Approves only the named tools and hands every other request to `fallback`.
+///
+/// A narrower opt-in than ``AutoApproveToolApprover``: `mca mcp --computer-use`
+/// lets an MCP client see the screen and drive the mouse and keyboard without
+/// also letting it run AppleScript or act inside the logged-in browser. A tool
+/// that is not named — including one added later — keeps the fallback's answer.
+public struct AllowListToolApprover: ToolApproving {
+    public let allowed: Set<String>
+    private let fallback: any ToolApproving
+
+    public init(allowing allowed: Set<String>, otherwise fallback: any ToolApproving = DenyAllToolApprover()) {
+        self.allowed = allowed
+        self.fallback = fallback
+    }
+
+    public func decide(_ request: ToolApprovalRequest) async -> ToolApprovalDecision {
+        if allowed.contains(request.toolName) { return .approved }
+        return await fallback.decide(request)
+    }
+}
+
 /// Makes model-supplied text safe to show in an approval prompt.
 ///
 /// A path or app name is shown on one labelled line ("Path: …"). If it may carry

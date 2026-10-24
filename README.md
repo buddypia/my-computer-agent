@@ -40,7 +40,7 @@ a browser or an Electron shell.
 | **Remembers** | SQLite with FTS5, plus on-device query expansion so you can search by meaning rather than exact wording. |
 | **Advises** | An on-device model screens every scan and stays silent by default; only what clears that gate reaches a cloud model. Switch **Watch my screen** on in the chat and it also looks at the screen itself on a timer — a picture, not just text — and speaks only when it sees a mistake, an error or a faster way. Off by default, and off again on every launch. |
 | **Shows** | A chat window one click from the ✨ item or ⌥Space, where answers and the agent's own observations land in one thread. Also a menu bar popover, and — when you ask for it — a floating `NSPanel` that is visible over full-screen apps, never steals focus from your editor, and can optionally let clicks pass straight through. |
-| **Shares** | Exposes your context and GUI automation tool suite (`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`) to other agents (Claude Code, Codex, …) as an MCP server. Tools that act on your Mac or browser are refused over MCP unless you set `"mcpAllowDangerousTools": true` in `config.json`. |
+| **Shares** | Exposes your context and GUI automation tool suite (`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`) to other agents (Claude Code, Codex, Cursor, …) as an MCP server — `computer` can return a screenshot, so a client can look, act and check like Cursor's Computer Use. Tools that act on your Mac or browser are refused over MCP unless you set `"mcpAllowDangerousTools": true` in `config.json`, or start `mca mcp --computer-use`, which allows the screen and the mouse and keyboard only. |
 
 ---
 

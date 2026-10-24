@@ -1,7 +1,14 @@
 import CoreGraphics
+import Foundation
 import MCACore
 @testable import MCAReasoning
+import MCASensing
 import Testing
+
+private struct FixedSnapshotProvider: UIStateProviding {
+    let snapshot: UIStateSnapshot
+    func captureSnapshot() async throws -> UIStateSnapshot { snapshot }
+}
 
 @Suite("Observed element click binding")
 struct ObservedElementClickTests {
@@ -75,6 +82,33 @@ struct ObservedElementClickTests {
         #expect(DesktopActionAuthorization.matchesObservation(before, retitled, operation: operation))
         retitled.visibleCandidates = [candidate("delete", label: "Different action")]
         #expect(!DesktopActionAuthorization.matchesObservation(before, retitled, operation: operation))
+    }
+
+    @Test("Caller-approved ClickElementTool inspects and clicks a unique element, and verifies app_name")
+    func callerApprovedClickElement() async throws {
+        let selected = candidate("ok-btn", label: "OK")
+        let snapshot = UIStateSnapshot(
+            windowTitle: "Dialog", appBundleId: "com.apple.Notes", appName: "Notes",
+            visibleCandidates: [selected], timestamp: .now)
+        let synthesizer = DryRunEventSynthesizer()
+        let tool = ClickElementTool(
+            synthesizer: synthesizer,
+            inspectorProvider: { _ in FixedSnapshotProvider(snapshot: snapshot) },
+            trustsCallerApproval: true)
+        let result = try await tool.invoke(arguments: Data(#"{"element_text":"OK","role":"button","app_name":"Notes"}"#.utf8))
+        #expect(result == "Clicked observed element 'OK' (ok-btn).")
+        #expect(synthesizer.recordedActions == ["click(at: (25, 40), button: left, clickCount: 1)"])
+
+        await #expect(throws: ActionAuthorizationError.staleTarget) {
+            _ = try await tool.invoke(arguments: Data(#"{"element_text":"OK","app_name":"Safari"}"#.utf8))
+        }
+        let unapproved = ClickElementTool(
+            synthesizer: synthesizer,
+            inspectorProvider: { _ in FixedSnapshotProvider(snapshot: snapshot) },
+            trustsCallerApproval: false)
+        await #expect(throws: ActionAuthorizationError.approvalRequired) {
+            _ = try await unapproved.invoke(arguments: Data(#"{"element_text":"OK"}"#.utf8))
+        }
     }
 
 }

@@ -52,25 +52,84 @@ public enum KeystrokeApproval {
     }
 }
 
+/// A rejected argument; its message goes back to the model as `Error: …`.
+private struct ToolInputError: Error {
+    let message: String
+    init(_ message: String) { self.message = message }
+}
+
 /// Synthesizes mouse movements, clicks, drags, typing, and key presses.
 /// Conforms to the Anthropic Computer Use tool specification.
 ///
 /// `type` and `key` go through `approver` (see ``KeystrokeApproval``); pointer
 /// actions do not. The default refuses.
+///
+/// Pointer actions need a task-scoped ``ActionAuthorization`` (the chat UI's
+/// approval card) and fail closed without one. `trustsCallerApproval` is for the
+/// one caller that has already approved each call as a whole — the MCP server
+/// after its approver (the user's explicit opt-in) said yes — and only takes the
+/// place of that missing session. It never overrides a session that exists.
+///
+/// `screenshot` (see ``captureScreenshot()``) and `wait` complete the Anthropic
+/// Computer Use action set. They are not in ``definition``: the in-app agent
+/// already receives the screen through its own channel, and a text-only tool
+/// result cannot carry the picture.
 public struct ComputerActionTool: AgentTool {
     private let synthesizer: any EventSynthesizing
     private let approver: any ToolApproving
     private let frontmostApp: @Sendable () -> String?
+    private let screenshots: any ScreenshotProviding
+    private let screenSpace: ComputerScreenSpace
+    private let trustsCallerApproval: Bool
+
+    /// Longest `wait` or `hold_key` honoured, in seconds (the standard's limit).
+    static let maximumWaitSeconds = 300.0
 
     public init(
         synthesizer: any EventSynthesizing = EventSynthesizer(),
         approver: any ToolApproving = DenyAllToolApprover(),
-        frontmostApp: @escaping @Sendable () -> String? = KeystrokeApproval.frontmostAppName
+        frontmostApp: @escaping @Sendable () -> String? = KeystrokeApproval.frontmostAppName,
+        screenshots: any ScreenshotProviding = DisplayScreenshotProvider(),
+        screenSpace: ComputerScreenSpace = .shared,
+        trustsCallerApproval: Bool = false
     ) {
         self.synthesizer = synthesizer
         self.approver = approver
         self.frontmostApp = frontmostApp
+        self.screenshots = screenshots
+        self.screenSpace = screenSpace
+        self.trustsCallerApproval = trustsCallerApproval
     }
+
+    /// Captures the main display and adopts its pixel space for the coordinates
+    /// of the calls that follow. Read-only: it moves nothing.
+    public func captureScreenshot() async throws -> ComputerScreenshot {
+        let screenshot = try await screenshots.captureMainDisplay()
+        screenSpace.adopt(screenshot)
+        return screenshot
+    }
+
+    /// The standard `zoom` action: `region` is `[x0, y0, x1, y1]` in pixels of the latest
+    /// screenshot. Returns that part of the display at full resolution. Coordinates keep
+    /// meaning pixels of the latest *full* screenshot, so this does not change the mapping.
+    public func captureZoom(arguments: Data) async throws -> ComputerScreenshot {
+        let parsed = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
+        guard let numbers = (parsed["region"] as? [Any])?.map({ $0 as? NSNumber }), numbers.count == 4,
+              numbers.allSatisfy({ $0 != nil && CFGetTypeID($0!) != CFBooleanGetTypeID() }) else {
+            throw ScreenshotError.unavailable("'region' must be [x0, y0, x1, y1], the top-left and bottom-right corners.")
+        }
+        let v = numbers.map { $0!.doubleValue }
+        guard v.allSatisfy(\.isFinite), v[2] > v[0], v[3] > v[1] else {
+            throw ScreenshotError.unavailable("'region' must have x1 > x0 and y1 > y0.")
+        }
+        let topLeft = screenSpace.screenPoint(fromImage: CGPoint(x: v[0], y: v[1]))
+        let bottomRight = screenSpace.screenPoint(fromImage: CGPoint(x: v[2], y: v[3]))
+        return try await screenshots.captureRegion(CGRect(
+            x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y))
+    }
+
+    /// The mapping between screenshot pixels and screen points that this tool applies.
+    public var coordinateSpace: ComputerScreenSpace { screenSpace }
 
     public var definition: ToolDefinition {
         ToolDefinition(
@@ -146,12 +205,15 @@ public struct ComputerActionTool: AgentTool {
         }
 
         func extractPoint(_ key: String) -> CGPoint? {
+            // The model points into the latest screenshot; events are in screen points.
             func validPoint(_ x: Double, _ y: Double) -> CGPoint? {
-                guard x.isFinite, y.isFinite,
-                      x >= Double(Int32.min), x <= Double(Int32.max),
-                      y >= Double(Int32.min), y <= Double(Int32.max)
+                guard x.isFinite, y.isFinite else { return nil }
+                let mapped = screenSpace.screenPoint(fromImage: CGPoint(x: x, y: y))
+                guard mapped.x.isFinite, mapped.y.isFinite,
+                      mapped.x >= Double(Int32.min), mapped.x <= Double(Int32.max),
+                      mapped.y >= Double(Int32.min), mapped.y <= Double(Int32.max)
                 else { return nil }
-                return CGPoint(x: x, y: y)
+                return mapped
             }
             if let arr = parsed[key] as? [Double], arr.count >= 2 {
                 return validPoint(arr[0], arr[1])
@@ -168,10 +230,69 @@ public struct ComputerActionTool: AgentTool {
             return nil
         }
 
-        let supported = ["mouse_move", "left_click", "right_click", "double_click", "triple_click", "middle_click", "left_click_drag", "scroll", "type", "key", "cursor_position"]
+        let supported = [
+            "mouse_move", "left_click", "right_click", "double_click", "triple_click", "middle_click",
+            "left_click_drag", "left_mouse_down", "left_mouse_up", "scroll", "type", "key", "hold_key",
+            "cursor_position", "wait", "screenshot", "zoom",
+        ]
         guard supported.contains(action) else { return "Error: Unsupported action '\(action)'." }
+        if action == "screenshot" || action == "zoom" {
+            // A text result cannot carry the picture; ``captureScreenshot()`` and
+            // ``captureZoom(arguments:)`` can, for callers that deliver images (the MCP server).
+            // Not captured here so the frame is not wasted.
+            return "Error: '\(action)' returns an image and is only available through an MCP client that supports image results."
+        }
+        // `duration` (wait, hold_key): seconds, 0 to 300.
+        func duration(default fallback: Double?) -> Result<Double, ToolInputError> {
+            guard let raw = parsed["duration"] else {
+                return fallback.map { .success($0) } ?? .failure(.init("'duration' (seconds) is required for '\(action)'."))
+            }
+            guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.isFinite, number.doubleValue >= 0 else {
+                return .failure(.init("'duration' must be a non-negative number of seconds."))
+            }
+            return .success(min(number.doubleValue, Self.maximumWaitSeconds))
+        }
+        if action == "wait" {
+            // Observes nothing and moves nothing, so there is nothing to approve.
+            switch duration(default: 1) {
+            case .failure(let error): return "Error: \(error.message)"
+            case .success(let seconds):
+                try await Task.sleep(for: .seconds(seconds))
+                return "Waited \(seconds) seconds."
+            }
+        }
+        // `text` is the string for `type`, the key for `key` / `hold_key` (`key` is the older
+        // spelling of that), and the modifier keys to hold for a click, drag or scroll.
+        let keyChord = parsed.string("text") ?? parsed.string("key")
+        let modifierActions = ["left_click", "right_click", "double_click", "triple_click", "middle_click",
+                               "left_click_drag", "scroll", "left_mouse_down", "left_mouse_up"]
+        var heldModifiers: CGEventFlags = []
+        if modifierActions.contains(action), let text = parsed.string("text") {
+            do { heldModifiers = try EventSynthesizer.parseModifiers(text) } catch {
+                return "Error: 'text' must be modifier keys (shift, ctrl, alt, super) joined with '+' for '\(action)'."
+            }
+        }
+        var repeatCount = 1
+        if action == "key", let raw = parsed["repeat"] {
+            guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.rounded() == number.doubleValue,
+                  (1...100).contains(number.doubleValue) else {
+                return "Error: 'repeat' must be a whole number from 1 to 100."
+            }
+            repeatCount = number.intValue
+        }
+        var holdSeconds = 0.0
+        if action == "hold_key" {
+            switch duration(default: nil) {
+            case .failure(let error): return "Error: \(error.message)"
+            case .success(let seconds): holdSeconds = seconds
+            }
+        }
         if action == "type", parsed.string("text") == nil { return "Error: 'text' parameter is required for 'type' action." }
-        if action == "key", parsed.string("key") == nil { return "Error: 'key' parameter is required for 'key' action." }
+        if ["key", "hold_key"].contains(action), keyChord == nil {
+            return "Error: 'key' parameter is required for '\(action)' action (the standard name 'text' is accepted too)."
+        }
         if action == "left_click_drag", extractPoint("start_coordinate") == nil || extractPoint("coordinate") == nil {
             return "Error: Both 'start_coordinate' and 'coordinate' are required for 'left_click_drag'."
         }
@@ -195,11 +316,17 @@ public struct ComputerActionTool: AgentTool {
         let coordinateActions = ["left_click", "right_click", "double_click", "triple_click", "middle_click", "scroll"]
         let actionPoint = coordinateActions.contains(action) ? (try extractPoint("coordinate") ?? synthesizer.cursorPosition()) : extractPoint("coordinate")
         let resolvedDetails = String(decoding: arguments, as: UTF8.self) + (actionPoint.map { "\nResolved coordinate: [\($0.x), \($0.y)]" } ?? "")
-        let unscopedKeystroke = ActionAuthorization.current == nil && ["type", "key"].contains(action)
-        if action != "cursor_position", !unscopedKeystroke {
+        let unscopedKeystroke = ActionAuthorization.current == nil && ["type", "key", "hold_key"].contains(action)
+        // The MCP server approved this call as a whole; there is no chat session to ask.
+        let approvedByCaller = ActionAuthorization.current == nil && trustsCallerApproval
+        if action != "cursor_position", !unscopedKeystroke, !approvedByCaller {
             try await DesktopActionAuthorization.requireApproval(operation: action, details: resolvedDetails, requestedPID: targetPID)
         }
         try Task.checkCancellation()
+        /// Runs `body` with the click's modifier keys (`text`) held on its events.
+        func held<T>(_ body: () throws -> T) rethrows -> T {
+            try EventSynthesizer.$modifierFlags.withValue(heldModifiers, operation: body)
+        }
         do {
             switch action {
             case "mouse_move":
@@ -211,7 +338,7 @@ public struct ComputerActionTool: AgentTool {
 
             case "left_click":
                 let point = actionPoint
-                try synthesizer.click(at: point, button: .left, clickCount: 1)
+                try held { try synthesizer.click(at: point, button: .left, clickCount: 1) }
                 if let point {
                     return "Left clicked at (\(Int(point.x)), \(Int(point.y)))."
                 }
@@ -219,7 +346,7 @@ public struct ComputerActionTool: AgentTool {
 
             case "right_click":
                 let point = actionPoint
-                try synthesizer.click(at: point, button: .right, clickCount: 1)
+                try held { try synthesizer.click(at: point, button: .right, clickCount: 1) }
                 if let point {
                     return "Right clicked at (\(Int(point.x)), \(Int(point.y)))."
                 }
@@ -227,7 +354,7 @@ public struct ComputerActionTool: AgentTool {
 
             case "double_click":
                 let point = actionPoint
-                try synthesizer.click(at: point, button: .left, clickCount: 2)
+                try held { try synthesizer.click(at: point, button: .left, clickCount: 2) }
                 if let point {
                     return "Double clicked at (\(Int(point.x)), \(Int(point.y)))."
                 }
@@ -235,7 +362,7 @@ public struct ComputerActionTool: AgentTool {
 
             case "triple_click":
                 let point = actionPoint
-                try synthesizer.click(at: point, button: .left, clickCount: 3)
+                try held { try synthesizer.click(at: point, button: .left, clickCount: 3) }
                 if let point {
                     return "Triple clicked at (\(Int(point.x)), \(Int(point.y)))."
                 }
@@ -243,7 +370,7 @@ public struct ComputerActionTool: AgentTool {
 
             case "middle_click":
                 let point = actionPoint
-                try synthesizer.click(at: point, button: .middle, clickCount: 1)
+                try held { try synthesizer.click(at: point, button: .middle, clickCount: 1) }
                 if let point {
                     return "Middle clicked at (\(Int(point.x)), \(Int(point.y)))."
                 }
@@ -254,15 +381,32 @@ public struct ComputerActionTool: AgentTool {
                       let end = extractPoint("coordinate") else {
                     return "Error: Both 'start_coordinate' and 'coordinate' are required for 'left_click_drag'."
                 }
-                try synthesizer.drag(from: start, to: end)
+                try held { try synthesizer.drag(from: start, to: end) }
                 return "Dragged from (\(Int(start.x)), \(Int(start.y))) to (\(Int(end.x)), \(Int(end.y)))."
 
             case "scroll":
                 let point = actionPoint
-                let deltaY = parsed.clampedInt32("delta_y") ?? -5 // Default to scrolling down
-                let deltaX = parsed.clampedInt32("delta_x") ?? 0
+                var deltaY = parsed.clampedInt32("delta_y") ?? -5 // Default to scrolling down
+                var deltaX = parsed.clampedInt32("delta_x") ?? 0
+                if let direction = parsed.string("scroll_direction") {
+                    // The standard spelling: a direction and a number of wheel clicks.
+                    var amount: Int32 = 5
+                    if parsed["scroll_amount"] != nil {
+                        guard let requested = parsed.clampedInt32("scroll_amount"), requested >= 0 else {
+                            return "Error: 'scroll_amount' must be a non-negative number of wheel clicks."
+                        }
+                        amount = min(requested, 1000)
+                    }
+                    switch direction.lowercased() {
+                    case "down": (deltaX, deltaY) = (0, -amount)
+                    case "up": (deltaX, deltaY) = (0, amount)
+                    case "left": (deltaX, deltaY) = (-amount, 0)
+                    case "right": (deltaX, deltaY) = (amount, 0)
+                    default: return "Error: 'scroll_direction' must be up, down, left or right."
+                    }
+                }
 
-                try synthesizer.scroll(deltaX: deltaX, deltaY: deltaY, at: point, targetPID: targetPID)
+                try held { try synthesizer.scroll(deltaX: deltaX, deltaY: deltaY, at: point, targetPID: targetPID) }
                 let direction = deltaY < 0 ? "down" : (deltaY > 0 ? "up" : "horizontally")
                 if let targetPID {
                     return "Scrolled \(direction) on process \(targetPID) in background with deltaY=\(deltaY), deltaX=\(deltaX)."
@@ -285,19 +429,47 @@ public struct ComputerActionTool: AgentTool {
                 return "Typed \(text.count) characters."
 
             case "key":
-                guard let key = parsed.string("key") else {
+                guard let key = keyChord else {
                     return "Error: 'key' parameter is required for 'key' action."
                 }
                 if ActionAuthorization.current == nil, KeystrokeApproval.needsApproval(key: key),
                    let refusal = await approver.gate(KeystrokeApproval.request(
-                    tool: definition.name, title: "Press a key", keystrokes: "Key: \(key)", app: frontmostApp())) {
+                    tool: definition.name, title: "Press a key",
+                    keystrokes: "Key: \(key)" + (repeatCount > 1 ? " × \(repeatCount)" : ""), app: frontmostApp())) {
                     return refusal
                 }
-                try synthesizer.pressKey(key)
-                return "Pressed key '\(key)'."
+                for _ in 0..<repeatCount {
+                    try Task.checkCancellation()
+                    try synthesizer.pressKey(key)
+                }
+                return repeatCount > 1 ? "Pressed key '\(key)' \(repeatCount) times." : "Pressed key '\(key)'."
+
+            case "hold_key":
+                guard let key = keyChord else {
+                    return "Error: 'key' parameter is required for 'hold_key' action."
+                }
+                if ActionAuthorization.current == nil, KeystrokeApproval.needsApproval(key: key),
+                   let refusal = await approver.gate(KeystrokeApproval.request(
+                    tool: definition.name, title: "Hold a key",
+                    keystrokes: "Hold: \(key) for \(holdSeconds) s", app: frontmostApp())) {
+                    return refusal
+                }
+                try synthesizer.keyEvent(key, down: true)
+                // Always released, including when the wait is cancelled.
+                defer { try? synthesizer.keyEvent(key, down: false) }
+                try await Task.sleep(for: .seconds(holdSeconds))
+                return "Held key '\(key)' for \(holdSeconds) seconds."
+
+            case "left_mouse_down":
+                try held { try synthesizer.leftMouse(down: true) }
+                return "Left mouse button pressed. Move with mouse_move, then call left_mouse_up."
+
+            case "left_mouse_up":
+                try held { try synthesizer.leftMouse(down: false) }
+                return "Left mouse button released."
 
             case "cursor_position":
-                let pos = try synthesizer.cursorPosition()
+                let pos = screenSpace.imagePoint(fromScreen: try synthesizer.cursorPosition())
                 return "Current cursor position: [\(Int(pos.x)), \(Int(pos.y))]."
 
             default:
@@ -311,8 +483,19 @@ public struct ComputerActionTool: AgentTool {
 
 /// Clicks a semantic UI element (button, menu item, check box, etc.) identified by text/label in a target application.
 public struct ClickElementTool: AgentTool {
-    private let synthesizer = EventSynthesizer()
-    public init() {}
+    private let synthesizer: any EventSynthesizing
+    private let inspectorProvider: @Sendable (Int) -> any UIStateProviding
+    private let trustsCallerApproval: Bool
+
+    public init(
+        synthesizer: any EventSynthesizing = EventSynthesizer(),
+        inspectorProvider: @escaping @Sendable (Int) -> any UIStateProviding = { InspectUIElementsTool.makeDefaultInspector(maxCandidates: $0) },
+        trustsCallerApproval: Bool = false
+    ) {
+        self.synthesizer = synthesizer
+        self.inspectorProvider = inspectorProvider
+        self.trustsCallerApproval = trustsCallerApproval
+    }
 
     static func observedCandidate(_ snapshot: UIStateSnapshot, text: String, role: String?) throws -> UIElementCandidate {
         let matches = snapshot.visibleCandidates.filter {
@@ -362,10 +545,20 @@ public struct ClickElementTool: AgentTool {
         let appName = parsed.string("app_name")
         let role = parsed.string("role")
 
-        guard let session = ActionAuthorization.current else { throw ActionAuthorizationError.approvalRequired }
-        guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
-        let candidate = try Self.observedCandidate(snapshot, text: text, role: role)
-        try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
+        let candidate: UIElementCandidate
+        if let session = ActionAuthorization.current {
+            guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
+            candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+            try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
+        } else if trustsCallerApproval {
+            let snapshot = try await inspectorProvider(25).captureSnapshot()
+            if let appName, appName.caseInsensitiveCompare(snapshot.appName ?? "") != .orderedSame {
+                throw ActionAuthorizationError.staleTarget
+            }
+            candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+        } else {
+            throw ActionAuthorizationError.approvalRequired
+        }
         try Task.checkCancellation()
         do {
             try synthesizer.click(at: candidate.center)
@@ -478,10 +671,15 @@ public struct InspectUIElementsTool: AgentTool {
 
     private let candidateProvider: (@Sendable (Int) async -> [UIElementCandidate])?
     private let inspectorProvider: @Sendable (Int) -> any UIStateProviding
+    private let screenSpace: ComputerScreenSpace?
 
-    public init(inspectorProvider: @escaping @Sendable (Int) -> any UIStateProviding = { InspectUIElementsTool.makeDefaultInspector(maxCandidates: $0) }, candidateProvider: (@Sendable (Int) async -> [UIElementCandidate])? = nil) {
+    /// With `screenSpace`, the reported bounds are in pixels of the latest screenshot, the
+    /// space `computer` reads coordinates in, instead of raw screen points. The MCP server
+    /// passes it so an element can be clicked with the coordinates this tool returns.
+    public init(inspectorProvider: @escaping @Sendable (Int) -> any UIStateProviding = { InspectUIElementsTool.makeDefaultInspector(maxCandidates: $0) }, candidateProvider: (@Sendable (Int) async -> [UIElementCandidate])? = nil, screenSpace: ComputerScreenSpace? = nil) {
         self.inspectorProvider = inspectorProvider
         self.candidateProvider = candidateProvider
+        self.screenSpace = screenSpace
     }
 
     public var definition: ToolDefinition {
@@ -519,7 +717,17 @@ public struct InspectUIElementsTool: AgentTool {
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let encoded = try encoder.encode(candidates)
+        let reported = candidates.map { candidate -> UIElementCandidate in
+            guard let screenSpace else { return candidate }
+            var mapped = candidate
+            let origin = screenSpace.imagePoint(fromScreen: candidate.bounds.origin)
+            let factor = screenSpace.pixelsPerPoint
+            mapped.bounds = CGRect(
+                x: origin.x, y: origin.y,
+                width: candidate.bounds.width * factor, height: candidate.bounds.height * factor)
+            return mapped
+        }
+        let encoded = try encoder.encode(reported)
         return String(decoding: encoded, as: UTF8.self)
     }
 }

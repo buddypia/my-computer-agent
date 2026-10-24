@@ -113,15 +113,20 @@ public actor ContextMCPServer {
     /// Gate for tools that act on the machine. A stdio server has no UI, so the
     /// default refuses; see `AgentConfiguration.mcpAllowDangerousTools`.
     private let approver: any ToolApproving
+    /// The `computer` tool this server drives; tests inject one over a recording
+    /// synthesizer so no test moves the real mouse.
+    private let computerTool: ComputerActionTool?
 
     public init(
         store: any ContextStoring,
         extraTools: [any AgentTool] = [],
         coordinatorFactory: AutonomousCoordinatorFactory? = nil,
-        approver: any ToolApproving = ContextMCPServer.defaultApprover
+        approver: any ToolApproving = ContextMCPServer.defaultApprover,
+        computerTool: ComputerActionTool? = nil
     ) {
         self.store = store
         self.approver = approver
+        self.computerTool = computerTool
         self.extraTools = Dictionary(uniqueKeysWithValues: extraTools.map { ($0.definition.name, $0) })
         self.coordinatorFactory = coordinatorFactory ?? { config, dryRun in
             TwoTierAutonomousLoopCoordinator(
@@ -142,7 +147,10 @@ public actor ContextMCPServer {
                 Provides searchable history of what the user has seen on screen \
                 and heard around them, captured locally on their Mac. Use \
                 search_context for anything the user refers to from earlier, and \
-                recent_activity to establish what they are doing right now.
+                recent_activity to establish what they are doing right now. \
+                To operate the desktop, call computer with action "screenshot" \
+                first, then act with coordinates read off that screenshot and \
+                take another screenshot to check the result.
                 """,
             capabilities: .init(tools: .init(listChanged: false)))
     }
@@ -189,25 +197,26 @@ public actor ContextMCPServer {
         let coordinatorFactory = self.coordinatorFactory
         let serverInstance = self
         let approver = self.approver
+        let computerTool = self.computerTool
         await server.withMethodHandler(CallTool.self) { parameters in
             do {
-                let text: String
+                let content: [MCP.Tool.Content]
                 if let tool = extraTools[parameters.name] {
-                    text = try await Self.invokeExtraTool(
+                    let text = try await Self.invokeExtraTool(
                         tool, arguments: try Self.jsonFromMCPArguments(parameters.arguments ?? [:]),
                         approver: approver)
+                    content = [.text(text: text, annotations: nil, _meta: nil)]
                 } else {
-                    text = try await Self.dispatch(
+                    content = try await Self.dispatchContent(
                         name: parameters.name,
                         arguments: parameters.arguments ?? [:],
                         store: store,
                         coordinatorFactory: coordinatorFactory,
                         serverInstance: serverInstance,
-                        approver: approver)
+                        approver: approver,
+                        computerTool: computerTool)
                 }
-                return CallTool.Result(
-                    content: [.text(text: text, annotations: nil, _meta: nil)],
-                    isError: false)
+                return CallTool.Result(content: content, isError: Self.reportsError(content))
             } catch {
                 // Reported as a tool error rather than thrown, so the calling
                 // model can read the message and adjust instead of the whole
@@ -217,6 +226,13 @@ public actor ContextMCPServer {
                     isError: true)
             }
         }
+    }
+
+    /// MCP clients tell a failed call from a result by `isError`, not by the text. The tools
+    /// report failures (a refusal, a bad argument, a failed input) as text beginning `Error:`.
+    static func reportsError(_ content: [MCP.Tool.Content]) -> Bool {
+        guard case .text(let text, _, _)? = content.first else { return false }
+        return text.hasPrefix("Error:")
     }
 
     // MARK: - Tools
@@ -298,31 +314,59 @@ public actor ContextMCPServer {
             MCP.Tool(
                 name: "computer",
                 description: """
-                    Interact with macOS desktop interface (mouse clicks, movement, \
-                    scrolling, typing, key combinations, drags, cursor position). Anthropic Computer Use compatible.
+                    Look at and operate the macOS desktop, with the same actions as \
+                    Anthropic's computer use tool. Start with action "screenshot" (an \
+                    image of the main display), then act with coordinates in the pixel \
+                    space of the latest screenshot (origin top-left) and take another \
+                    screenshot to verify. Use "zoom" to read small text. Main display only.
                     """,
                 inputSchema: .object([
                     "type": .string("object"),
                     "properties": .object([
                         "action": .object([
                             "type": .string("string"),
-                            "description": .string("The action: 'mouse_move', 'left_click', 'right_click', 'double_click', 'triple_click', 'middle_click', 'left_click_drag', 'scroll', 'type', 'key', 'cursor_position'."),
+                            "enum": .array(ContextMCPServer.computerActions.map { .string($0) }),
+                            "description": .string("The action to perform: " + ContextMCPServer.computerActions.joined(separator: ", ") + "."),
                         ]),
                         "coordinate": .object([
                             "type": .string("array"),
-                            "description": .string("Target coordinate [x, y] in Quartz display pixels."),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("Target [x, y] in pixels of the latest screenshot, origin at its top-left. Omit to use the current cursor position."),
                         ]),
                         "start_coordinate": .object([
                             "type": .string("array"),
-                            "description": .string("Start coordinate [x, y] for drag."),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("Start [x, y] for left_click_drag, in pixels of the latest screenshot."),
+                        ]),
+                        "region": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("number")]),
+                            "description": .string("[x0, y0, x1, y1] for zoom: top-left and bottom-right corners, in pixels of the latest screenshot."),
+                        ]),
+                        "duration": .object([
+                            "type": .string("number"),
+                            "description": .string("Seconds for wait (default 1) or hold_key; at most 300."),
+                        ]),
+                        "scroll_direction": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("up"), .string("down"), .string("left"), .string("right")]),
+                            "description": .string("Direction for scroll."),
+                        ]),
+                        "scroll_amount": .object([
+                            "type": .string("integer"),
+                            "description": .string("Number of scroll-wheel clicks for scroll (default 5)."),
+                        ]),
+                        "repeat": .object([
+                            "type": .string("integer"),
+                            "description": .string("For key: press it this many times (1 to 100, default 1)."),
                         ]),
                         "delta_y": .object([
                             "type": .string("integer"),
-                            "description": .string("Vertical scroll delta (negative scrolls down, positive scrolls up)."),
+                            "description": .string("Older spelling of scroll: vertical wheel clicks (negative scrolls down, positive up). Prefer scroll_direction."),
                         ]),
                         "delta_x": .object([
                             "type": .string("integer"),
-                            "description": .string("Horizontal scroll delta."),
+                            "description": .string("Older spelling of scroll: horizontal wheel clicks. Prefer scroll_direction."),
                         ]),
                         "target_pid": .object([
                             "type": .string("integer"),
@@ -330,11 +374,11 @@ public actor ContextMCPServer {
                         ]),
                         "text": .object([
                             "type": .string("string"),
-                            "description": .string("Text to type when action is 'type'."),
+                            "description": .string("For type: the text. For key and hold_key: the key or a '+'-joined combination (e.g. 'Return', 'cmd+c'). For clicks, drag and scroll: modifier keys to hold (shift, ctrl, alt, super), e.g. 'shift' or 'ctrl+shift'."),
                         ]),
                         "key": .object([
                             "type": .string("string"),
-                            "description": .string("Key or chord to press (e.g. 'Return', 'cmd+c')."),
+                            "description": .string("Older spelling of text for key and hold_key."),
                         ]),
                     ]),
                     "required": .array([.string("action")]),
@@ -386,7 +430,8 @@ public actor ContextMCPServer {
             MCP.Tool(
                 name: "inspect_ui_elements",
                 description: """
-                    Inspect actionable UI elements of the active window with exact screen coordinates, \
+                    Inspect actionable UI elements of the active window with their bounds, in the \
+                    same pixel space as computer coordinates (the latest screenshot's), \
                     applying strict privacy filtering to redact passwords and tokens.
                     """,
                 inputSchema: .object([
@@ -452,7 +497,8 @@ public actor ContextMCPServer {
     /// Refuses everything that needs approval, and says how to opt in.
     public static var defaultApprover: any ToolApproving {
         DenyAllToolApprover(
-            reason: "MCP clients cannot be asked for confirmation; set \"mcpAllowDangerousTools\": true in config.json to allow this")
+            reason: "MCP clients cannot be asked for confirmation; set \"mcpAllowDangerousTools\": true in config.json to allow this "
+                + "(to allow only the screen, mouse and keyboard, start the server with `mca mcp --computer-use`)")
     }
 
     /// The published extra tools (the browser toolkit) that may run without
@@ -519,13 +565,73 @@ public actor ContextMCPServer {
         return try await body()
     }
 
+    /// The actions of the `computer` tool, in the order and with the names of Anthropic's
+    /// computer use toolset (`screenshot`, `zoom`, the clicks, `scroll`, `type`, `key`, …).
+    public static let computerActions = [
+        "screenshot", "zoom", "left_click", "right_click", "middle_click", "double_click", "triple_click",
+        "left_click_drag", "mouse_move", "left_mouse_down", "left_mouse_up", "cursor_position",
+        "scroll", "type", "key", "hold_key", "wait",
+    ]
+
+    /// The tools an MCP client may use after `mca mcp --computer-use`: seeing the
+    /// screen and driving the mouse and keyboard, nothing else. AppleScript, the
+    /// browser tools that act on a page and the autonomous loops stay gated.
+    public static let computerUseTools: Set<String> = ["computer"]
+
+    /// The `computer` tool as the MCP server drives it. The call as a whole has
+    /// already been approved by `approver` when this runs, so the tool takes
+    /// that approval in place of the chat UI's per-action card.
+    static func liveComputerTool() -> ComputerActionTool {
+        ComputerActionTool(approver: AutoApproveToolApprover(), trustsCallerApproval: true)
+    }
+
+    /// Like ``dispatch(name:arguments:store:coordinatorFactory:serverInstance:approver:computerTool:)``
+    /// but returns MCP content, so `computer` with `screenshot` can hand back an image.
+    public static func dispatchContent(
+        name: String,
+        arguments: [String: Value],
+        store: any ContextStoring,
+        coordinatorFactory: AutonomousCoordinatorFactory? = nil,
+        serverInstance: ContextMCPServer? = nil,
+        approver: any ToolApproving = ContextMCPServer.defaultApprover,
+        computerTool: ComputerActionTool? = nil
+    ) async throws -> [MCP.Tool.Content] {
+        if name == "computer", case .string(let action)? = arguments["action"], action == "screenshot" || action == "zoom" {
+            // Capturing is read-only but puts the display in front of the client, so it needs
+            // the same opt-in as driving the mouse.
+            if let refusal = await approver.gate(ToolApprovalRequest(
+                toolName: name, title: "Capture the screen", detail: "Take a screenshot of the main display")) {
+                return [.text(text: refusal, annotations: nil, _meta: nil)]
+            }
+            let tool = computerTool ?? liveComputerTool()
+            let screenshot: ComputerScreenshot
+            do {
+                screenshot = action == "zoom"
+                    ? try await tool.captureZoom(arguments: try jsonFromMCPArguments(arguments))
+                    : try await tool.captureScreenshot()
+            } catch {
+                let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                throw ScreenshotError.unavailable("\(action == "zoom" ? "Zoom" : "Screenshot") failed: \(reason)")
+            }
+            return [
+                .image(data: screenshot.jpeg.base64EncodedString(), mimeType: "image/jpeg", annotations: nil, _meta: nil),
+                .text(text: screenshot.summary, annotations: nil, _meta: nil),
+            ]
+        }
+        let text = try await dispatch(
+            name: name, arguments: arguments, store: store, coordinatorFactory: coordinatorFactory,
+            serverInstance: serverInstance, approver: approver, computerTool: computerTool)
+        return [.text(text: text, annotations: nil, _meta: nil)]
+    }
+
     public static func dispatch(
         name: String,
         arguments: [String: Value],
         store: any ContextStoring,
         coordinatorFactory: AutonomousCoordinatorFactory? = nil,
         serverInstance: ContextMCPServer? = nil,
-        approver: any ToolApproving = ContextMCPServer.defaultApprover
+        approver: any ToolApproving = ContextMCPServer.defaultApprover,
+        computerTool: ComputerActionTool? = nil
     ) async throws -> String {
         switch name {
         case "search_context":
@@ -582,7 +688,7 @@ public actor ContextMCPServer {
         case "computer":
             // `approved` below asks about the whole call, so the tool's own
             // keystroke prompt would ask twice.
-            let tool = ComputerActionTool(approver: AutoApproveToolApprover())
+            let tool = computerTool ?? liveComputerTool()
             let data = try jsonFromMCPArguments(arguments)
             return try await approved(
                 approver, tool: name, title: "Control the mouse and keyboard",
@@ -590,7 +696,7 @@ public actor ContextMCPServer {
             ) { try await tool.invoke(arguments: data) }
 
         case "click_element":
-            let tool = ClickElementTool()
+            let tool = ClickElementTool(trustsCallerApproval: true)
             let data = try jsonFromMCPArguments(arguments)
             return try await approved(
                 approver, tool: name, title: "Click a UI element",
@@ -605,7 +711,8 @@ public actor ContextMCPServer {
             return try await tool.invoke(arguments: data)
 
         case "inspect_ui_elements":
-            let tool = InspectUIElementsTool()
+            // Bounds in the pixels `computer` reads, so a returned element can be clicked as is.
+            let tool = InspectUIElementsTool(screenSpace: (computerTool ?? liveComputerTool()).coordinateSpace)
             let data = try jsonFromMCPArguments(arguments)
             return try await tool.invoke(arguments: data)
 

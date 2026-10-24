@@ -34,7 +34,7 @@ macOS를 위한 로컬 우선(Local-first) 멀티모달 데스크톱 코파일�
 | **기억하기 (Remembers)** | FTS5 전체 텍스트 검색을 지원하는 SQLite와 온디바이스 쿼리 확장을 탑재하여 정확한 단어가 아니더라도 문맥 의미로 검색할 수 있습니다. |
 | **조언하기 (Advises)** | 온디바이스 모델이 모든 스캔을 1차 선별(트리아지)하여 기본적으로 침묵을 유지합니다. 게이트를 통과한 중요한 이벤트만 클라우드 모델로 전달됩니다. 채팅에서 '**화면 지켜보기(Watch my screen)**'를 켜면 타이머 주기로 화면 이미지 자체를 분석하여 실수, 오류, 위험, 더 빠른 방법을 발견했을 때만 조언합니다 (기본값 꺼짐, 앱 재실행 시 항상 꺼진 상태로 시작). |
 | **보여주기 (Shows)** | ✨ 메뉴바 아이콘이나 ⌥Space 단축키로 즉시 열리는 채팅 창. 답변과 에이전트의 자체 관찰 내용이 단일 스레드로 정리됩니다. 메뉴바 팝오버뿐 아니라 전체 화면 앱 위에도 항상 표시되고 에디터 포커스를 뺏지 않으며 클릭 관통이 가능한 플로팅 `NSPanel` 오버레이를 제공합니다. |
-| **공유하기 (Shares)** | 로컬에 기록된 컨텍스트 및 GUI 자동화 툴 세트(`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`)를 MCP(Model Context Protocol) 서버로 외부에 노출하여 Claude Code, Codex 등 다른 개발 에이전트와 연동합니다. Mac이나 브라우저를 조작하는 도구는 `config.json`에 `"mcpAllowDangerousTools": true`를 설정하지 않으면 MCP를 통해 거부됩니다. |
+| **공유하기 (Shares)** | 로컬에 기록된 컨텍스트 및 GUI 자동화 툴 세트(`computer`, `click_element`, `run_applescript`, `inspect_ui_elements`, `typesafe_act`)를 MCP(Model Context Protocol) 서버로 외부에 노출하여 Claude Code, Codex 등 다른 개발 에이전트와 연동합니다. Mac이나 브라우저를 조작하는 도구는 `config.json`에 `"mcpAllowDangerousTools": true`를 설정하거나, 화면과 마우스·키보드만 허용하는 `mca mcp --computer-use`로 시작하지 않으면 MCP를 통해 거부됩니다. `computer`는 스크린샷을 반환할 수 있어 Cursor의 Computer Use처럼 클라이언트가 보고, 조작하고, 확인할 수 있습니다. |
 
 ---
 
