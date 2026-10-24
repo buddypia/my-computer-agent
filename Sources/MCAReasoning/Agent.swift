@@ -426,12 +426,18 @@ public actor Agent {
             let allDuplicates = !signatures.isEmpty && signatures.allSatisfy { previousRoundSignatures.contains($0) }
             if allDuplicates {
                 log.warning("Detected duplicate tool call loop in answer turn, forcing final text response")
-                let fallback = try await router.run(
-                    task: task,
-                    transcript: transcript,
-                    tools: [],
-                    temperature: 0.3,
-                    streamingInto: channel)
+                let fallback: CompletedResponse
+                do {
+                    fallback = try await router.run(
+                        task: task,
+                        transcript: transcript,
+                        tools: [],
+                        temperature: 0.3,
+                        streamingInto: channel)
+                } catch let error as LanguageModelError {
+                    // A duplicate round means the previous one ran its tools.
+                    throw ModelLostAfterActions(toolCalls: toolExecutions.count, underlying: error)
+                }
                 await health.set(.reasoning, .running)
                 if !fallback.text.isEmpty {
                     return fallback.text
