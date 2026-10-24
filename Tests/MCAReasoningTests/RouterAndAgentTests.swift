@@ -794,6 +794,73 @@ struct AgentToolLoopTests {
         #expect(counter.value == 3)
     }
 
+    @Test("a model lost after a tool ran is not reported as a plain unreachable model")
+    func modelLostAfterActionsIsDistinct() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mca-agent-lost-\(UUID().uuidString).sqlite3")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SQLiteContextStore(url: url)
+
+        func agent(failingAt failing: Int) -> Agent {
+            let counter = StepCounter()
+            let executor = MockScriptedExecutor { _, channel in
+                if counter.increment() == failing { throw LanguageModelError.transport("offline") }
+                channel.send(.toolCall(ToolCall(id: "read", name: "read_current_screen", arguments: Data("{}".utf8))))
+                channel.send(.finished(.toolCalls))
+            }
+            let router = ModelRouter(policy: RoutingPolicy(routes: [.answer: ModelRef(provider: "mock", model: "test")]),
+                credentials: .empty, customResolver: { _ in executor })
+            return Agent(router: router, store: store,
+                tools: ToolRegistry(tools: [CurrentScreenTool(store: store, liveReader: nil)]),
+                health: HealthRegistry(), language: .english)
+        }
+
+        // Before any tool: the caller may recover by acting another way.
+        await #expect(throws: LanguageModelError.self) { try await agent(failingAt: 1).answer("What is on screen?") }
+        // After one: recovering by acting again would repeat what already happened.
+        await #expect(throws: ModelLostAfterActions.self) { try await agent(failingAt: 2).answer("What is on screen?") }
+    }
+
+    @Test("observing again after an action is not a duplicate loop")
+    func reobservingAfterActionContinues() async throws {
+        struct ActTool: AgentTool {
+            var definition: ToolDefinition {
+                ToolDefinition(name: "act", description: "Acts.", parameters: Data(#"{"type":"object"}"#.utf8))
+            }
+            func invoke(arguments: Data) async throws -> String { "done" }
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mca-agent-reobserve-\(UUID().uuidString).sqlite3")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SQLiteContextStore(url: url)
+        let counter = StepCounter()
+        // read → act → read → act, each repeating an earlier call, then the answer.
+        // Every round still gets the tools: none of them only repeats the round before.
+        let executor = MockScriptedExecutor { request, channel in
+            let step = counter.increment()
+            #expect(!request.tools.isEmpty || step == 5)
+            switch step {
+            case 1, 3:
+                channel.send(.toolCall(ToolCall(id: "read", name: "read_current_screen", arguments: Data("{}".utf8))))
+                channel.send(.finished(.toolCalls))
+            case 2, 4:
+                channel.send(.toolCall(ToolCall(id: "act", name: "act", arguments: Data("{}".utf8))))
+                channel.send(.finished(.toolCalls))
+            default:
+                channel.send(.text("Checked after acting."))
+                channel.send(.finished(.stop))
+            }
+        }
+        let router = ModelRouter(policy: RoutingPolicy(routes: [.answer: ModelRef(provider: "mock", model: "test")]),
+            credentials: .empty, customResolver: { _ in executor })
+        let agent = Agent(router: router, store: store,
+            tools: ToolRegistry(tools: [CurrentScreenTool(store: store, liveReader: nil), ActTool()]),
+            health: HealthRegistry(), language: .english)
+
+        #expect(try await agent.answer("Do it and check", maxRounds: 6) == "Checked after acting.")
+        #expect(counter.value == 5)
+    }
+
     @Test("answer failure explains tool error reasons when model returns empty text")
     func answerFailureExplainsToolErrors() async throws {
         let url = FileManager.default.temporaryDirectory
@@ -1294,5 +1361,16 @@ struct AgentToolLoopTests {
         }
         #expect(route(0.79) == .agentWithComputer)
         #expect(route(0.80) == .autonomousLoop)
+    }
+
+    @Test("With an answer model, only an explicit /act or /goal hands off to the loop")
+    func answerModelKeepsGUIWorkInTheAgent() {
+        let confident = ComputerActionTriage(needsComputerAction: true, confidence: 0.95, intentCategory: "gui_interaction")
+        #expect(RequestRoute.decide(question: "Safariで検索ボタンを押して", triage: confident, answerModelAvailable: true)
+            == .agentWithComputer)
+        #expect(RequestRoute.decide(question: "/act Safariで検索ボタンを押して", triage: confident, answerModelAvailable: true)
+            == .autonomousLoop)
+        // Keyless, the loop's offline fallback is the only thing that can act.
+        #expect(RequestRoute.decide(question: "Safariで検索ボタンを押して", triage: confident) == .autonomousLoop)
     }
 }

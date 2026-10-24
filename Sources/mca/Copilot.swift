@@ -1742,8 +1742,10 @@ final class Copilot {
                     self.hudState.endStreaming(text: "The requested browser window is unavailable; no action was executed.")
                     return
                 }
-                // 3. Routing (pure; graded by Evals/system-one)
-                let route = RequestRoute.decide(question: question, triage: triage)
+                // 3. Routing (pure; keyless case graded by Evals/system-one, the model case by Evals/agent-loop)
+                let route = RequestRoute.decide(
+                    question: question, triage: triage,
+                    answerModelAvailable: !self.router.usableChain(for: .answer).isEmpty)
 
                 if route == .autonomousLoop {
                     let goalToRun = explicitGoal ?? question
@@ -1792,24 +1794,44 @@ final class Copilot {
                     guard let self else { return .cancelled }
                     return await self.presentActionApproval(request)
                 }, targetWindow: scopedTarget, requiresWindowScope: true, privacyConfiguration: self.configuration)
-                let answer = try await ActionAuthorization.withSession(authorization) {
-                    if shouldCapture, let observed = try? await InspectUIElementsTool.makeDefaultInspector(maxCandidates: 100).captureSnapshot() {
-                        await authorization.recordNativeObservation(observed)
+                let answer: String
+                do {
+                    answer = try await ActionAuthorization.withSession(authorization) {
+                        if shouldCapture, let observed = try? await InspectUIElementsTool.makeDefaultInspector(maxCandidates: 100).captureSnapshot() {
+                            await authorization.recordNativeObservation(observed)
+                        }
+                        return try await self.agent.answer(
+                        question,
+                        history: history,
+                        images: images,
+                        subject: subject,
+                        systemPromptOverride: systemPromptOverride,
+                        isAutonomousAction: triage.needsComputerAction,
+                        triage: triage
+                    ) { token in
+                        Task { @MainActor in
+                            guard self.activeAnswerID == answerID else { return }
+                            self.hudState.appendToken(token)
+                        }
                     }
-                    return try await self.agent.answer(
-                    question,
-                    history: history,
-                    images: images,
-                    subject: subject,
-                    systemPromptOverride: systemPromptOverride,
-                    isAutonomousAction: triage.needsComputerAction,
-                    triage: triage
-                ) { token in
-                    Task { @MainActor in
-                        guard self.activeAnswerID == answerID else { return }
-                        self.hudState.appendToken(token)
                     }
-                }
+                } catch let error as LanguageModelError
+                    where Self.isUnreachable(error) && !Task.isCancelled
+                        && RequestRoute.decide(question: question, triage: triage) == .autonomousLoop {
+                    // A key but no reachable model (offline, rate-limited), before any tool ran —
+                    // once one has, `Agent.answer` throws `ModelLostAfterActions` instead, so
+                    // nothing is done twice. Without a key this request would have gone to the
+                    // loop, whose offline fallback can still act, so it goes there rather than
+                    // ending on an error card.
+                    self.log.info("Answer model unreachable (\(error.description, privacy: .public)); running the loop instead")
+                    let fallback = ActionAuthorization(goal: question, requestApproval: { [weak self] request in
+                        guard let self else { return .cancelled }
+                        return await self.presentActionApproval(request)
+                    }, targetWindow: scopedTarget, requiresWindowScope: true, privacyConfiguration: self.configuration)
+                    await ActionAuthorization.withSession(fallback) {
+                        await self.executeAutonomousGoal(question)
+                    }
+                    return
                 }
                 try Task.checkCancellation()
                 await MainActor.run {
@@ -1855,6 +1877,14 @@ final class Copilot {
                         severity: .error))
                 }
             }
+        }
+    }
+
+    /// The model could not be reached, as opposed to refusing or misconfiguring the request.
+    private static func isUnreachable(_ error: LanguageModelError) -> Bool {
+        switch error {
+        case .transport, .http: return true
+        default: return false
         }
     }
 

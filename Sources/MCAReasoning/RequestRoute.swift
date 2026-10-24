@@ -29,7 +29,15 @@ public enum RequestRoute: String, Sendable, Codable, CaseIterable {
     /// - Parameters:
     ///   - question: The raw user text, including any `/act ` or `/goal ` prefix.
     ///   - triage: The System One triage of the question (or of its explicit goal).
-    public static func decide(question: String, triage: ComputerActionTriage) -> RequestRoute {
+    ///   - answerModelAvailable: Whether `Agent.answer` has a model to run on. With one,
+    ///     only an explicit `/act` or `/goal` goes to the loop: the agent plans GUI work
+    ///     itself, and the loop, which cannot answer, lost to it on task completion
+    ///     (`docs/architecture/single-agent-loop.md`, `Evals/agent-loop`). Without one the
+    ///     loop's offline fallback is the only thing that can act. Defaults to the keyless
+    ///     case, which is what the System One eval grades.
+    public static func decide(
+        question: String, triage: ComputerActionTriage, answerModelAvailable: Bool = false
+    ) -> RequestRoute {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         let isExplicitAutonomous = trimmed.hasPrefix("/act ") || trimmed.hasPrefix("/goal ")
 
@@ -38,6 +46,7 @@ public enum RequestRoute: String, Sendable, Codable, CaseIterable {
         // rather than bypassed into the pure actuator loop which produces no conversational response.
         let isInformational = ScreenIntent.isInformationalRequest(question)
         let runsLoop = isExplicitAutonomous || (
+            !answerModelAvailable &&
             !isInformational &&
             triage.needsComputerAction &&
             triage.confidence >= 0.80 &&
