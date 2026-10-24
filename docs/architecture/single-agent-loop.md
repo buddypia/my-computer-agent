@@ -18,6 +18,7 @@ Anthropic の [Building agents: When to fold subagents into your main agent loop
 | 回答用モデルがあるとき、`RequestRoute` は triage の推定だけでは `.autonomousLoop` に送らない（明示の `/act` `/goal` とキーなしは従来どおりループ） | `Evals/agent-loop` でループへのハンドオフ 9/20、メインループで計画 19/20 |
 | `Agent.answer` の重複ガードを「ターン全体」から「直前のラウンド」に狭めた | 操作をはさんだ再観測（inspect → click → inspect）を重複とみなして打ち切っていた。修正前の計測で畳み込み版の失敗の大半がこれだった |
 | ループをツール化した `run_desktop_task` は、アプリには登録しない（eval の比較対象として残す） | 17/20 でメインループ単独（19/20）より悪く、遅い（21.1s 対 14.1s） |
+| キーはあるがモデルに届かない（オフライン・レート制限）とき、キーなしならループに行く依頼はループで実行する | ルーターを畳む前は offline fallback で動いていた依頼が、エラーで終わらないように（独立レビューの指摘） |
 
 ## 現状の棚卸し
 
@@ -103,6 +104,17 @@ System 1 はどの構成も決定論的な offline エンジン、回答モデ�
 - **重複ガード修正前**：folded / tool の失敗の大半は「同じツール呼び出しが重複して繰り返されたため、処理を中断しました」だった。
   クリック後に `inspect_ui_elements({})` で見直す正当な手順が、ターン内の同一呼び出しとして打ち切られていた。
   記事の `prompt-audit` が狙う「古いモデル向けに足され、いまはエージェントを硬直させる規則」の例。
+
+この比較の読み方（独立レビューの指摘）：
+
+- 答えを求める 3 件は handoff が構造上満たせないので、handoff の上限は 14/20。それを除いた 7 件でも
+  handoff 9/14・folded 13/14・tool 11/14 で、順序は変わらない。
+- 3 件の出典は「ループが答えを返さない」という既知の不具合クラスで、folded に有利な側から選んである。本番の出典で足していく。
+- 2 回・1 モデル・人が書いたタスクでの差である。合否はすべて作者が書いたタスクと採点器から出ており（INC-003 / INC-007）、
+  この結果だけで変更を自動マージしない。経路の変更は人間の承認を通す。
+- eval は承認の門（`ActionAuthorization` のセッションとウィンドウ範囲）を通していない（`AutoApproveToolApprover` と
+  `trustsCallerApproval`）。本番の `Copilot.ask` は `agent.answer` をセッションで包むので、クリックとキー入力の承認は
+  `.agentWithComputer` の既存経路と同じ。
 
 `Evals/system-one` は変わらない（キーなしの経路は変えていない）：train 50/54、heldout 25/28、ノイズ 0、`hillclimb.mjs` の判定は NO CHANGE。
 

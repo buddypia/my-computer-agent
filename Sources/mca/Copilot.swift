@@ -1794,24 +1794,41 @@ final class Copilot {
                     guard let self else { return .cancelled }
                     return await self.presentActionApproval(request)
                 }, targetWindow: scopedTarget, requiresWindowScope: true, privacyConfiguration: self.configuration)
-                let answer = try await ActionAuthorization.withSession(authorization) {
-                    if shouldCapture, let observed = try? await InspectUIElementsTool.makeDefaultInspector(maxCandidates: 100).captureSnapshot() {
-                        await authorization.recordNativeObservation(observed)
+                let answer: String
+                do {
+                    answer = try await ActionAuthorization.withSession(authorization) {
+                        if shouldCapture, let observed = try? await InspectUIElementsTool.makeDefaultInspector(maxCandidates: 100).captureSnapshot() {
+                            await authorization.recordNativeObservation(observed)
+                        }
+                        return try await self.agent.answer(
+                        question,
+                        history: history,
+                        images: images,
+                        subject: subject,
+                        systemPromptOverride: systemPromptOverride,
+                        isAutonomousAction: triage.needsComputerAction,
+                        triage: triage
+                    ) { token in
+                        Task { @MainActor in
+                            guard self.activeAnswerID == answerID else { return }
+                            self.hudState.appendToken(token)
+                        }
                     }
-                    return try await self.agent.answer(
-                    question,
-                    history: history,
-                    images: images,
-                    subject: subject,
-                    systemPromptOverride: systemPromptOverride,
-                    isAutonomousAction: triage.needsComputerAction,
-                    triage: triage
-                ) { token in
-                    Task { @MainActor in
-                        guard self.activeAnswerID == answerID else { return }
-                        self.hudState.appendToken(token)
                     }
-                }
+                } catch let error as LanguageModelError
+                    where !Task.isCancelled && RequestRoute.decide(question: question, triage: triage) == .autonomousLoop {
+                    // A key but no reachable model (offline, rate-limited). Without a key this
+                    // request would have gone to the loop, whose offline fallback can still act,
+                    // so it goes there rather than ending on an error card.
+                    self.log.info("Answer model unreachable (\(error.description, privacy: .public)); running the loop instead")
+                    let fallback = ActionAuthorization(goal: question, requestApproval: { [weak self] request in
+                        guard let self else { return .cancelled }
+                        return await self.presentActionApproval(request)
+                    }, targetWindow: scopedTarget, requiresWindowScope: true, privacyConfiguration: self.configuration)
+                    await ActionAuthorization.withSession(fallback) {
+                        await self.executeAutonomousGoal(question)
+                    }
+                    return
                 }
                 try Task.checkCancellation()
                 await MainActor.run {

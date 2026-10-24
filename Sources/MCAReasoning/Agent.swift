@@ -400,6 +400,7 @@ public actor Agent {
             // that could make the same calls come back different. Compared with the previous
             // round, not the whole turn — observe, act, observe again is how a GUI task is
             // checked, and the second identical `inspect_ui_elements` sees a changed screen.
+            // A longer cycle (A, B, A, B) is not caught here; the round budget bounds it.
             let signatures = response.toolCalls.map { "\($0.name):\(String(decoding: $0.arguments, as: UTF8.self))" }
             let allDuplicates = !signatures.isEmpty && signatures.allSatisfy { previousRoundSignatures.contains($0) }
             if allDuplicates {
