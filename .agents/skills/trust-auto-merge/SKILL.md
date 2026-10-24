@@ -25,7 +25,7 @@ description: worktree の変更を push してから merge するまでの Trust
      AUTO_MERGE でも trust が測らない規約（System One eval の改善など）を満たさないときは人間に聞き、
      その回答も下の `answer` で記録する（trust の承認を上書きし、台帳に human として残る）。
    - exit 3（`HUMAN`）: 表示された理由（どの軸で致命的か）を Pre-Ship Panel に添えて人間の承認を待つ。
-     回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する。
+     回答は `node .claude/scripts/pre-ship-steps.mjs answer --worktree <wt> --step approval --value "<人間の言葉>"` で記録する（`--value` には `"Approve and proceed"` などの選択肢ラベル、または `"承認"` などの単一の承認語を渡す）。
      台帳への取り込み（`trust.mjs reconcile`）は `ship-worktree` が push の前に行う。
      worktree を消した後では回答が残っていないので、手で取り込むときは ship より前に行う。
 3. 自動マージした変更に欠陥が見つかったら、`data/trust/incidents.json` に根本原因クラスと

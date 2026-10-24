@@ -76,6 +76,31 @@
         "evidence": [1, 2],
         "confidence": "high（実測の hook タイムアウト解消と gate-g0 / check.test.mjs の単体テストで確認）"
       }
+    },
+    {
+      "id": "HX-004",
+      "at": "2026-10-24",
+      "change": "fix/computer-use-adversarial-hardening",
+      "edits": [
+        {
+          "component": ".claude/scripts/worktree-new.mjs",
+          "change": "runWorktreeNew のスナップショット記録ガードにあった未定義識別子 `runGit` を `defaultGitFn` に直し、Scripts/harness/tests/check.test.mjs に dryRun: false の単体テストを足した",
+          "observed": "`make wt.new` が ReferenceError を出さずに exit 0 で worktree と PLAN.md を作成できるようになり、G0 の check.test.mjs が dryRun: false 経路を毎ターン検証するようになった",
+          "verdict": "helped"
+        },
+        {
+          "component": ".claude/scripts/lib/pre-ship-steps.mjs",
+          "change": "recordAnswer で stepId === 'approval' のとき、保存前に normalizeApproval で検証して解釈不能な文字列を即座に拒否するようにした",
+          "observed": "`\"Approve and proceed: ...\"` のような複合文字列が answer 時に `{ ok: true }` で保存されて後続の mark-pre-ship-confirmed.mjs で初めて BLOCKED になる手戻りが消えた",
+          "verdict": "helped"
+        }
+      ],
+      "lesson": {
+        "cue": "ハーネス補助スクリプト（.claude/scripts/worktree-new.mjs, .claude/scripts/lib/pre-ship-steps.mjs）に状態書き込みや新しい分岐を足すとき",
+        "lesson": ".claude/scripts/worktree-new.mjs の非 dryRun 経路は check.test.mjs で直接呼び出し、.claude/scripts/lib/pre-ship-steps.mjs の recordAnswer は読み取り側と同じ normalizeApproval を書き込み境界で検証する",
+        "evidence": [1, 2],
+        "confidence": "high（実機の `make wt.new` 成功と pre-ship-steps.test.mjs / check.test.mjs の単体テストで確認）"
+      }
     }
   ]
 }

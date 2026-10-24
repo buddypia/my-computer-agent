@@ -550,9 +550,18 @@ export function recordAnswer({
   // human's veto of the very same diff. Only a clear veto blocks: an answer the parser could not read
   // is re-asked by design, and a new diff (after the requested revision) is answered afresh. The
   // binding is compared the way staleness is: review_diff_id, else head_sha.
+  const choices = state.approvalChoices ?? APPROVAL_CHOICES;
+  if (stepId === 'approval' && normalizeApproval(value, { choices }) === null) {
+    return {
+      ok: false,
+      error:
+        `User response: "${value.trim()}" → uninterpretable. ` +
+        `Please respond with one of: ${choices.join(' / ')}`,
+    };
+  }
   const prior = store[stepId];
   const veto = stepId === 'approval' && prior?.value
-    ? normalizeApproval(prior.value, { choices: state.approvalChoices ?? APPROVAL_CHOICES })
+    ? normalizeApproval(prior.value, { choices })
     : null;
   const sameDiff = prior?.review_diff_id && state.reviewDiffId
     ? prior.review_diff_id === state.reviewDiffId

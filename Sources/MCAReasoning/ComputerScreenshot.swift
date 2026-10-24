@@ -35,7 +35,7 @@ public struct ComputerScreenshot: Sendable, Equatable {
     /// picture still knows which coordinate space it is working in.
     public var summary: String {
         if let region {
-            return "Zoom on region [\(Int(region.minX)), \(Int(region.minY)), \(Int(region.maxX)), \(Int(region.maxY))] "
+            return "Zoom on region [\(Int(region.minX)), \(Int(region.minY)), \(Int(region.maxX)), \(Int(region.maxY))] pt "
                 + "of the display (\(width)x\(height) px). Coordinates stay in the pixel space of the latest "
                 + "full screenshot, not of this image."
         }

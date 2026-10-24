@@ -17,6 +17,7 @@ const { readsHeldout } = await import('../../../.cli/hooks/heldout-guard.mjs');
 const { findRoot, isHarnessPath, run: lintRun } = await import('../../../.cli/hooks/harness-lint-guard.mjs');
 const { loadHints, matchHints, run: hintRun } = await import('../../../.cli/hooks/error-hint.mjs');
 const { runModulesBatch } = await import('../../../.cli/_cli-dispatch.mjs');
+const { runWorktreeNew } = await import('../../../.claude/scripts/worktree-new.mjs');
 const {
   findOverlappingWorktrees,
   hasVerificationStamp,
@@ -360,4 +361,22 @@ test('_cli-dispatch runModulesBatch runs multiple hooks in-process and short-cir
   const denied = await runModulesBatch([join(root, '.cli/hooks/allow1.mjs'), join(root, '.cli/hooks/deny1.mjs'), join(root, '.cli/hooks/allow2.mjs')], {});
   assert.equal(denied.hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(denied.hookSpecificOutput.permissionDecisionReason, 'stop');
+});
+
+test('runWorktreeNew succeeds in non-dry-run mode and records the worktree snapshot without throwing', () => {
+  const root = tree();
+  const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8' });
+  git('init', '-q', '-b', 'main');
+  git('add', '-A');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'init');
+
+  const res = runWorktreeNew({
+    branch: 'feature/test-wt-non-dry',
+    base: 'main',
+    dryRun: false,
+    cwd: root,
+    existsFn: () => false,
+  });
+  assert.equal(res.ok, true, JSON.stringify(res.errors));
+  assert.ok(res.base_sha);
 });

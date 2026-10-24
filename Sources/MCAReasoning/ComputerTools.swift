@@ -119,11 +119,15 @@ public struct ComputerActionTool: AgentTool {
             throw ScreenshotError.unavailable("'region' must be [x0, y0, x1, y1], the top-left and bottom-right corners.")
         }
         let v = numbers.map { $0!.doubleValue }
-        guard v.allSatisfy(\.isFinite), v[2] > v[0], v[3] > v[1] else {
-            throw ScreenshotError.unavailable("'region' must have x1 > x0 and y1 > y0.")
+        let limit = Double(Int32.max)
+        guard v.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= limit }), v[2] > v[0], v[3] > v[1] else {
+            throw ScreenshotError.unavailable("'region' must have finite non-negative coordinates with x1 > x0 and y1 > y0.")
         }
         let topLeft = screenSpace.screenPoint(fromImage: CGPoint(x: v[0], y: v[1]))
         let bottomRight = screenSpace.screenPoint(fromImage: CGPoint(x: v[2], y: v[3]))
+        guard [topLeft.x, topLeft.y, bottomRight.x, bottomRight.y].allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= limit }) else {
+            throw ScreenshotError.unavailable("'region' exceeds active display bounds.")
+        }
         return try await screenshots.captureRegion(CGRect(
             x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y))
     }
@@ -263,10 +267,10 @@ public struct ComputerActionTool: AgentTool {
             }
         }
         // `text` is the string for `type`, the key for `key` / `hold_key` (`key` is the older
-        // spelling of that), and the modifier keys to hold for a click, drag or scroll.
+        // spelling of that), and the modifier keys to hold for a click, move, drag or scroll.
         let keyChord = parsed.string("text") ?? parsed.string("key")
-        let modifierActions = ["left_click", "right_click", "double_click", "triple_click", "middle_click",
-                               "left_click_drag", "scroll", "left_mouse_down", "left_mouse_up"]
+        let modifierActions = ["mouse_move", "left_click", "right_click", "double_click", "triple_click",
+                               "middle_click", "left_click_drag", "scroll", "left_mouse_down", "left_mouse_up"]
         var heldModifiers: CGEventFlags = []
         if modifierActions.contains(action), let text = parsed.string("text") {
             do { heldModifiers = try EventSynthesizer.parseModifiers(text) } catch {
@@ -313,7 +317,8 @@ public struct ComputerActionTool: AgentTool {
             targetPID = value.int32Value
         }
         // Resolve cursor-dependent actions before approval so its UI cannot change the operation.
-        let coordinateActions = ["left_click", "right_click", "double_click", "triple_click", "middle_click", "scroll"]
+        let coordinateActions = ["left_click", "right_click", "double_click", "triple_click", "middle_click",
+                                 "left_mouse_down", "left_mouse_up", "scroll"]
         let actionPoint = coordinateActions.contains(action) ? (try extractPoint("coordinate") ?? synthesizer.cursorPosition()) : extractPoint("coordinate")
         let resolvedDetails = String(decoding: arguments, as: UTF8.self) + (actionPoint.map { "\nResolved coordinate: [\($0.x), \($0.y)]" } ?? "")
         let unscopedKeystroke = ActionAuthorization.current == nil && ["type", "key", "hold_key"].contains(action)
@@ -333,7 +338,7 @@ public struct ComputerActionTool: AgentTool {
                 guard let point = extractPoint("coordinate") else {
                     return "Error: 'coordinate' [x, y] is required for 'mouse_move'."
                 }
-                try synthesizer.mouseMove(to: point)
+                try held { try synthesizer.mouseMove(to: point) }
                 return "Moved cursor to (\(Int(point.x)), \(Int(point.y)))."
 
             case "left_click":
@@ -551,7 +556,7 @@ public struct ClickElementTool: AgentTool {
             candidate = try Self.observedCandidate(snapshot, text: text, role: role)
             try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
         } else if trustsCallerApproval {
-            let snapshot = try await inspectorProvider(25).captureSnapshot()
+            let snapshot = try await inspectorProvider(100).captureSnapshot()
             if let appName, appName.caseInsensitiveCompare(snapshot.appName ?? "") != .orderedSame {
                 throw ActionAuthorizationError.staleTarget
             }

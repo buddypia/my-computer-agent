@@ -201,11 +201,14 @@ struct ScreenCaptureExclusionTests {
 
         #expect(!ScreenCapturer.isRefused(
             bundleID: "com.example.app", windowTitle: marker) { _, _ in false })
+        #expect(!PrivacyFilter.isWindowExcluded(bundleID: "com.example.app", windowTitle: marker))
         ScreenCapturer.processWideExclusion = { _, title in title == marker }
         #expect(ScreenCapturer.isRefused(
             bundleID: "com.example.app", windowTitle: marker) { _, _ in false })
+        #expect(PrivacyFilter.isWindowExcluded(bundleID: "com.example.app", windowTitle: marker))
         #expect(!ScreenCapturer.isRefused(
             bundleID: "com.example.app", windowTitle: "other") { _, _ in false })
+        #expect(!PrivacyFilter.isWindowExcluded(bundleID: "com.example.app", windowTitle: "other"))
     }
 
     @Test("the caller's own list is honoured on top")
