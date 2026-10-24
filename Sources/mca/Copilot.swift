@@ -1816,10 +1816,13 @@ final class Copilot {
                     }
                     }
                 } catch let error as LanguageModelError
-                    where !Task.isCancelled && RequestRoute.decide(question: question, triage: triage) == .autonomousLoop {
-                    // A key but no reachable model (offline, rate-limited). Without a key this
-                    // request would have gone to the loop, whose offline fallback can still act,
-                    // so it goes there rather than ending on an error card.
+                    where Self.isUnreachable(error) && !Task.isCancelled
+                        && RequestRoute.decide(question: question, triage: triage) == .autonomousLoop {
+                    // A key but no reachable model (offline, rate-limited), before any tool ran —
+                    // once one has, `Agent.answer` throws `ModelLostAfterActions` instead, so
+                    // nothing is done twice. Without a key this request would have gone to the
+                    // loop, whose offline fallback can still act, so it goes there rather than
+                    // ending on an error card.
                     self.log.info("Answer model unreachable (\(error.description, privacy: .public)); running the loop instead")
                     let fallback = ActionAuthorization(goal: question, requestApproval: { [weak self] request in
                         guard let self else { return .cancelled }
@@ -1874,6 +1877,14 @@ final class Copilot {
                         severity: .error))
                 }
             }
+        }
+    }
+
+    /// The model could not be reached, as opposed to refusing or misconfiguring the request.
+    private static func isUnreachable(_ error: LanguageModelError) -> Bool {
+        switch error {
+        case .transport, .http: return true
+        default: return false
         }
     }
 

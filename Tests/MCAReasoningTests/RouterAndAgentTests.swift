@@ -794,6 +794,33 @@ struct AgentToolLoopTests {
         #expect(counter.value == 3)
     }
 
+    @Test("a model lost after a tool ran is not reported as a plain unreachable model")
+    func modelLostAfterActionsIsDistinct() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "mca-agent-lost-\(UUID().uuidString).sqlite3")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try SQLiteContextStore(url: url)
+
+        func agent(failingAt failing: Int) -> Agent {
+            let counter = StepCounter()
+            let executor = MockScriptedExecutor { _, channel in
+                if counter.increment() == failing { throw LanguageModelError.transport("offline") }
+                channel.send(.toolCall(ToolCall(id: "read", name: "read_current_screen", arguments: Data("{}".utf8))))
+                channel.send(.finished(.toolCalls))
+            }
+            let router = ModelRouter(policy: RoutingPolicy(routes: [.answer: ModelRef(provider: "mock", model: "test")]),
+                credentials: .empty, customResolver: { _ in executor })
+            return Agent(router: router, store: store,
+                tools: ToolRegistry(tools: [CurrentScreenTool(store: store, liveReader: nil)]),
+                health: HealthRegistry(), language: .english)
+        }
+
+        // Before any tool: the caller may recover by acting another way.
+        await #expect(throws: LanguageModelError.self) { try await agent(failingAt: 1).answer("What is on screen?") }
+        // After one: recovering by acting again would repeat what already happened.
+        await #expect(throws: ModelLostAfterActions.self) { try await agent(failingAt: 2).answer("What is on screen?") }
+    }
+
     @Test("observing again after an action is not a duplicate loop")
     func reobservingAfterActionContinues() async throws {
         struct ActTool: AgentTool {

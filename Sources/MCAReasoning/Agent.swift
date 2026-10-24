@@ -14,6 +14,22 @@ public struct TriageDecision: Sendable, Equatable {
         shouldInterrupt: false, headline: "", category: "none", confidence: 1)
 }
 
+/// The model stopped answering after `Agent.answer` had already run tools.
+///
+/// Kept apart from `LanguageModelError` so a caller that recovers from an
+/// unreachable model by acting another way (the app falls back to the
+/// autonomous loop) does not redo actions that already happened.
+public struct ModelLostAfterActions: LocalizedError, CustomStringConvertible {
+    public var toolCalls: Int
+    public var underlying: LanguageModelError
+
+    public var description: String {
+        "The model stopped responding after \(toolCalls) tool call(s): \(underlying)"
+    }
+
+    public var errorDescription: String? { description }
+}
+
 /// Something the agent wants to show the user.
 public struct AgentCard: Sendable, Equatable, Identifiable {
     public enum Severity: String, Sendable, Codable {
@@ -346,12 +362,17 @@ public actor Agent {
         for round in 0..<effectiveMaxRounds {
             let isFinalRound = round == (effectiveMaxRounds - 1)
 
-            let response = try await router.run(
-                task: task,
-                transcript: transcript,
-                tools: isFinalRound ? [] : definitions,
-                temperature: 0.3,
-                streamingInto: channel)
+            let response: CompletedResponse
+            do {
+                response = try await router.run(
+                    task: task,
+                    transcript: transcript,
+                    tools: isFinalRound ? [] : definitions,
+                    temperature: 0.3,
+                    streamingInto: channel)
+            } catch let error as LanguageModelError where !toolExecutions.isEmpty {
+                throw ModelLostAfterActions(toolCalls: toolExecutions.count, underlying: error)
+            }
 
             guard !response.toolCalls.isEmpty, !isFinalRound else {
                 await health.set(.reasoning, .running)
