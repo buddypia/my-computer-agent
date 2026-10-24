@@ -151,15 +151,17 @@ struct ComputerStandardActionTests {
         #expect(synthesizer.recordedActions.isEmpty)
     }
 
-    @Test("text holds modifier keys for one click, drag or scroll")
+    @Test("text holds modifier keys for one click, move, drag or scroll")
     func modifierKeys() async throws {
         let synthesizer = DryRunEventSynthesizer()
         let tool = tool(synthesizer)
+        _ = try await run(tool, #"{"action":"mouse_move","coordinate":[3,4],"text":"shift"}"#)
         _ = try await run(tool, #"{"action":"left_click","coordinate":[5,6],"text":"shift"}"#)
         _ = try await run(tool, #"{"action":"left_click_drag","start_coordinate":[1,1],"coordinate":[2,2],"text":"ctrl+shift"}"#)
         _ = try await run(tool, #"{"action":"scroll","coordinate":[3,3],"scroll_direction":"down","scroll_amount":1,"text":"super"}"#)
         _ = try await run(tool, #"{"action":"left_click","coordinate":[7,8]}"#)
         #expect(synthesizer.recordedActions == [
+            "mouseMove(to: (3, 4)) [modifiers: shift]",
             "click(at: (5, 6), button: left, clickCount: 1) [modifiers: shift]",
             "drag(from: (1, 1), to: (2, 2)) [modifiers: ctrl+shift]",
             "scroll(deltaX: 0, deltaY: -1, at: (3, 3)) [modifiers: cmd]",
@@ -192,6 +194,21 @@ struct ComputerStandardActionTests {
         let synthesizer = DryRunEventSynthesizer()
         let result = try await run(tool(synthesizer), #"{"action":"hold_key","text":"shift","duration":0}"#)
         #expect(result == "Held key 'shift' for 0.0 seconds.")
+        #expect(synthesizer.recordedActions == [#"keyEvent("shift", down: true)"#, #"keyEvent("shift", down: false)"#])
+    }
+
+    @Test("hold_key releases the held key even when the task is cancelled mid-hold")
+    func holdKeyReleasesOnCancellation() async throws {
+        let synthesizer = DryRunEventSynthesizer()
+        let tool = tool(synthesizer)
+        let task = Task {
+            try await run(tool, #"{"action":"hold_key","text":"shift","duration":10}"#)
+        }
+        for _ in 0..<200 where synthesizer.recordedActions.isEmpty {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        task.cancel()
+        _ = try? await task.value
         #expect(synthesizer.recordedActions == [#"keyEvent("shift", down: true)"#, #"keyEvent("shift", down: false)"#])
     }
 
@@ -252,6 +269,7 @@ struct ComputerStandardActionTests {
     @Test("zoom rejects a region that is not two corners", arguments: [
         #"{}"#, #"{"region":[1,2,3]}"#, #"{"region":[10,10,5,20]}"#, #"{"region":[0,0,10,10,1]}"#,
         #"{"region":["a","b","c","d"]}"#, #"{"region":[true,true,false,false]}"#,
+        #"{"region":[-1,0,10,10]}"#, #"{"region":[0,0,5000000000,10]}"#,
     ])
     func zoomValidation(payload: String) async throws {
         await #expect(throws: ScreenshotError.self) {

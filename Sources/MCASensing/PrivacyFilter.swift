@@ -9,6 +9,7 @@ public struct PrivacyFilter: Sendable {
 
     public static func isWindowExcluded(bundleID: String?, windowTitle: String) -> Bool {
         configuration.isExcluded(bundleID: bundleID, windowTitle: windowTitle)
+            || (ScreenCapturer.processWideExclusion?(bundleID, windowTitle) ?? false)
             || PrivacyFilter().isApplicationBlocked(bundleID: bundleID)
     }
     /// Bundle IDs of applications whose window contents must NEVER be sent to external models.

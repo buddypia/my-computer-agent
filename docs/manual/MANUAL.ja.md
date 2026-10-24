@@ -279,7 +279,7 @@ args = ["mcp"]
 - 権限は、サーバーを起動したプログラム（ターミナルやエディタ）に紐付きます。コンピューター操作系のツールには、そのプログラムのアクセシビリティ権限が必要で、`screenshot` には画面収録の権限も必要です。Cursor の場合は、どちらも Cursor 自体に許可してください。履歴の検索には特別な権限は要りません。
 - **危険なツールは、MCP 経由では既定で拒否されます。** MCP クライアントにはあなたへ確認を表示する手段がないため、`run_applescript`、`computer`（`screenshot` を含む）、`click_element`、`typesafe_act`、`autonomous_act`（ドライランでない場合）、ページを操作するブラウザツール（`browser_navigate`、`browser_element`、`browser_act`、タブを開く・切り替える・閉じる場合の `browser_tabs`、`path` を指定した `browser_read`）、そして `browser_evaluate` はエラーを返します。読み取り系のツール（検索、履歴、`inspect_ui_elements`、`browser_snapshot`、`browser_observe`、`browser_extract`、`browser_wait`、読み取り用途の `browser_read` と `browser_tabs`）は通常どおり使えます。信頼できるクライアントに対してのみ許可したい場合は、`config.json` に `"mcpAllowDangerousTools": true` を設定し、クライアントを再起動してください。詳しくは [SECURITY.ja.md](../../SECURITY.ja.md) の第5項を参照してください。
 - **`--computer-use` はより狭い許可です。** `mca mcp --computer-use` は `computer`（画面・マウス・キーボード）だけを許可します。AppleScript、`click_element`、`typesafe_act`、`autonomous_act`、ページを操作するブラウザツールは引き続き拒否されます。有効なときは、サーバーが stderr に通知を出します。接続したエージェントが画面で見たものはすべて、そのエージェントのモデルプロバイダに送られるので、信頼できるクライアントだけを接続してください。パスワード管理アプリのウインドウと、除外リストにあるウインドウはスクリーンショットに写りません。
-- `click_element` は MCP 経由ではまだ動きません（アプリ自身によるウインドウの観測が前提のため）。`inspect_ui_elements` と `computer` を使ってください。返される bounds は `computer` の座標と同じ画素空間なので、要素の中心をそのまま渡してクリックできます。
+- `click_element` は `"mcpAllowDangerousTools": true` のとき、最前面のウインドウを調べて一意に一致する要素をクリックできます。`--computer-use` のみの場合は `inspect_ui_elements` と `computer` を使ってください。返される bounds は `computer` の座標と同じ画素空間なので、要素の中心をそのまま渡してクリックできます。
 - `computer`、`click_element`、`run_applescript`、act 系のツールは、接続したエージェントにあなたの Mac を操作させます。信頼できるクライアントだけを接続し、試すときは `dry_run` を使ってください。
 - プロバイダのキーはアプリと同じ順で解決されます。まず環境変数（たとえば `GEMINI_API_KEY`。クライアントの環境から引き継がれます）、次にキーチェーンです。
 

@@ -56,7 +56,8 @@ public enum ImageEncoder {
     public static func encodedJPEG(_ image: CGImage, width: Int, height: Int, quality: Double = 0.7) -> EncodedImage? {
         guard width > 0, height > 0 else { return nil }
         guard width != image.width || height != image.height else { return encode(image, quality: quality) }
-        return encode(resized(image, width: width, height: height) ?? image, quality: quality)
+        guard let scaled = resized(image, width: width, height: height) else { return nil }
+        return encode(scaled, quality: quality)
     }
 
     private static func encode(_ source: CGImage, quality: Double) -> EncodedImage? {

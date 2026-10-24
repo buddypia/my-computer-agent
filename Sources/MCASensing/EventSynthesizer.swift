@@ -100,6 +100,7 @@ public struct EventSynthesizer: Sendable {
         ) else {
             throw SynthesizerError.eventCreationFailed
         }
+        if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
         try ensureInputTarget()
         try validateCoordinate(point)
         event.post(tap: .cghidEventTap)
@@ -108,12 +109,31 @@ public struct EventSynthesizer: Sendable {
     /// Presses or releases the left button at the current cursor position, for drags
     /// that `drag(from:to:)` cannot express. Moves made while it is down are drags.
     public func leftMouse(down: Bool) throws {
+        if !down {
+            // Releasing a held button is cleanup: always clear `heldButton` and do not
+            // abort on cancellation or focus shift before posting `.leftMouseUp`.
+            defer { Self.heldButton.value = false }
+            guard isTrusted else { throw SynthesizerError.accessibilityPermissionDenied }
+            let point = clampedCoordinate((try? cursorPosition()) ?? CGPoint(x: 100, y: 100))
+            guard let event = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseUp,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ) else {
+                throw SynthesizerError.eventCreationFailed
+            }
+            event.setIntegerValueField(.mouseEventClickState, value: 1)
+            if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
+            event.post(tap: .cghidEventTap)
+            return
+        }
         try ensureTrusted()
         let point = try cursorPosition()
         try validateCoordinate(point)
         guard let event = CGEvent(
             mouseEventSource: nil,
-            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseType: .leftMouseDown,
             mouseCursorPosition: point,
             mouseButton: .left
         ) else {
@@ -124,22 +144,29 @@ public struct EventSynthesizer: Sendable {
         try ensureInputTarget()
         try validateCoordinate(point)
         event.post(tap: .cghidEventTap)
-        Self.heldButton.value = down
+        Self.heldButton.value = true
     }
 
     /// Presses or releases one key (or a modifier-only chord such as "shift"), for
     /// `hold_key`. The caller owns the matching release.
     public func keyEvent(_ chord: String, down: Bool) throws {
-        try ensureTrusted()
+        if down {
+            try ensureTrusted()
+        } else {
+            // Key-up is cleanup (including inside `hold_key`'s `defer` after task cancellation
+            // or a focus change); never skip releasing a held key on `ensureInputTarget()`.
+            guard isTrusted else { throw SynthesizerError.accessibilityPermissionDenied }
+        }
         if let modifiers = try? Self.parseModifiers(chord), !modifiers.isEmpty {
+            let sequence = down ? Self.modifierKeys : Array(Self.modifierKeys.reversed())
             var accumulated: CGEventFlags = []
-            for (code, flag) in Self.modifierKeys where modifiers.contains(flag) {
+            for (code, flag) in sequence where modifiers.contains(flag) {
                 accumulated.insert(flag)
                 guard let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else {
                     throw SynthesizerError.eventCreationFailed
                 }
                 event.flags = down ? accumulated : []
-                try ensureInputTarget()
+                if down { try ensureInputTarget() }
                 event.post(tap: .cghidEventTap)
             }
             return
@@ -148,8 +175,8 @@ public struct EventSynthesizer: Sendable {
         guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: down) else {
             throw SynthesizerError.eventCreationFailed
         }
-        if !flags.isEmpty { event.flags = flags }
-        try ensureInputTarget()
+        event.flags = (down && !flags.isEmpty) ? flags : []
+        if down { try ensureInputTarget() }
         event.post(tap: .cghidEventTap)
     }
 
@@ -238,6 +265,7 @@ public struct EventSynthesizer: Sendable {
         // Brief pause to allow the OS and target app to register mouse-down
         Thread.sleep(forTimeInterval: 0.015)
         upEvent.post(tap: .cghidEventTap)
+        if button == .left { Self.heldButton.value = false }
     }
 
     /// Drags from a starting point to an ending point.
@@ -289,7 +317,10 @@ public struct EventSynthesizer: Sendable {
         post(.leftMouseDown, start)
         var releasePoint = start
         // Cleanup is allowed after cancellation; it must not move to an undispatched endpoint.
-        defer { post(.leftMouseUp, releasePoint) }
+        defer {
+            post(.leftMouseUp, releasePoint)
+            Self.heldButton.value = false
+        }
         pause(0.02)
         try validate(end)
         post(.leftMouseDragged, end)
@@ -822,12 +853,7 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
     }
 
     public func mouseMove(to point: CGPoint) throws {
-        let msg = "mouseMove(to: (\(Int(point.x)), \(Int(point.y))))"
-        log.info("[DRY-RUN] \(msg)")
-        lock.lock()
-        _recordedActions.append(msg)
-        lock.unlock()
-        onAction?(msg)
+        record("mouseMove(to: (\(Int(point.x)), \(Int(point.y))))")
     }
 
     public func click(at point: CGPoint?, button: MouseButton, clickCount: Int) throws {
