@@ -574,7 +574,7 @@ export function runWorktreeNew(opts) {
   }
 
   result.ok = true;
-  if (!dryRun && gitFn === runGit) {
+  if (!dryRun && gitFn === defaultGitFn) {
     updateWorktreeSnapshot(cwd, branch, {
       worktree_path: wtPathAbs,
       base_sha: result.base_sha,

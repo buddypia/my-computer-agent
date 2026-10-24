@@ -696,7 +696,7 @@ public actor ContextMCPServer {
             ) { try await tool.invoke(arguments: data) }
 
         case "click_element":
-            let tool = ClickElementTool()
+            let tool = ClickElementTool(trustsCallerApproval: true)
             let data = try jsonFromMCPArguments(arguments)
             return try await approved(
                 approver, tool: name, title: "Click a UI element",

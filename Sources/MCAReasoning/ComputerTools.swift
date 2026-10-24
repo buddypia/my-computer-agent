@@ -483,8 +483,19 @@ public struct ComputerActionTool: AgentTool {
 
 /// Clicks a semantic UI element (button, menu item, check box, etc.) identified by text/label in a target application.
 public struct ClickElementTool: AgentTool {
-    private let synthesizer = EventSynthesizer()
-    public init() {}
+    private let synthesizer: any EventSynthesizing
+    private let inspectorProvider: @Sendable (Int) -> any UIStateProviding
+    private let trustsCallerApproval: Bool
+
+    public init(
+        synthesizer: any EventSynthesizing = EventSynthesizer(),
+        inspectorProvider: @escaping @Sendable (Int) -> any UIStateProviding = { InspectUIElementsTool.makeDefaultInspector(maxCandidates: $0) },
+        trustsCallerApproval: Bool = false
+    ) {
+        self.synthesizer = synthesizer
+        self.inspectorProvider = inspectorProvider
+        self.trustsCallerApproval = trustsCallerApproval
+    }
 
     static func observedCandidate(_ snapshot: UIStateSnapshot, text: String, role: String?) throws -> UIElementCandidate {
         let matches = snapshot.visibleCandidates.filter {
@@ -534,10 +545,20 @@ public struct ClickElementTool: AgentTool {
         let appName = parsed.string("app_name")
         let role = parsed.string("role")
 
-        guard let session = ActionAuthorization.current else { throw ActionAuthorizationError.approvalRequired }
-        guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
-        let candidate = try Self.observedCandidate(snapshot, text: text, role: role)
-        try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
+        let candidate: UIElementCandidate
+        if let session = ActionAuthorization.current {
+            guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
+            candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+            try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
+        } else if trustsCallerApproval {
+            let snapshot = try await inspectorProvider(25).captureSnapshot()
+            if let appName, appName.caseInsensitiveCompare(snapshot.appName ?? "") != .orderedSame {
+                throw ActionAuthorizationError.staleTarget
+            }
+            candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+        } else {
+            throw ActionAuthorizationError.approvalRequired
+        }
         try Task.checkCancellation()
         do {
             try synthesizer.click(at: candidate.center)

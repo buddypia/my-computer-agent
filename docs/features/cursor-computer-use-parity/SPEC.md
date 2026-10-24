@@ -45,7 +45,7 @@ Computer Use の本体は「**画面を見る → 座標で操作 → 再び見�
 | G5 | opt-in が粗い | `mcpAllowDangerousTools` は AppleScript・ブラウザ操作まで全部開ける | **実装**（`mca mcp --computer-use` は `computer` だけ許可） |
 | G6 | 事前確認がない | `mca doctor` に computer use の状態がない | **実装**（スクリーンショットの寸法と opt-in 状態。権限が無ければ撮らない） |
 | G7 | 権限の持ち主 | stdio で起動されるため、権限は **起動元（Cursor / ターミナル）** に付く。Cursor は専用ヘルパーが持つ | **未対応**。ドキュメントで明示。解消案は §5 |
-| G8 | `click_element` が MCP で使えない | チャットの観測結果（`nativeObservation`）が前提 | **未対応**。`inspect_ui_elements` の bounds をスクリーンショットの画素に揃えたので、`inspect_ui_elements` + `computer` で足りる |
+| G8 | `click_element` が MCP で使えない | チャットの観測結果（`nativeObservation`）が前提 | **実装**（呼び出し元承認時はその場で AX スナップショットを取得し、要素が一意かつ `app_name` が一致するときだけクリック） |
 | G9 | 成果物（動画・PR 添付） | Cloud Agent の機能 | **対象外**。ローカル利用では MCP のクライアントが画像を保持する |
 | G10 | 画面共有・操作の引き取り | Linux ワーカー限定の機能 | **対象外**。macOS では Ctrl+C / 起動元クライアントの停止で止める |
 | G11 | Linux / X11、ワーカープール | Cursor のクラウド運用向け | **対象外**（MCA は macOS ローカルのコパイロット） |
@@ -110,8 +110,7 @@ Cursor / Claude Code / Codex ──stdio MCP──▶ mca mcp [--computer-use]
    MCA の stdio サーバーは Cursor の子プロセスなので、権限は Cursor（または Claude Code を動かすターミナル）に付く。
    解消するには、常駐する `MyComputerAgent.app`（署名済み、`getppid() == 1`）に Unix ソケットで接続する薄い stdio プロキシ
    （`mca mcp --proxy`）を足す。サーバーの認証と接続元の検証が要るので、別の仕様として切り出す。
-2. **`click_element` の MCP 対応（G8）**: 呼び出し時に AX を取り直して一意に特定できるときだけ実行する。
-3. **実機の受け入れ**: 下記「検証」の実機項目は、この変更の自動テストでは証明していない。
+2. **実機の受け入れ**: 下記「検証」の実機項目は、この変更の自動テストでは証明していない。
 
 ## 6. 検証
 
