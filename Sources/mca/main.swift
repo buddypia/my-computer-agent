@@ -27,7 +27,7 @@ let rest = Array(arguments.dropFirst())
 // The user's exclusion list for every screen capture this process makes, so a
 // capture path that is never handed the configuration (the System One
 // screenshot, the MCP tools' accessibility fallbacks) still honours it.
-installProcessWideCaptureExclusion()
+if command != "mcp" { installProcessWideCaptureExclusion() }
 
 // Every branch here is synchronous, and that is load-bearing rather than
 // stylistic. A single `await` anywhere in top-level code makes Swift compile
@@ -43,8 +43,7 @@ case "run":
 case "doctor":
     runBlocking { await runDoctor() }
 case "mcp":
-    let computerUse = rest.contains("--computer-use")
-    runBlocking { await runMCPServer(computerUse: computerUse) }
+    runBlocking { await runMCPServer(arguments: rest) }
 case "ask":
     runBlocking { await runAsk(question: rest.joined(separator: " ")) }
 case "act":
@@ -94,8 +93,8 @@ private final class DelegateBox: @unchecked Sendable {
     var delegate: AppDelegate?
 }
 
-func installProcessWideCaptureExclusion() {
-    let configuration = (try? AgentConfiguration.load()) ?? AgentConfiguration()
+func installProcessWideCaptureExclusion(configuration: AgentConfiguration? = nil) {
+    let configuration = configuration ?? ((try? AgentConfiguration.load()) ?? AgentConfiguration())
     ScreenCapturer.processWideExclusion = { bundleID, title in
         configuration.isExcluded(bundleID: bundleID, windowTitle: title)
     }
@@ -230,9 +229,12 @@ func runDoctor() async {
     }
 }
 
-func runMCPServer(computerUse: Bool = false) async {
-    let configuration = (try? AgentConfiguration.load()) ?? AgentConfiguration()
+func runMCPServer(arguments: [String] = []) async {
     do {
+        let options = try MCPOptions.parse(arguments)
+        let computerUse = options.computerUse
+        let configuration = try options.configuration()
+        installProcessWideCaptureExclusion(configuration: configuration)
         let store = try SQLiteContextStore(url: configuration.databaseURL)
         // A stdio server has nobody to ask, so tools that act on the machine
         // are refused unless the user has opted in: in config.json for all of
@@ -504,7 +506,7 @@ func printUsage() {
           act       Execute desktop actions (--goal, --autonomous, --dry-run)
           browser   Drive a browser: navigate, snapshot (refs), click/fill/press, act/extract
           search    Search recorded history
-          mcp       Serve recorded context over MCP on stdio
+          mcp       Serve context over stdio [--computer-use] [--config <file>]
                     (--computer-use also lets the client see the screen and
                      drive the mouse and keyboard; see docs/manual section 7)
           auth      Store a provider API key in the keychain
