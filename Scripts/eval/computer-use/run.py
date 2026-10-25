@@ -154,6 +154,16 @@ def grade(state, answer, trace, mode):
     return {"passed": all(checks.values()), "checks": checks}
 
 
+def summarize(trials, requested):
+    passed = sum(t["status"] == "passed" for t in trials)
+    scored = sum(t["status"] in {"passed", "failed"} for t in trials)
+    status = ("interrupted" if any(t["status"] == "interrupted" for t in trials) else
+              "blocked" if any(t["status"] == "blocked" for t in trials) or len(trials) != requested else
+              "passed" if passed == requested else "failed")
+    return {"status": status, "passed_trials": passed, "scored_trials": scored,
+            "success_rate": passed / requested if status in {"passed", "failed"} else None}
+
+
 def validate_action(args, width, height):
     # The benchmark is confined to its opaque native fixture, with no shell,
     # browser, filesystem tools, global shortcuts, or held input states.
@@ -400,12 +410,7 @@ def main():
                 print(f"{args.mode} trial {index + 1}/{args.trials}: {result['status']}", flush=True)
                 if result["status"] in {"blocked", "interrupted"}:
                     break
-        passed = sum(t["status"] == "passed" for t in report["trials"])
-        report["passed_trials"] = passed
-        report["success_rate"] = passed / args.trials
-        report["status"] = ("interrupted" if any(t["status"] == "interrupted" for t in report["trials"]) else
-                            "passed" if passed == args.trials else
-                            "blocked" if any(t["status"] == "blocked" for t in report["trials"]) else "failed")
+        report.update(summarize(report["trials"], args.trials))
         exit_code = {"passed": 0, "failed": 1, "blocked": 2, "interrupted": 130}[report["status"]]
     except (Blocked, OSError, subprocess.SubprocessError) as error:
         report["error"] = str(error)

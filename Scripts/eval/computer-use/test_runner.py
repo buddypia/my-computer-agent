@@ -59,6 +59,16 @@ class OracleTests(unittest.TestCase):
         self.assertTrue(runner.grade(self.state, "", self.trace, "smoke")["passed"])
         self.assertFalse(self.grade(answer="")["passed"])
 
+    def test_incomplete_runs_do_not_report_a_model_success_rate(self):
+        for results in [["blocked"], ["passed", "blocked"], ["interrupted"], ["passed"]]:
+            report = runner.summarize([{"status": status} for status in results], 3)
+            self.assertIsNone(report["success_rate"])
+            self.assertNotEqual(report["status"], "passed")
+        report = runner.summarize([{"status": "passed"}, {"status": "failed"}], 2)
+        self.assertEqual(report["success_rate"], 0.5)
+        self.assertEqual(report["scored_trials"], 2)
+        self.assertEqual(report["status"], "failed")
+
 
 class BoundaryTests(unittest.TestCase):
     def test_abort_focus_identity_and_display_changes_stop_the_runner(self):

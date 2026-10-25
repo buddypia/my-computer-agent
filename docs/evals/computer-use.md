@@ -73,6 +73,8 @@ smokeは意図的に座標と注文コードを使うので、agent成功率と�
 ## 証拠と終了コード
 
 `report.json` にmode、課題の範囲、モデルID、要求試行数、各試行の結果、成功率を保存する。
+blocked・中断・試行不足の場合、成功率は `null` とし、0%の能力評価に読み替えない。
+`scored_trials` はpassed/failedとして採点できた試行数。全要求試行が合格した場合だけrun全体をpassedにする。
 git HEAD・dirty状態と、MCAバイナリ・runner・fixtureソース/バイナリのSHA-256も記録する。
 各trialの `result.json` に実ツール引数、経過時間、独立事後状態、最終回答、判定項目と失敗理由を保存する。
 実スクリーンショットはJPEGとして保存する。APIキーとモデルの内部思考は保存しない。

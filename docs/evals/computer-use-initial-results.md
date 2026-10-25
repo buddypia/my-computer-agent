@@ -20,12 +20,14 @@ APIのモデル一覧に対象モデルがあることを確認して指定し�
 導入中にはfixtureの前面化失敗も観測し、前面化を明示して再実行した。初期実装はfixture自身の権限を
 サーバーの権限と混同していたため、そのpreflightを廃止し、本番MCPの実結果で判定するよう修正した。
 
-採点器・プロトコルの反例を含むPythonテスト13件、MCP設定隔離のSwiftテスト3件
+採点器・プロトコルの反例を含むPythonテスト14件、MCP設定隔離のSwiftテスト3件
 （不正引数4ケースを含む）、G1ビルドはPASS。これらは実入力の成功を代替しない。
 最終結果は各コミットのCIと、ソースハッシュの一致も参照する。
 
 最終版の `final-no-input` も全7項目false・exit 1、`final-smoke` は要求3試行の最初の
 実クリックで同じAccessibility不足となりblocked・exit 2。残り2試行を成功やskipとして数えていない。
+初期reportはblockedにも `success_rate: 0` を出していた。レビュー後に、不完全なrunは
+`success_rate: null` とし、採点できた試行数を別に記録するよう変更した。
 
 次に必要なのは起動元アプリへのAccessibility許可と、smoke→agent各3試行の再実行。
 このセッションの親プロセスをcomm列だけで辿り、起動元は `/Applications/cmux.app` と確認した。

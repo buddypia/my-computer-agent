@@ -30,10 +30,13 @@ struct MCPOptions {
         if let configURL {
             // AgentConfiguration.load normally treats a missing file as a fresh
             // install. An explicit path must fail instead of opening the user DB.
-            guard FileManager.default.fileExists(atPath: configURL.path) else {
-                throw OptionsError("Explicit MCP configuration does not exist")
+            do {
+                // Read directly: calling load after an existence check could
+                // fall back to the user DB if the file disappeared between them.
+                return try JSONDecoder().decode(AgentConfiguration.self, from: Data(contentsOf: configURL))
+            } catch {
+                throw OptionsError("Cannot read explicit MCP configuration: \(error.localizedDescription)")
             }
-            return try AgentConfiguration.load(from: configURL)
         }
         return (try? AgentConfiguration.load()) ?? AgentConfiguration()
     }

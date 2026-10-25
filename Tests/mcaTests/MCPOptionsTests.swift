@@ -34,5 +34,7 @@ struct MCPOptionsTests {
         #expect(!options.computerUse)
         #expect(!loaded.mcpAllowDangerousTools)
         #expect(loaded.isExcluded(bundleID: nil, windowTitle: "acceptance exclusion"))
+        try Data("not JSON".utf8).write(to: url)
+        #expect(throws: MCPOptions.OptionsError.self) { try options.configuration() }
     }
 }
