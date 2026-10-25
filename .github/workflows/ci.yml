@@ -34,6 +34,12 @@ jobs:
           sw_vers
           swift --version
 
+      - name: Live acceptance harness (oracle tests and fixture compile only)
+        run: |
+          python3 -B Scripts/eval/computer-use/test_runner.py
+          fixture_dir=$(mktemp -d)
+          swiftc -swift-version 6 Scripts/eval/computer-use/Fixture.swift -o "$fixture_dir/fixture"
+
       # Restored from the newest main run (branches can read the default branch's caches) and saved only
       # by main, under a key per commit: a key that never changes is never saved again, which left every
       # run compiling all of its own modules on top of a stale .build. The path is the same on every

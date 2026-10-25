@@ -65,5 +65,6 @@ PLAN.md
 # --- end agent harness bundle ---
 
 # Local tool artifacts
+/artifacts/computer-use/
 .playwright-cli/
 .wrangler/

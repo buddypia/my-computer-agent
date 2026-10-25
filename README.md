@@ -497,7 +497,7 @@ MyComputerAgent is built on a strict **Zero-Trust, Local-First** security and pr
 swift test
 ```
 
-**354 tests in 48 suites**, verifying every layer:
+The suite checks contracts and regressions across the layers:
 
 - **Contract tests.** `ExecutorContract` is one suite of assertions run against
   both the scripted fake *and*, when credentials are present, the live Gemini,
@@ -522,6 +522,14 @@ swift test
 
 Live-provider tests skip without an API key rather than falling back to mocks,
 because a mocked HTTP layer only proves our encoder matches our decoder.
+
+Computer Use capability is measured separately by the [live native acceptance
+runner](docs/evals/computer-use.md): a real AppKit form, the shipping stdio MCP
+server, real input, and an optional real vision model. It grades actual saved
+state and a receipt generated only after a successful save. Unit tests and
+offline E2E passes do not establish live desktop capability. The live runner
+requires `--live`, records permission failures as blocked, and keeps smoke and
+model scores separate.
 
 ---
 

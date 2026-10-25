@@ -48,7 +48,10 @@
       "lesson": {
         "cue": "hook がリポジトリの位置や相対パスを解決する必要があり、他の hook やゲートと並走しうる、または linked worktree の中で呼ばれうる",
         "lesson": ".cli/hooks/harness-lint-guard.mjs と同じく、hook ではリポジトリを `.git` まで親を辿って見つけ、パスはペイロードの cwd から解決する。git の spawn や CLAUDE_PROJECT_DIR に頼ると、解決の失敗が素通し（fail-open）になる",
-        "evidence": [1, 2],
+        "evidence": [
+          1,
+          2
+        ],
         "confidence": "medium（同じ hook の 2 件の修正と回帰テストが支える。他の hook では未確認）"
       }
     },
@@ -73,7 +76,10 @@
       "lesson": {
         "cue": "並列 AI セッションが複数の worktree で同時に hook や検証ゲート（Scripts/gate.sh, .cli/_cli-dispatch.mjs）を走らせる",
         "lesson": ".cli/_cli-dispatch.mjs では同一イベントの複数 hook を 1 つの Node VM に束ね、Scripts/gate.sh では pass キャッシュと `<main>/.tmp/agent-scratchpad` の共有スタンプを先に確認して未変更サブシステムのプロセス起動を省く",
-        "evidence": [1, 2],
+        "evidence": [
+          1,
+          2
+        ],
         "confidence": "high（実測の hook タイムアウト解消と gate-g0 / check.test.mjs の単体テストで確認）"
       }
     },
@@ -98,9 +104,26 @@
       "lesson": {
         "cue": "ハーネス補助スクリプト（.claude/scripts/worktree-new.mjs, .claude/scripts/lib/pre-ship-steps.mjs）に状態書き込みや新しい分岐を足すとき",
         "lesson": ".claude/scripts/worktree-new.mjs の非 dryRun 経路は check.test.mjs で直接呼び出し、.claude/scripts/lib/pre-ship-steps.mjs の recordAnswer は読み取り側と同じ normalizeApproval を書き込み境界で検証する",
-        "evidence": [1, 2],
+        "evidence": [
+          1,
+          2
+        ],
         "confidence": "high（実機の `make wt.new` 成功と pre-ship-steps.test.mjs / check.test.mjs の単体テストで確認）"
       }
+    },
+    {
+      "id": "HX-005",
+      "at": "2026-10-25",
+      "change": "feature/live-computer-eval",
+      "edits": [
+        {
+          "component": "Scripts/eval/computer-use/run.py",
+          "change": "模擬操作と別に、本番stdio MCP・独立AppKit fixture・実モデル・事後状態の採点器を追加した",
+          "observed": "初回実機で本番撮影は成功し、smokeと実Geminiの入力はAccessibility不足でblocked。no-inputは全7項目falseでexit 1。採点器10testsはPASS。記録 docs/evals/computer-use-initial-results.md。実入力成功は未観測で、複数componentを同時導入した1回の初回診断である",
+          "verdict": "confounded"
+        }
+      ],
+      "lesson": null
     }
   ]
 }
