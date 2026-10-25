@@ -18,6 +18,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
     var attempts = 0
     var edits = 0
     var clicks = 0
+    var aborted = false
     var escapeMonitor: Any?
     var layout = Int.random(in: 0...2)
 
@@ -36,7 +37,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
         let view = NSView(frame: CGRect(origin: .zero, size: screen.frame.size))
         window.contentView = view
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 { NSApp.terminate(nil); return nil }
+            if event.keyCode == 53 { self.abort(); return nil }
             return event
         }
         let x = max(60, (view.bounds.width - 650) / 2) + CGFloat(layout * 20)
@@ -82,6 +83,16 @@ final class Fixture: NSObject, NSApplicationDelegate {
 
     @objc func edited() { edits += 1 }
     @objc func confirmed() { clicks += 1 }
+    func abort() {
+        aborted = true
+        field.isEnabled = false
+        confirm.isEnabled = false
+        save.isEnabled = false
+        window.makeFirstResponder(nil)
+        receiptLabel.stringValue = "Stopping — waiting for the runner."
+        // Keep the opaque window up until the runner stops its MCP process.
+        // Closing it during an in-flight type could send remaining keys elsewhere.
+    }
     @objc func saveOrder() {
         attempts += 1
         guard field.stringValue == order, confirm.state == .on, saves == 0 else {
@@ -104,6 +115,8 @@ final class Fixture: NSObject, NSApplicationDelegate {
         return ["run_id": runID, "pid": ProcessInfo.processInfo.processIdentifier,
                 "frontmost": NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
                 "visible": window.isVisible, "width": window.frame.width, "height": window.frame.height,
+                "covers_display": window.frame.size == CGDisplayBounds(CGMainDisplayID()).size && window.frame.origin == .zero,
+                "aborted": aborted,
                 "accessibility": AXIsProcessTrusted(), "screen_recording": CGPreflightScreenCaptureAccess(),
                 "order": order, "text": field.stringValue, "confirmed": confirm.state == .on,
                 "saved_text": savedText, "saves": saves, "attempts": attempts, "edits": edits,
@@ -130,7 +143,7 @@ final class Fixture: NSObject, NSApplicationDelegate {
 final class AcceptanceWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
-    override func cancelOperation(_ sender: Any?) { NSApp.terminate(nil) }
+    override func cancelOperation(_ sender: Any?) { (NSApp.delegate as? Fixture)?.abort() }
 }
 
 let app = NSApplication.shared

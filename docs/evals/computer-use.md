@@ -47,7 +47,9 @@ python3 -B Scripts/eval/computer-use/run.py --live --mode no-input --trials 1 \
 CLIは `--mca <binary>` で検証対象を指定できる。対象バイナリは `mcp --config <file>` に対応している必要がある。
 
 実行中は不透明な専用ウィンドウが主ディスプレイを覆う。他の作業と並行して実行しない。
-Esc、Ctrl+C、前面アプリの変化で中断する。fixtureは240秒で自動終了し、runnerは自分が起動した
+Escで中断を要求し、Ctrl+Cでrunnerを中断できる。モデルのAPI応答待ち中のEscは次の観測時に処理する。
+Esc後も専用画面を保ち、MCP停止後に閉じることで、処理中の入力が背後へ漏れるのを避ける。
+前面アプリの変化でも中断する。fixtureは240秒で自動終了し、runnerは自分が起動した
 プロセスだけを回収する。既存アプリ・ブラウザタブを終了しない。
 試験用configとDBは証拠ディレクトリ内に作り、通常の設定・履歴DBは変更しない。
 

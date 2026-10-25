@@ -61,6 +61,17 @@ class OracleTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_abort_focus_identity_and_display_changes_stop_the_runner(self):
+        state = {"run_id": "one", "pid": 123, "frontmost": True, "visible": True,
+                 "covers_display": True, "aborted": False}
+        runner.check_fixture(state, state)
+        with self.assertRaises(KeyboardInterrupt):
+            runner.check_fixture(state, state | {"aborted": True})
+        for changes in [{"frontmost": False}, {"visible": False}, {"covers_display": False},
+                        {"run_id": "other"}, {"pid": 456}]:
+            with self.subTest(changes=changes), self.assertRaises(RuntimeError):
+                runner.check_fixture(state, state | changes)
+
     def test_dimensions_come_from_image_bytes_and_bad_images_fail_closed(self):
         jpeg = bytes.fromhex("FFD8FFE000044142FFC0001108035E053503011100021101031101FFD9")
         self.assertEqual(runner.jpeg_dimensions(jpeg), (1333, 862))

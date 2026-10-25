@@ -177,6 +177,15 @@ def validate_action(args, width, height):
         raise ValueError("Wait must be between zero and two seconds")
 
 
+def check_fixture(expected, observed):
+    if observed.get("aborted"):
+        raise KeyboardInterrupt
+    if (observed.get("run_id") != expected.get("run_id") or
+            observed.get("pid") != expected.get("pid") or
+            not all(observed.get(flag) is True for flag in ("frontmost", "visible", "covers_display"))):
+        raise RuntimeError("Fixture lost foreground/identity/display coverage; refusing further capture or input")
+
+
 def gemini_turn(model, key, contents, schema, deadline):
     body = {"systemInstruction": {"parts": [{"text": "Operate the visible native test application. "
              "Use screenshots to determine positions and verify results. " + GOAL}]},
@@ -214,8 +223,7 @@ def trial(args, fixture_binary, folder):
         initial = native.receive(deadline)
         state = initial
         result["initial"] = initial
-        if not initial.get("frontmost"):
-            raise Blocked("Native fixture could not acquire foreground; no capture or input was attempted")
+        check_fixture(initial, initial)
         # TCC is attributed per responsible process/code identity. The fixture
         # does not synthesize input: its trust flag cannot preflight the server.
         # Exercise the actual MCP path and classify its permission error instead.
@@ -223,8 +231,7 @@ def trial(args, fixture_binary, folder):
         def observe():
             native.send("status")
             observed = native.receive(deadline)
-            if observed.get("run_id") != initial["run_id"] or not observed.get("frontmost") or not observed.get("visible"):
-                raise RuntimeError("Fixture lost foreground/identity; refusing further capture or input")
+            check_fixture(initial, observed)
             return observed
 
         # No user configuration, context DB, or browser session is modified.
