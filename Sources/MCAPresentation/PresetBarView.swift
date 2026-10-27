@@ -105,7 +105,7 @@ public struct PresetBarView: View {
 
             Spacer(minLength: 4)
 
-            Text(localized("Quick Presets:", "プリセット選択で遂行:", "프리셋 실행:"))
+            Text(localized("Run on this target:", "この対象にワンクリック実行:", "이 대상에 바로 실행:"))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -132,7 +132,7 @@ public struct PresetBarView: View {
     private var targetTitle: String {
         if !state.watchItems.isEmpty {
             let count = state.watchItems.filter(\.isEnabled).count
-            return localized("\(count) screens watched", "\(count) 画面を監視中", "\(count)개 화면 감시 중")
+            return localized("\(count) screens watched", "\(count) 画面を見守り中", "\(count)개 화면 지켜보는 중")
         }
         if let subject = state.watchTarget.subjectName {
             return subject
@@ -164,9 +164,9 @@ public struct PresetBarView: View {
             }
             .buttonStyle(.plain)
             .help(localized(
-                "\(role.effectiveTaskPrompt)\n\nClick to execute once on target (one-shot).",
-                "\(role.effectiveTaskPrompt)\n\nクリックで対象画面に1回実行（一発）。",
-                "\(role.effectiveTaskPrompt)\n\n클릭하여 대상 화면에 1회 실행 (단발)."
+                "\(role.effectiveTaskPrompt)\n\nClick to run once on the target.",
+                "\(role.effectiveTaskPrompt)\n\nクリックで対象の画面に1回実行します。",
+                "\(role.effectiveTaskPrompt)\n\n클릭하면 대상 화면에 1회 실행합니다."
             ))
 
             Menu {
@@ -174,7 +174,7 @@ public struct PresetBarView: View {
                     execute(role)
                 } label: {
                     Label(
-                        localized("Execute Once (One-shot)", "今すぐ1回実行（一発）", "지금 1회 실행 (단발)"),
+                        localized("Run Once Now", "今すぐ1回実行", "지금 1회 실행"),
                         systemImage: "play.fill"
                     )
                 }
@@ -183,7 +183,7 @@ public struct PresetBarView: View {
                     applyToWatch(role)
                 } label: {
                     Label(
-                        localized("Set as Continuous Watch Objective", "この目的で継続見守りに設定", "이 목적으로 지속 지켜보기 설정"),
+                        localized("Watch With This Preset", "このプリセットで見守る", "이 프리셋으로 지켜보기"),
                         systemImage: "eye.fill"
                     )
                 }
@@ -211,6 +211,9 @@ public struct PresetBarView: View {
                     .padding(.vertical, 4)
             }
             .menuStyle(.borderlessButton)
+            // The label is already a chevron; the system's own indicator drew a
+            // second one beside it.
+            .menuIndicator(.hidden)
             .fixedSize()
         }
         .foregroundStyle(isSelected ? Color.white : Color.primary)
@@ -224,7 +227,7 @@ public struct PresetBarView: View {
                 execute(role)
             } label: {
                 Label(
-                    localized("Execute Once (One-shot)", "今すぐ1回実行（一発）", "지금 1회 실행 (단발)"),
+                    localized("Run Once Now", "今すぐ1回実行", "지금 1회 실행"),
                     systemImage: "play.fill"
                 )
             }
@@ -233,7 +236,7 @@ public struct PresetBarView: View {
                 applyToWatch(role)
             } label: {
                 Label(
-                    localized("Set as Continuous Watch Objective", "この目的で継続見守りに設定", "이 목적으로 지속 지켜보기 설정"),
+                    localized("Watch With This Preset", "このプリセットで見守る", "이 프리셋으로 지켜보기"),
                     systemImage: "eye.fill"
                 )
             }

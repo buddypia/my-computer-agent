@@ -188,9 +188,9 @@ public struct HUDView: View {
                 .foregroundStyle(.orange)
 
             Text(localized(
-                "Start a new conversation?",
-                "新しい会話しますか？",
-                "새 대화를 시작할까요?"))
+                "Erase this conversation and start over?",
+                "この会話を消去して新しく始めますか？",
+                "이 대화를 지우고 새로 시작할까요?"))
                 .font(.system(size: 11))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +200,7 @@ public struct HUDView: View {
             Button {
                 showNewConversationConfirm = false
             } label: {
-                Text(localized("No", "いいえ", "아니요"))
+                Text(localized("Cancel", "キャンセル", "취소"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -214,7 +214,7 @@ public struct HUDView: View {
                     state.clearChat()
                 }
             } label: {
-                Text(localized("Yes", "はい", "예"))
+                Text(localized("Erase", "消去", "지우기"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)

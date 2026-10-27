@@ -160,7 +160,7 @@ extension ChatMessage {
             } else if let originTarget {
                 return "\(localized("From", "対象", "대상")): \(originTarget)"
             }
-            return localized("From your screen", "画面を見て", "화면을 보고")
+            return localized("From your screen", "画面から", "화면에서")
         case .failure: return localized("Failed", "失敗", "실패")
         case .notice:
             if let title, !title.isEmpty { return title }
