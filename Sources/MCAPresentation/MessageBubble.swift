@@ -68,9 +68,12 @@ public struct MessageBubble: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
+                    // `Color.secondary`, not `.tertiary`: inside the row's tint,
+                    // the hierarchical style is a third of the badge colour and
+                    // the time all but disappears on a light background.
                     Text(message.timestamp, style: .time)
                         .font(.system(size: textSize - 4))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.secondary)
                 }
                 .foregroundStyle(message.tint)
             }

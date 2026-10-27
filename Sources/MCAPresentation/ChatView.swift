@@ -70,8 +70,10 @@ public struct ChatView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            objectiveControls
-            Divider()
+            if showsObjectiveControls {
+                objectiveControls
+                Divider()
+            }
             if showNewConversationConfirm {
                 confirmStrip
                 Divider()
@@ -86,57 +88,74 @@ public struct ChatView: View {
         }
     }
 
+    /// An objective only runs while the screen is being watched — started with
+    /// watching off, it stops the moment it starts. So the row appears with the
+    /// switch instead of sitting idle as a second text field above the one
+    /// questions go in, and stays while an objective is still running.
+    private var showsObjectiveControls: Bool {
+        state.watchPhase != .off || state.screenObjective?.isActive == true
+    }
+
     private var objectiveControls: some View {
         HStack(spacing: 8) {
-            TextField(localized("Screen objective", "この画面で自動的に行うこと", "화면에서 자동으로 할 작업"), text: $state.screenObjectiveText)
+            TextField(localized(
+                "Something to do automatically in the pinned window",
+                "固定したウインドウで自動的に行うこと",
+                "고정한 윈도우에서 자동으로 할 작업"),
+                text: $state.screenObjectiveText)
                 .textFieldStyle(.roundedBorder)
                 .disabled(state.screenObjective?.isActive == true || state.chatInputFocusSuppressed || state.isAwaitingApproval)
+                .onSubmit(startObjective)
             if state.screenObjective?.isActive == true {
                 Button(localized("Stop objective", "目的を停止", "목표 중지")) { state.onStopObjective?() }
             } else {
-                Button(localized("Start objective", "目的を開始", "목표 시작")) { state.onStartObjective?(state.screenObjectiveText) }
-                    .disabled(state.screenObjectiveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || state.isStreaming)
+                Button(localized("Start objective", "目的を開始", "목표 시작"), action: startObjective)
+                    .disabled(!canStartObjective)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
+    private var canStartObjective: Bool {
+        !state.screenObjectiveText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !state.isStreaming
+    }
+
+    private func startObjective() {
+        guard canStartObjective, state.screenObjective?.isActive != true else { return }
+        state.onStartObjective?(state.screenObjectiveText)
+    }
+
     // MARK: - Toolbar
 
+    /// Two rows by what the controls do, not by what fits: the first acts once
+    /// (look, talk) or tidies up, the second is the watch switch beside the two
+    /// settings that only mean anything while it is on — what to watch and how
+    /// often. Stopping a running answer is beside the field it came from.
     private var toolbar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 captureMenu
-                watchButton
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 8) {
-                pinButton
-                intervalMenu
+                voiceControl
 
                 Spacer(minLength: 8)
 
-                if state.isStreaming {
-                    Button(localized("Stop", "停止", "중지")) {
-                        state.onStopTask?()
-                    }
-                    .keyboardShortcut(.escape, modifiers: [])
-                    .help(localized("Stop the current task (Esc)", "現在の処理を停止（Esc）", "현재 작업 중지 (Esc)"))
-                }
-
                 if !state.problems.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.orange)
                         .help(state.problems
                             .map { "\($0.0.displayName): \($0.1.localizedDisplayText)" }
                             .joined(separator: "\n"))
                 }
 
-                voiceControl
-
                 eraseButton
+            }
+            HStack(spacing: 8) {
+                watchButton
+                pinButton
+                intervalMenu
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 14)
@@ -203,6 +222,7 @@ public struct ChatView: View {
         .disabled(state.messages.isEmpty && !state.isStreaming)
     }
 
+
     // MARK: - Erasing
 
     /// Asks whether to start over with a fresh conversation.
@@ -213,9 +233,9 @@ public struct ChatView: View {
                 .foregroundStyle(.orange)
 
             Text(localized(
-                "Start a new conversation?",
-                "新しい会話しますか？",
-                "새 대화를 시작할까요?"))
+                "Erase this conversation and start over?",
+                "この会話を消去して新しく始めますか？",
+                "이 대화를 지우고 새로 시작할까요?"))
                 .font(.system(size: 11))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -225,7 +245,7 @@ public struct ChatView: View {
             Button {
                 showNewConversationConfirm = false
             } label: {
-                Text(localized("No", "いいえ", "아니요"))
+                Text(localized("Cancel", "キャンセル", "취소"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -235,7 +255,7 @@ public struct ChatView: View {
                 showNewConversationConfirm = false
                 if let onClear { onClear() } else { state.clearChat() }
             } label: {
-                Text(localized("Yes", "はい", "예"))
+                Text(localized("Erase", "消去", "지우기"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
@@ -297,9 +317,16 @@ public struct ChatView: View {
             """))
     }
 
+    /// The switch's name, which the empty thread's hint also quotes — the two
+    /// drifted apart once and the hint sent people looking for a button that
+    /// was not there.
+    private var watchOffTitle: String {
+        localized("Watch my screen", "画面を見守る", "화면 지켜보기")
+    }
+
     private var watchTitle: String {
         switch state.watchPhase {
-        case .off: return localized("Continuous Watch", "画面を見守る", "화면 지켜보기")
+        case .off: return watchOffTitle
         case .watching: return localized("Watching", "見守り中", "보는 중")
         case .looking: return localized("Looking…", "確認中…", "확인 중…")
         }
@@ -332,9 +359,9 @@ public struct ChatView: View {
                 if isMultiActive {
                     let activeCount = state.watchItems.filter(\.isEnabled).count
                     Text(localized(
-                        "\(activeCount) watched",
-                        "\(activeCount) 画面監視中",
-                        "\(activeCount)개 화면 감시 중"))
+                        "\(activeCount) screens watched",
+                        "\(activeCount) 画面を見守り中",
+                        "\(activeCount)개 화면 지켜보는 중"))
                         .font(.system(size: 11, weight: .medium))
                 } else if let subject = state.watchTarget.subjectName {
                     Text(subject)
@@ -613,18 +640,18 @@ public struct ChatView: View {
             Text(localized(
                 """
                 The agent already has the text from the windows you have been in. \
-                Turn on “Watch my screen” and it will look every so often on its \
+                Turn on “\(watchOffTitle)” and it will look every so often on its \
                 own, and say something only when it spots a mistake, an error or \
                 a faster way.
                 """,
                 """
                 これまで開いていたウインドウの文字は、すでにエージェントが持っています。\
-                「画面を見て助言」をオンにすると、自分でときどき画面を見にいき、\
+                「\(watchOffTitle)」をオンにすると、自分でときどき画面を見にいき、\
                 間違い・エラー・もっと速いやり方を見つけたときだけ話しかけます。
                 """,
                 """
                 지금까지 열어 둔 윈도우의 글자는 에이전트가 이미 가지고 있습니다. \
-                ‘화면을 보고 조언’을 켜면 스스로 가끔 화면을 살피고, \
+                ‘\(watchOffTitle)’을 켜면 스스로 가끔 화면을 살피고, \
                 틀린 곳·오류·더 빠른 방법을 발견했을 때만 말을 겁니다.
                 """))
                 .font(.system(size: 11))
@@ -763,17 +790,31 @@ public struct ChatView: View {
                     .focused($inputFocused)
                     .onSubmit(submit)
 
-                // Deliberately not `.keyboardShortcut(.return)`: the field's own
-                // `onSubmit` already fires on Return, and binding both sends the
-                // question twice.
-                Button(action: submit) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 18))
+                // While an answer is running the send button is the stop
+                // button: it is where the pointer already is, and sending is
+                // impossible until then anyway.
+                if state.isStreaming {
+                    Button { state.onStopTask?() } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 18))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .help(localized("Stop the current task (Esc)", "現在の処理を停止（Esc）", "현재 작업 중지 (Esc)"))
+                    .accessibilityLabel(localized("Stop", "停止", "중지"))
+                } else {
+                    // Deliberately not `.keyboardShortcut(.return)`: the field's own
+                    // `onSubmit` already fires on Return, and binding both sends the
+                    // question twice.
+                    Button(action: submit) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 18))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help(localized("Send message (Return)", "送信 (Return)", "전송 (Return)"))
+                    .accessibilityLabel(localized("Send message", "送信", "전송"))
                 }
-                .buttonStyle(.plain)
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || state.isStreaming)
-                .help(localized("Send message (Return)", "送信 (Return)", "전송 (Return)"))
-                .accessibilityLabel(localized("Send message", "送信", "전송"))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)

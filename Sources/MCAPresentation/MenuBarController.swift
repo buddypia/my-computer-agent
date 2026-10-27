@@ -396,7 +396,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         guard !state.messages.isEmpty || state.isStreaming else { return }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = localized("Start a new conversation?", "新しい会話しますか？", "새 대화를 시작할까요?")
+        alert.messageText = localized("Start a new conversation?", "新しい会話を始めますか？", "새 대화를 시작할까요?")
         alert.informativeText = localized(
             "All messages will be deleted. This cannot be undone.",
             "すべてのメッセージが消去されます。元には戻せません。",
