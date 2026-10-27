@@ -130,8 +130,8 @@ public struct ChatView: View {
 
     /// Two rows by what the controls do, not by what fits: the first acts once
     /// (look, talk) or tidies up, the second is the watch switch beside the two
-    /// settings that only mean anything while it is on — what to watch and how
-    /// often. Stopping a running answer is beside the field it came from.
+    /// settings that shape it — what to watch and how often. Stopping a running
+    /// answer is beside the field it came from.
     private var toolbar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
@@ -221,7 +221,6 @@ public struct ChatView: View {
         .accessibilityLabel(localized("Start a new conversation", "新しい会話", "새 대화"))
         .disabled(state.messages.isEmpty && !state.isStreaming)
     }
-
 
     // MARK: - Erasing
 
