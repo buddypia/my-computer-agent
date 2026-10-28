@@ -15,7 +15,7 @@
  *     Not auto-created on worktree-init — presence signals "RETURN drafted" (R-CM-034 Rule 2).
  *   - Idempotent — preserves existing PLAN.md / handoff.md without overwriting in-progress documents.
  *
- * Pure helper module with unit tests in `tests/unit/worktree-plan-template.test.mjs`.
+ * Tests: `Scripts/harness/tests/worktree-plan-template.test.mjs`.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -28,7 +28,7 @@ import {
 import { renderTemplateFromSections } from '../../../.cli/lib/section-template-renderer.mjs';
 
 /**
- * Default 9-section PLAN.md structure used by harness (JS constant — Option C, no live-path file I/O).
+ * Default PLAN.md structure used by harness (JS constant, no live-path file I/O).
  * Customizable transplant version: data/registry/transplant-templates/worktree-plan.generic.json
  * (harness does not read this JSON directly — target projects customize and wire it).
  */
@@ -41,6 +41,10 @@ export const DEFAULT_PLAN_SECTIONS = [
   {
     heading: '## Why',
     blocks: [{ type: 'static', lines: ['(Required — Why is this change necessary now? Existing gaps/issues)'] }],
+  },
+  {
+    heading: '## Context sources',
+    blocks: [{ type: 'static', lines: ['(Request/issue, relevant repo-map entries, files and observed failures used for this task; load only what is needed)'] }],
   },
   {
     heading: '## Acceptance (Frozen at kickoff — record rationale in Decisions if modified)',
@@ -95,6 +99,18 @@ export const DEFAULT_PLAN_SECTIONS = [
   },
   { heading: '## Outstanding', blocks: [{ type: 'static', lines: ['- None (initial state)'] }] },
   {
+    heading: '## Recovery',
+    blocks: [{ type: 'static', lines: [
+      '(Before a handoff: current step, exact next command, live process/session handle if any, failed attempts and retry limit, unresolved approvals, rollback commit. Revalidate external state before resuming; never replay a side effect from a summary alone.)',
+    ] }],
+  },
+  {
+    heading: '## Change receipt',
+    blocks: [{ type: 'static', lines: [
+      '(At completion: artifact/PR and commit, verification commands and observed results, remaining gaps, approval source and rollback point. Record model/cost/retry counts only when measured; otherwise unknown. Preserve the receipt in the PR or a tracked task report before worktree cleanup.)',
+    ] }],
+  },
+  {
     heading: '## Decisions',
     blocks: [{ type: 'static', lines: ['- (Required — Distinguish AI default decisions from explicit user decisions)'] }],
   },
@@ -141,7 +157,14 @@ function ensureMailboxFile(worktreePath, options, resolvePathFn, renderFn) {
     return { created: false, path };
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, renderFn(branch, { createdAt: options.createdAt }), 'utf-8');
+  // Another session may create its working memory after the existence check.
+  // Exclusive creation preserves that session's state instead of truncating it.
+  try {
+    writeFileSync(path, renderFn(branch, { createdAt: options.createdAt }), { encoding: 'utf-8', flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST') return { created: false, path };
+    throw error;
+  }
   return { created: true, path };
 }
 
