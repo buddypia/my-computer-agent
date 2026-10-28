@@ -51,7 +51,8 @@ export function summarize(rows, taskIDs, variants = VARIANTS, runs = 2) {
       return [variant, {
         passed: values.filter((r) => r.passed).length,
         total: values.length,
-        meanSeconds: values.reduce((s, r) => s + r.seconds, 0) / values.length,
+        // Incremental mean avoids overflowing the sum of valid finite durations.
+        meanSeconds: values.reduce((mean, r, i) => mean + (r.seconds - mean) / (i + 1), 0),
         meanToolCalls: values.reduce((s, r) => s + r.tools.length, 0) / values.length,
         mixedTasks: grid.filter((r) => r.variants[variant].mixed).map((r) => r.task),
       }];

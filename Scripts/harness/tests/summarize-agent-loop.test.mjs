@@ -41,3 +41,14 @@ test('rejects contradictory pass claims, invalid metrics and unexpected cells', 
   assert.throws(() => summarize([], [], ['folded'], 2), /manifest/);
   assert.throws(() => summarize([], ['a'], ['folded'], NaN), /manifest/);
 });
+
+test('finite durations retain a finite numeric mean even when their sum would overflow', () => {
+  const rows = [1, 2].map((n) => ({ ...row('a', 'folded', n, true), seconds: Number.MAX_VALUE }));
+  const mean = () => summarize(rows, ['a'], ['folded'], 2).totals.folded.meanSeconds;
+  assert.equal(mean(), Number.MAX_VALUE);
+  assert.equal(JSON.parse(JSON.stringify({ mean: mean() })).mean, Number.MAX_VALUE);
+  rows[1].seconds = 0;
+  assert.equal(mean(), Number.MAX_VALUE / 2);
+  rows.reverse();
+  assert.equal(mean(), Number.MAX_VALUE / 2);
+});
