@@ -2,6 +2,8 @@
 
 エージェント（Claude Code / Codex CLI など）がこのリポジトリで作業するときの規約。
 
+作業の入口と永続 PLAN の場所は [プロジェクト地図](docs/harness/project-map.md)。必要な行だけ辿る。
+
 ## 品質ゲート
 
 コードに触れた作業は、応答を終える前に必ずゲートを通す（Stop フックが G1 まで自動で走らせる）。
@@ -105,6 +107,7 @@ triage・routing・offline fallback（`TypeSafeDecisionEngine` / `RequestRoute`�
 - When writing or changing a Swift test that bounds latency, a watchdog, wall-clock or memory, read .agents/skills/isolated-timing-tests/SKILL.md and follow it.
 - When a feature needs a typed AI judgment (routing, ranking, extraction, verification) instead of prompt-and-parse, read .agents/skills/typesafe-ai/SKILL.md and follow it.
 - When adding or changing agent instructions (AGENTS.md, a skill, a hook, a helper script, a subagent), or the same tool error recurs across sessions, read .agents/skills/harness-design/SKILL.md and follow it.
+- When reviewing cross-session failure patterns or stale project memory, read .agents/skills/memory-curation/SKILL.md and follow it.
 
 ## その他
 
