@@ -255,10 +255,28 @@ public struct AccessibilityInspector: Sendable {
         var complete: Bool
     }
 
+    /// Which limits stopped a walk. Logged by name, so how often each one binds can be
+    /// measured before a limit is changed (for example the depth limit on web wrappers).
+    struct WalkLimits: OptionSet, CustomStringConvertible {
+        let rawValue: Int
+        static let depth = WalkLimits(rawValue: 1 << 0)
+        static let nodes = WalkLimits(rawValue: 1 << 1)
+        static let candidates = WalkLimits(rawValue: 1 << 2)
+        static let time = WalkLimits(rawValue: 1 << 3)
+        static let unreadable = WalkLimits(rawValue: 1 << 4)
+
+        var description: String {
+            let names: [(WalkLimits, String)] = [(.depth, "depth"), (.nodes, "nodes"), (.candidates, "candidates"),
+                                                 (.time, "time"), (.unreadable, "unreadable")]
+            let hit = names.filter { contains($0.0) }.map(\.1)
+            return hit.isEmpty ? "none" : hit.joined(separator: ",")
+        }
+    }
+
     private func candidates(in window: AXUIElement, bounds windowBounds: CGRect?) -> WindowObservation {
         var candidates: [UIElementCandidate] = []
         var visitedCount = 0
-        var cut = false
+        var limits: WalkLimits = []
         let started = ContinuousClock.now
         let deadline = started + Self.traversalBudget
 
@@ -270,7 +288,7 @@ public struct AccessibilityInspector: Sendable {
                 depth: 0,
                 deadline: deadline,
                 visited: &visitedCount,
-                cut: &cut,
+                limits: &limits,
                 into: &candidates
             )
         }
@@ -281,18 +299,18 @@ public struct AccessibilityInspector: Sendable {
             deadline: deadline,
             skipping: webArea,
             visited: &visitedCount,
-            cut: &cut,
+            limits: &limits,
             into: &candidates
         )
         let elapsed = ContinuousClock.now - started
-        if elapsed > .seconds(1) || cut {
-            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates, limit \(cut ? "hit" : "not hit", privacy: .public))")
+        if elapsed > .seconds(1) || !limits.isEmpty {
+            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates, limits hit: \(limits.description, privacy: .public))")
         }
 
         // Sanitize sensitive info and cap to maxCandidates
         let sanitized = privacyFilter.sanitizeCandidates(candidates)
         return WindowObservation(candidates: Array(sanitized.prefix(maxCandidates)),
-                                 complete: !cut && sanitized.count <= maxCandidates)
+                                 complete: limits.isEmpty && sanitized.count <= maxCandidates)
     }
 
     /// Asynchronously inspects the active/focused window, falling back to OCR candidates
@@ -464,13 +482,14 @@ public struct AccessibilityInspector: Sendable {
         deadline: ContinuousClock.Instant,
         skipping: AXUIElement? = nil,
         visited: inout Int,
-        cut: inout Bool,
+        limits: inout WalkLimits,
         into output: inout [UIElementCandidate]
     ) {
         if let skipping, CFEqual(element, skipping) { return }
-        guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
-              Self.walkMayContinue(until: deadline) else {
-            cut = true
+        let hit = Self.limitsHit(depth: depth, visited: visited, collected: output.count,
+                                 maxCollected: maxCandidates * 2, timeLeft: Self.walkMayContinue(until: deadline))
+        guard hit.isEmpty else {
+            limits.formUnion(hit)
             return
         }
         visited += 1
@@ -514,7 +533,7 @@ public struct AccessibilityInspector: Sendable {
 
         // Recurse into children
         guard Self.walkMayContinue(until: deadline) else {
-            cut = true
+            limits.insert(.time)
             return
         }
         var childrenValue: CFTypeRef?
@@ -523,7 +542,7 @@ public struct AccessibilityInspector: Sendable {
               let children = (childrenValue as! CFArray) as? [AXUIElement] else {
             // A leaf answers noValue or attributeUnsupported; anything else (a timeout,
             // a failure, an element that died mid-walk) hides a subtree that may exist.
-            if childrenRead != .success, childrenRead != .noValue, childrenRead != .attributeUnsupported { cut = true }
+            if childrenRead != .success, childrenRead != .noValue, childrenRead != .attributeUnsupported { limits.insert(.unreadable) }
             return
         }
         for child in children {
@@ -534,14 +553,24 @@ public struct AccessibilityInspector: Sendable {
                 deadline: deadline,
                 skipping: skipping,
                 visited: &visited,
-                cut: &cut,
+                limits: &limits,
                 into: &output
             )
             if output.count >= (maxCandidates * 2) {
-                cut = true
+                limits.insert(.candidates)
                 return
             }
         }
+    }
+
+    /// The walk's limits: depth 16, 800 nodes, twice the candidate cap, and the time budget.
+    static func limitsHit(depth: Int, visited: Int, collected: Int, maxCollected: Int, timeLeft: Bool) -> WalkLimits {
+        var hit: WalkLimits = []
+        if depth >= 16 { hit.insert(.depth) }
+        if visited >= 800 { hit.insert(.nodes) }
+        if collected >= maxCollected { hit.insert(.candidates) }
+        if !timeLeft { hit.insert(.time) }
+        return hit
     }
 
     // MARK: - Helpers (Fallback and Legacy)

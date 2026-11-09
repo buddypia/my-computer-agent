@@ -268,3 +268,19 @@ struct AXEnabledReadTests {
         #expect(AccessibilityInspector.extractBool(from: NSNull()) == nil)
     }
 }
+
+@Suite("AX walk limits")
+struct AXWalkLimitTests {
+    @Test("each limit is reported by name, and none when the walk may continue")
+    func limitsAreNamed() {
+        let free = AccessibilityInspector.limitsHit(depth: 15, visited: 799, collected: 49, maxCollected: 50, timeLeft: true)
+        #expect(free.isEmpty && free.description == "none")
+        #expect(AccessibilityInspector.limitsHit(depth: 16, visited: 0, collected: 0, maxCollected: 50, timeLeft: true) == .depth)
+        #expect(AccessibilityInspector.limitsHit(depth: 0, visited: 800, collected: 0, maxCollected: 50, timeLeft: true) == .nodes)
+        #expect(AccessibilityInspector.limitsHit(depth: 0, visited: 0, collected: 50, maxCollected: 50, timeLeft: true) == .candidates)
+        #expect(AccessibilityInspector.limitsHit(depth: 0, visited: 0, collected: 0, maxCollected: 50, timeLeft: false) == .time)
+        let all = AccessibilityInspector.limitsHit(depth: 20, visited: 900, collected: 60, maxCollected: 50, timeLeft: false)
+            .union(.unreadable)
+        #expect(all.description == "depth,nodes,candidates,time,unreadable")
+    }
+}
