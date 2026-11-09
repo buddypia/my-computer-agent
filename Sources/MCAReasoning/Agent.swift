@@ -183,13 +183,13 @@ public actor Agent {
                 temperature: 0,
                 responseSchema: schema)
 
-            // Recorded only once a verdict came back: a failed call leaves the
-            // slice unjudged, and the next scan should try it again.
-            lastTriagedNewestID = newestID
-
             guard let json = parseJSONObject(extractJSON(from: response.text)) else {
                 return .ignore
             }
+            // Recorded only once a readable verdict came back: a failed call or
+            // a malformed reply leaves the slice unjudged, and the next scan
+            // should try it again.
+            lastTriagedNewestID = newestID
             let shouldInterrupt = json["should_interrupt"] as? Bool ?? false
             let confidence = (json["confidence"] as? Double) ?? 0
             let headline = json.string("headline") ?? ""
