@@ -573,8 +573,9 @@ public struct ClickElementTool: AgentTool {
     /// Only the candidate cap widens; the walk's depth, node and time limits stay. So only
     /// a list filled to its cap is checked again: a walk stops for candidates at twice the
     /// cap, and the privacy filter drops no role the walk keeps, so a list cut at the cap is
-    /// always full. A shorter list stopped at another limit, and a second walk would stop
-    /// at the same place.
+    /// always full. A shorter list stopped at a limit the wider cap does not move: a second
+    /// walk stops at the same depth or node count, and gets past a time budget or an
+    /// unreadable subtree only by chance. Without a reported cap (nil) it is checked again.
     static func confirmUnique(in snapshot: UIStateSnapshot, text: String, role: String?,
                               inspectorProvider: @Sendable (Int) -> any UIStateProviding) async throws {
         let limit = snapshot.candidateLimit ?? 0

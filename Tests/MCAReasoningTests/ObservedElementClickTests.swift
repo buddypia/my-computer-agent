@@ -183,6 +183,18 @@ struct ObservedElementClickTests {
         #expect(probe.requested.isEmpty)
     }
 
+    @Test("A partial observation without a reported cap is still observed again")
+    func partialWithoutCapIsObservedAgain() async {
+        let observed = partial([candidate("elem_3", label: "Reply")], limit: nil)
+        let wider = partial([candidate("elem_3", label: "Reply"), candidate("elem_41", label: "Reply")], limit: 100)
+        let probe = RecountProbe()
+        await #expect(throws: ActionAuthorizationError.staleTarget) {
+            try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                     inspectorProvider: probe.provider(wider))
+        }
+        #expect(probe.requested == [ClickElementTool.recountLimit])
+    }
+
     @Test("Observation completeness survives encoding, and older snapshots decode as unknown")
     func completenessCodable() throws {
         let encoded = try JSONEncoder().encode(partial([], complete: false))
