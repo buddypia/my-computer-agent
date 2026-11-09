@@ -28,8 +28,9 @@ struct AXPressOutcomeTests {
           arguments: [AXError.invalidUIElement, .apiDisabled, .illegalArgument])
     func refusalsAreNotDelivered(_ code: AXError) {
         // Neither may claim the app acted, nor fall back to a pointer click.
-        switch AXPressOutcome(code) {
-        case .notDelivered, .permissionDenied: break
+        switch (code, AXPressOutcome(code)) {
+        case (.apiDisabled, .permissionDenied): break
+        case (let other, .notDelivered) where other != .apiDisabled: break
         default: Issue.record("\(code.rawValue) should be reported as not delivered")
         }
     }
