@@ -50,6 +50,48 @@ struct CDPGestureTests {
             #expect(detail.contains("key Cmd+A stopped after 1 input events"))
         }
     }
+
+    /// A page whose browser never answers input events, so they stay in flight.
+    private func silentPage() async -> (CDPPage, CDPClient, FakeTransport) {
+        let transport = FakeTransport { message in
+            let id = message["id"] as? Int ?? -1
+            return (message["method"] as? String)?.hasPrefix("Input.") == true ? [] : [#"{"id":\#(id),"result":{}}"#]
+        }
+        let client = CDPClient(transport: transport)
+        await client.start()
+        return (CDPPage(client: client, targetID: "t", sessionID: "s"), client, transport)
+    }
+
+    @Test("the connection closing while the first event is in flight reports possible delivery")
+    func closedInFlightIsUncertain() async throws {
+        let (page, _, transport) = await silentPage()
+        let typing = Task { try await page.insertText("hello") }
+        for _ in 0..<2_000 where await transport.sentMethods.isEmpty {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        await transport.close()
+        do {
+            try await typing.value
+            Issue.record("expected an error")
+        } catch BrowserError.deliveryUncertain(let detail) {
+            #expect(detail.contains("typing stopped after 0 input events"))
+        }
+    }
+
+    @Test("a connection already closed refuses the event as a plain error")
+    func closedBeforeSendIsPlain() async throws {
+        let (page, client, transport) = await silentPage()
+        await transport.close()
+        for _ in 0..<2_000 where await client.state == .open {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        do {
+            try await page.insertText("hello")
+            Issue.record("expected an error")
+        } catch BrowserError.notConnected {
+        }
+        #expect(await transport.sentMethods.isEmpty)
+    }
 }
 
 private final class Counter: @unchecked Sendable {

@@ -501,17 +501,19 @@ public actor CDPPage {
 
     /// Sends one input event of `gesture`. A failure is reported as
     /// `deliveryUncertain` when the page may already have acted on part of the
-    /// gesture: an earlier event went out, or this one timed out after it was
-    /// sent. Callers must not repeat such a gesture.
+    /// gesture: an earlier event went out, or this one was sent and its answer
+    /// never came (a timeout, or the connection closing in flight). Callers must
+    /// not repeat such a gesture.
     func input(_ gesture: inout Gesture, _ method: String, _ params: JSONValue) async throws {
+        let connected = await client.state == .open
         do {
             try await send(method, params)
             gesture.sent += 1
         } catch {
-            if error is CancellationError { throw error }
-            var timedOut = false
-            if case BrowserError.timeout = error { timedOut = true }
-            guard gesture.sent > 0 || timedOut else { throw error }
+            // The browser answering with an error, or a connection that was already
+            // closed so the event was never sent, means this event did not apply.
+            let refused = error is CDPError || !connected
+            if error is CancellationError || (gesture.sent == 0 && refused) { throw error }
             throw BrowserError.deliveryUncertain(
                 "\(gesture.name) stopped after \(gesture.sent) input events (\(error.localizedDescription)), so it was not retried — take a new browser_snapshot to check before acting again")
         }

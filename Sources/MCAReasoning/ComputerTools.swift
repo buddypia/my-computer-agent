@@ -971,6 +971,8 @@ public struct TypeSafeActTool: AgentTool {
                 case .wait, .none:
                     break
                 }
+            } catch let error as CancellationError {
+                throw error
             } catch {
                 executedSummary += " (execution note: \(error.localizedDescription))"
             }
