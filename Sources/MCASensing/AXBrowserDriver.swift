@@ -351,13 +351,7 @@ public actor AXBrowserDriver: BrowserDriving {
         if scopedWindowID != nil { _ = try focusedWindow() }
         let app = try requireApp()
         func centerForRef(_ r: BrowserElementRef) throws -> CGPoint {
-            if let elem = elements[r.id], let frame = AX.frame(elem), frame.width > 0, frame.height > 0 {
-                return CGPoint(x: frame.midX, y: frame.midY)
-            }
-            if let frame = elementBounds[r.id] ?? r.bounds, frame.width > 0, frame.height > 0 {
-                return CGPoint(x: frame.midX, y: frame.midY)
-            }
-            throw BrowserError.elementNotInteractable("[\(r.id)] has no on-screen geometry")
+            try Self.center(of: r, element: elements[r.id], savedBounds: elementBounds[r.id], knownRefs: elements.count)
         }
         let label = ref.map { "[\($0.id)] \($0.role)\($0.name.map { ": \($0.prefix(60))" } ?? "")" } ?? "page"
         app.activate()
@@ -414,12 +408,11 @@ public actor AXBrowserDriver: BrowserDriving {
                 if let elem = elements[ref.id] {
                     _ = AXUIElementSetAttributeValue(elem, kAXFocusedAttribute as CFString, kCFBooleanTrue)
                     if AX.bool(elem, kAXFocusedAttribute) != true {
-                        if let center = try? centerForRef(ref) {
-                            try synthesizer.click(at: center)
-                        }
+                        try synthesizer.click(at: try centerForRef(ref))
                     }
-                } else if let center = try? centerForRef(ref) {
-                    try synthesizer.click(at: center)
+                } else {
+                    // Typing without reaching the ref would go into whatever has focus.
+                    try synthesizer.click(at: try centerForRef(ref))
                 }
             }
             try synthesizer.typeText(value)
@@ -469,6 +462,24 @@ public actor AXBrowserDriver: BrowserDriving {
             try synthesizer.drag(from: fromCenter, to: toCenter)
             return "Dragged \(label) onto [\(target.id)]"
         }
+    }
+
+    /// A ref backed by an AX element is located through that element only. Its saved
+    /// bounds are from snapshot time; after the page changed they may cover another
+    /// element, so a gone or unmeasurable element is refused instead of falling back.
+    /// OCR refs have no element, and their saved bounds are the only geometry.
+    static func center(of ref: BrowserElementRef, element: AXUIElement?, savedBounds: CGRect?, knownRefs: Int) throws -> CGPoint {
+        if let element {
+            guard AX.isAlive(element) != false else { throw BrowserError.staleRef(ref.id, available: knownRefs) }
+            guard let frame = AX.frame(element), frame.width > 0, frame.height > 0 else {
+                throw BrowserError.elementNotInteractable("[\(ref.id)] has no on-screen geometry now; nothing was sent — take a new browser_snapshot")
+            }
+            return CGPoint(x: frame.midX, y: frame.midY)
+        }
+        if let frame = savedBounds ?? ref.bounds, frame.width > 0, frame.height > 0 {
+            return CGPoint(x: frame.midX, y: frame.midY)
+        }
+        throw BrowserError.elementNotInteractable("[\(ref.id)] has no on-screen geometry")
     }
 
     /// DevTools-style chords (`Meta+KeyA`, `Control+Enter`) → the synthesizer's
@@ -754,6 +765,16 @@ enum AX {
         var names: CFArray?
         guard AXUIElementCopyActionNames(element, &names) == .success, let names = names as? [String] else { return nil }
         return names.contains(action)
+    }
+
+    /// false only when the element is known to be gone; nil when it could not be told.
+    static func isAlive(_ element: AXUIElement) -> Bool? {
+        var value: CFTypeRef?
+        switch AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value) {
+        case .success: return true
+        case .invalidUIElement: return false
+        default: return nil
+        }
     }
 
     /// Screen frame in Quartz (top-left origin) coordinates.
