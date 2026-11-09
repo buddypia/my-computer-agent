@@ -96,6 +96,10 @@ public actor Agent {
     /// triggering text.
     private var recentlyAlerted: [Int: Date] = [:]
     private var lastAlertAt: Date?
+    /// The newest observation of the last slice the gate actually judged. The
+    /// proactive loop asks every five seconds over a 90-second window, so an
+    /// idle screen would otherwise have the same slice judged again and again.
+    private var lastTriagedNewestID: DesktopObservation.ID?
     private let minimumAlertGap: TimeInterval
 
     /// The language every card and answer is written in.
@@ -146,6 +150,13 @@ public actor Agent {
             return .ignore
         }
 
+        // Nothing new since the last verdict: at temperature 0 the answer
+        // would be the same one, so the model call buys nothing.
+        let newestID = observations.max { $0.timestamp < $1.timestamp }?.id
+        if let newestID, newestID == lastTriagedNewestID {
+            return .ignore
+        }
+
         let schema = Data("""
             {
               "type": "object",
@@ -171,6 +182,10 @@ public actor Agent {
                 ],
                 temperature: 0,
                 responseSchema: schema)
+
+            // Recorded only once a verdict came back: a failed call leaves the
+            // slice unjudged, and the next scan should try it again.
+            lastTriagedNewestID = newestID
 
             guard let json = parseJSONObject(extractJSON(from: response.text)) else {
                 return .ignore
