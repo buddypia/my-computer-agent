@@ -25,11 +25,12 @@ struct AXPressOutcomeTests {
     }
 
     @Test("refusals that never reached the app are not delivered",
-          arguments: [AXError.invalidUIElement, .illegalArgument])
+          arguments: [AXError.invalidUIElement, .apiDisabled, .illegalArgument])
     func refusalsAreNotDelivered(_ code: AXError) {
-        guard case .notDelivered = AXPressOutcome(code) else {
-            Issue.record("\(code.rawValue) should be reported as not delivered")
-            return
+        // Neither may claim the app acted, nor fall back to a pointer click.
+        switch AXPressOutcome(code) {
+        case .notDelivered, .permissionDenied: break
+        default: Issue.record("\(code.rawValue) should be reported as not delivered")
         }
     }
 
