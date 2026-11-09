@@ -10,6 +10,19 @@ private struct FixedSnapshotProvider: UIStateProviding {
     func captureSnapshot() async throws -> UIStateSnapshot { snapshot }
 }
 
+/// Records the candidate cap each wider observation was requested with.
+private final class RecountProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var limits: [Int] = []
+    var requested: [Int] { lock.withLock { limits } }
+    func provider(_ snapshot: UIStateSnapshot) -> @Sendable (Int) -> any UIStateProviding {
+        { limit in
+            self.lock.withLock { self.limits.append(limit) }
+            return FixedSnapshotProvider(snapshot: snapshot)
+        }
+    }
+}
+
 @Suite("Observed element click binding")
 struct ObservedElementClickTests {
     private func candidate(_ id: String, label: String) -> UIElementCandidate {
@@ -111,4 +124,56 @@ struct ObservedElementClickTests {
         }
     }
 
+    private func partial(_ candidates: [UIElementCandidate], limit: Int? = 25, complete: Bool? = false) -> UIStateSnapshot {
+        UIStateSnapshot(visibleCandidates: candidates, timestamp: .now, candidateLimit: limit, observationComplete: complete)
+    }
+
+    @Test("A twin past the cut of a partial observation makes the target ambiguous")
+    func partialObservationTwinIsRefused() async {
+        let observed = partial([candidate("elem_3", label: "Reply")])
+        let wider = partial([candidate("elem_3", label: "Reply"), candidate("elem_41", label: "Reply")], limit: 100)
+        let probe = RecountProbe()
+        await #expect(throws: ActionAuthorizationError.staleTarget) {
+            try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                     inspectorProvider: probe.provider(wider))
+        }
+        #expect(probe.requested == [ClickElementTool.recountLimit])
+    }
+
+    @Test("A partial observation passes when the wider one also finds exactly one")
+    func partialObservationConfirmedUnique() async throws {
+        let observed = partial([candidate("elem_3", label: "Reply")])
+        let wider = partial([candidate("elem_3", label: "Reply"), candidate("elem_41", label: "Forward")], limit: 100)
+        let probe = RecountProbe()
+        try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                 inspectorProvider: probe.provider(wider))
+        #expect(probe.requested == [ClickElementTool.recountLimit])
+    }
+
+    @Test("A target that vanished from the wider observation is refused")
+    func partialObservationTargetGone() async {
+        let observed = partial([candidate("elem_3", label: "Reply")])
+        await #expect(throws: ActionAuthorizationError.staleTarget) {
+            try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                     inspectorProvider: RecountProbe().provider(partial([], limit: 100)))
+        }
+    }
+
+    @Test("Complete, unreported and already-wide observations are not observed again",
+          arguments: [(Bool?.some(true), Int?.some(25)), (nil, 25), (false, 100)])
+    func noRecountWhenNotNeeded(complete: Bool?, limit: Int?) async throws {
+        let observed = partial([candidate("elem_3", label: "Reply")], limit: limit, complete: complete)
+        let probe = RecountProbe()
+        try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                 inspectorProvider: probe.provider(partial([])))
+        #expect(probe.requested.isEmpty)
+    }
+
+    @Test("Observation completeness survives encoding, and older snapshots decode as unknown")
+    func completenessCodable() throws {
+        let encoded = try JSONEncoder().encode(partial([], complete: false))
+        #expect(try JSONDecoder().decode(UIStateSnapshot.self, from: encoded).observationComplete == false)
+        let legacy = Data(#"{"visibleCandidates":[],"timestamp":0}"#.utf8)
+        #expect(try JSONDecoder().decode(UIStateSnapshot.self, from: legacy).observationComplete == nil)
+    }
 }

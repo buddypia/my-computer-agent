@@ -34,6 +34,11 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
     public var visibleCandidates: [UIElementCandidate]
     /// Candidate cap used by perception, retained for like-for-like revalidation.
     public var candidateLimit: Int?
+    /// Whether every element of the window was seen: false when the walk stopped at a
+    /// depth, node, time or candidate limit, or the list was cut to `candidateLimit`.
+    /// A unique match in a partial list does not prove the element is unique.
+    /// nil when the producer does not report it.
+    public var observationComplete: Bool?
 
     /// Point-in-time timestamp when snapshot was captured.
     public var timestamp: Date
@@ -88,7 +93,8 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
         timestamp: Date = Date(),
         frameHash: String? = nil,
         fingerprint: String? = nil,
-        candidateLimit: Int? = nil
+        candidateLimit: Int? = nil,
+        observationComplete: Bool? = nil
     ) {
         self.windowTitle = windowTitle
         self.appBundleId = appBundleId
@@ -98,6 +104,7 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
         self.focusedElementBounds = focusedElementBounds
         self.visibleCandidates = visibleCandidates
         self.candidateLimit = candidateLimit
+        self.observationComplete = observationComplete
         self.timestamp = timestamp
         self.frameHash = frameHash ?? fingerprint
     }
@@ -126,6 +133,7 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
         case focusedElementBounds
         case visibleCandidates
         case candidateLimit
+        case observationComplete
         case candidates
         case timestamp
         case frameHash
@@ -147,6 +155,7 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
             ?? container.decodeIfPresent([UIElementCandidate].self, forKey: .candidates)
             ?? []
         self.candidateLimit = try container.decodeIfPresent(Int.self, forKey: .candidateLimit)
+        self.observationComplete = try container.decodeIfPresent(Bool.self, forKey: .observationComplete)
         self.timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? Date()
         self.frameHash = try container.decodeIfPresent(String.self, forKey: .frameHash)
             ?? container.decodeIfPresent(String.self, forKey: .fingerprint)
@@ -162,6 +171,7 @@ public struct UIStateSnapshot: Sendable, Codable, Equatable, Hashable {
         try container.encodeIfPresent(focusedElementRole, forKey: .focusedElementRole)
         try container.encodeIfPresent(focusedElementBounds, forKey: .focusedElementBounds)
         try container.encodeIfPresent(candidateLimit, forKey: .candidateLimit)
+        try container.encodeIfPresent(observationComplete, forKey: .observationComplete)
         try container.encode(visibleCandidates, forKey: .visibleCandidates)
         try container.encode(timestamp, forKey: .timestamp)
         try container.encodeIfPresent(frameHash, forKey: .frameHash)
