@@ -504,7 +504,15 @@ public struct AccessibilityInspector: Sendable {
             cut = true
             return
         }
-        guard let children = copyElementArray(element, kAXChildrenAttribute) else { return }
+        var childrenValue: CFTypeRef?
+        let childrenRead = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+        guard childrenRead == .success, let childrenValue, CFGetTypeID(childrenValue) == CFArrayGetTypeID(),
+              let children = (childrenValue as! CFArray) as? [AXUIElement] else {
+            // A leaf answers noValue or attributeUnsupported; anything else (a timeout,
+            // a failure, an element that died mid-walk) hides a subtree that may exist.
+            if childrenRead != .success, childrenRead != .noValue, childrenRead != .attributeUnsupported { cut = true }
+            return
+        }
         for child in children {
             traverseTree(
                 element: child,
