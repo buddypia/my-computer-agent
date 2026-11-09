@@ -39,7 +39,7 @@ struct InputDeliveryNoteTests {
     func partialKeyRepeat() async throws {
         let synthesizer = FailingKeys(failOn: 3)
         let result = try await run(synthesizer, #"{"action":"key","text":"Down","repeat":5}"#)
-        #expect(result.contains("after 2 of 5 inputs were sent"))
+        #expect(result.contains("Input target changed") && result.contains("after 2 of 5 inputs were sent"))
         #expect(result.contains("delivery: partial") && result.contains("retry: unsafe"))
         #expect(synthesizer.pressCount == 3)
     }
@@ -52,7 +52,7 @@ struct InputDeliveryNoteTests {
 
     @Test("partial typing reports partial delivery")
     func partialTyping() async throws {
-        let error = EventSynthesizer.SynthesizerError.partialInput(sent: 2, total: 5)
+        let error = EventSynthesizer.SynthesizerError.partialInput(sent: 2, total: 5, reason: "Input target changed.")
         let result = try await run(FailingKeys(typeError: error), #"{"action":"type","text":"hello"}"#)
         #expect(result.contains("after 2 of 5 inputs were sent"))
         #expect(result.contains("delivery: partial"))
@@ -62,6 +62,12 @@ struct InputDeliveryNoteTests {
     func dragIsUncertain() async throws {
         let result = try await run(FailingKeys(), #"{"action":"left_click_drag","start_coordinate":[1,1],"coordinate":[5,5]}"#)
         #expect(result.contains("delivery: uncertain") && result.contains("retry: unsafe"))
+    }
+
+    @Test("a click refused at the target check was not delivered, though the pointer may have moved")
+    func clickNotDelivered() {
+        let note = ComputerActionTool.deliveryNote(for: EventSynthesizer.SynthesizerError.targetChanged, action: "left_click")
+        #expect(note == "delivery: not_delivered (the pointer may have moved); retry: safe")
     }
 
     @Test("errors the synthesizer did not raise are unknown, never safe")

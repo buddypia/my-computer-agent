@@ -448,7 +448,9 @@ public struct ComputerActionTool: AgentTool {
                         try Task.checkCancellation()
                         try synthesizer.pressKey(key)
                     } catch where pressed > 0 {
-                        throw EventSynthesizer.SynthesizerError.partialInput(sent: pressed, total: repeatCount)
+                        throw EventSynthesizer.SynthesizerError.partialInput(
+                            sent: pressed, total: repeatCount,
+                            reason: error is CancellationError ? "Cancelled." : error.localizedDescription)
                     }
                 }
                 return repeatCount > 1 ? "Pressed key '\(key)' \(repeatCount) times." : "Pressed key '\(key)'."
@@ -491,9 +493,11 @@ public struct ComputerActionTool: AgentTool {
 
     /// One line telling the model whether a failed input reached the app, so a safe
     /// retry can be told from a duplicate. The synthesizer checks the target before it
-    /// posts, so its errors mean nothing was sent — except a partial input, and the
-    /// actions whose later events can fail after the first was posted (a drag, a held
-    /// button or key). Anything unrecognised is reported as unknown, never as safe.
+    /// posts each event, and typing and key repeats report what already went out as a
+    /// partial input, so a plain error means the action's own events were not sent — a
+    /// click may still have moved the pointer first. Actions whose later events can fail
+    /// after the first was posted (a drag, a held button or key) are uncertain.
+    /// Anything unrecognised is reported as unknown, never as safe.
     static func deliveryNote(for error: Error, action: String) -> String {
         let unsafe = "retry: unsafe — observe the screen first"
         guard let error = error as? EventSynthesizer.SynthesizerError else {
@@ -506,7 +510,11 @@ public struct ComputerActionTool: AgentTool {
             return "delivery: not_delivered; retry: safe once the cause is fixed"
         case .targetChanged, .eventCreationFailed:
             let multiEvent = ["left_click_drag", "left_mouse_down", "left_mouse_up", "hold_key"]
-            return multiEvent.contains(action) ? "delivery: uncertain; \(unsafe)" : "delivery: not_delivered; retry: safe"
+            if multiEvent.contains(action) { return "delivery: uncertain; \(unsafe)" }
+            let pointer = ["left_click", "right_click", "double_click", "triple_click", "middle_click", "scroll"]
+            return pointer.contains(action)
+                ? "delivery: not_delivered (the pointer may have moved); retry: safe"
+                : "delivery: not_delivered; retry: safe"
         }
     }
 }

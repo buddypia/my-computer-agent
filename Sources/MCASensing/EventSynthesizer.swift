@@ -44,8 +44,8 @@ public struct EventSynthesizer: Sendable {
         case eventCreationFailed
         case inputTooLong(Int)
         case targetChanged
-        /// The target changed after part of a multi-event input was posted.
-        case partialInput(sent: Int, total: Int)
+        /// A multi-event input stopped after part of it was posted; `reason` says why.
+        case partialInput(sent: Int, total: Int, reason: String)
         case unsupported(String)
 
         public var errorDescription: String? {
@@ -66,8 +66,8 @@ public struct EventSynthesizer: Sendable {
             case .eventCreationFailed:
                 return "Failed to synthesize CGEvent."
             case .targetChanged: return "Input target changed; remaining input was stopped."
-            case .partialInput(let sent, let total):
-                return "Input target changed after \(sent) of \(total) inputs were sent; the rest was not sent."
+            case .partialInput(let sent, let total, let reason):
+                return "\(reason) Stopped after \(sent) of \(total) inputs were sent; the rest was not sent."
             case .inputTooLong(let count):
                 return "Text input too long (\(count) characters). Maximum is 5,000 characters per action."
             }
@@ -356,7 +356,8 @@ public struct EventSynthesizer: Sendable {
                 let utf16 = Array(String(char).utf16)
                 guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
                       let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
-                    continue
+                    // Skipping the character would report the text as typed without it.
+                    throw SynthesizerError.eventCreationFailed
                 }
 
                 down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
@@ -368,8 +369,8 @@ public struct EventSynthesizer: Sendable {
                 sent += 1
                 Thread.sleep(forTimeInterval: 0.005)
             }
-        } catch SynthesizerError.targetChanged where sent > 0 {
-            throw SynthesizerError.partialInput(sent: sent, total: text.count)
+        } catch where sent > 0 {
+            throw SynthesizerError.partialInput(sent: sent, total: text.count, reason: error.localizedDescription)
         }
     }
 
