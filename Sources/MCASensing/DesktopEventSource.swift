@@ -41,8 +41,14 @@ public final class DesktopEventSource: @unchecked Sendable {
 
     /// Starts observing. Must be called with a live main run loop, which
     /// `AXObserver` requires.
+    ///
+    /// Only the newest undelivered event is kept. Every event means the same
+    /// thing to the consumer — "look at the focused window now" — and the look
+    /// reads whatever is in front at that moment, so a backlog of events is a
+    /// backlog of identical tree walks. A window whose title keeps changing
+    /// (a terminal, a loading page) emits faster than a walk completes.
     public func events() -> AsyncStream<Event> {
-        AsyncStream { continuation in
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             self.continuation = continuation
 
             self.workspaceToken = NSWorkspace.shared.notificationCenter.addObserver(
@@ -79,7 +85,7 @@ public final class DesktopEventSource: @unchecked Sendable {
 
     // MARK: - Emission
 
-    private func emit(_ trigger: CaptureTrigger) {
+    func emit(_ trigger: CaptureTrigger) {
         continuation?.yield(Event(trigger: trigger, timestamp: Date()))
     }
 
