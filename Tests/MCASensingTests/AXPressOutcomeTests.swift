@@ -25,10 +25,31 @@ struct AXPressOutcomeTests {
     }
 
     @Test("refusals that never reached the app are not delivered",
-          arguments: [AXError.invalidUIElement, .apiDisabled, .illegalArgument])
+          arguments: [AXError.invalidUIElement, .illegalArgument])
     func refusalsAreNotDelivered(_ code: AXError) {
         guard case .notDelivered = AXPressOutcome(code) else {
             Issue.record("\(code.rawValue) should be reported as not delivered")
+            return
+        }
+    }
+
+    @Test("disabled Accessibility access is a permission problem, not a stale page")
+    func apiDisabledIsPermission() {
+        #expect(AXPressOutcome(.apiDisabled) == .permissionDenied)
+    }
+
+    @Test("a multi-event input that stops part-way is partial, but cancellation stays cancellation")
+    func stoppedInput() {
+        let changed = EventSynthesizer.stopped(after: 2, of: 5, by: EventSynthesizer.SynthesizerError.targetChanged)
+        guard case EventSynthesizer.SynthesizerError.partialInput(let sent, let total, _) = changed else {
+            Issue.record("expected partialInput, got \(changed)")
+            return
+        }
+        #expect(sent == 2 && total == 5)
+        #expect(EventSynthesizer.stopped(after: 2, of: 5, by: CancellationError()) is CancellationError)
+        guard case EventSynthesizer.SynthesizerError.targetChanged =
+                EventSynthesizer.stopped(after: 0, of: 5, by: EventSynthesizer.SynthesizerError.targetChanged) else {
+            Issue.record("nothing sent must keep the original error")
             return
         }
     }

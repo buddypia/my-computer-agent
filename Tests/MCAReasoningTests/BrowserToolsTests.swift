@@ -13,7 +13,7 @@ actor FakeBrowserDriver: BrowserDriving {
     var refsPerOutline: [[String: BrowserElementRef]]
     var snapshotIndex = 0
     var performed: [BrowserAction] = []
-    var failNextPerform: BrowserError?
+    var failNextPerform: (any Error)?
     var url = "https://example.test/"
     var connectError: BrowserError?
     var pageTitle = "Fake"
@@ -37,6 +37,7 @@ actor FakeBrowserDriver: BrowserDriving {
     }
 
     func setFailNextPerform(_ error: BrowserError) { failNextPerform = error }
+    func setFailure(_ error: any Error) { failNextPerform = error }
 
     func connect() async throws { if let connectError { throw connectError } }
     func describeConnection() async -> String { "fake" }
@@ -257,6 +258,29 @@ struct BrowserActPipelineTests {
         #expect(outcome.selfHealed)
         #expect(recorder.prompts.count == 2)
         #expect(await driver.performed.count == 1)
+    }
+
+    @Test("act: a failure that may already have reached the page is reported, not retried",
+          arguments: [0, 1, 2])
+    func noSelfHealAfterPossibleDelivery(_ variant: Int) async throws {
+        let failures: [(any Error, String)] = [
+            (BrowserError.deliveryUncertain("Sign in: the app did not respond in time"), "click"),
+            (EventSynthesizer.SynthesizerError.partialInput(sent: 3, total: 6, reason: "Input target changed."), "click"),
+            (EventSynthesizer.SynthesizerError.targetChanged, "dragAndDrop"),
+        ]
+        let (failure, method) = failures[variant]
+        let driver = FakeBrowserDriver(outlines: [loginOutline, loginOutline], refs: [loginRefs, loginRefs])
+        await driver.setFailure(failure)
+        let recorder = CallRecorder()
+        let args = method == "dragAndDrop" ? #"["0-13"]"# : "[]"
+        let reply = #"{"action": {"elementId": "0-12", "description": "Sign in", "method": "\#(method)", "arguments": \#(args)}, "twoStep": false}"#
+        let inference = cannedInference([("sign in", reply), ("Sign in", reply)], record: recorder)
+        let session = BrowserSession(drivers: [driver], inference: inference)
+        await #expect(throws: (any Error).self) {
+            _ = try await session.act(instruction: "do sign in")
+        }
+        #expect(recorder.prompts.count == 1)
+        #expect(await driver.performed.isEmpty)
     }
 
     @Test("act: twoStep shows the model only the diff and performs the second action")

@@ -369,9 +369,17 @@ public struct EventSynthesizer: Sendable {
                 sent += 1
                 Thread.sleep(forTimeInterval: 0.005)
             }
-        } catch where sent > 0 {
-            throw SynthesizerError.partialInput(sent: sent, total: text.count, reason: error.localizedDescription)
+        } catch {
+            throw Self.stopped(after: sent, of: text.count, by: error)
         }
+    }
+
+    /// What a multi-event input throws when it stops part-way: a partial input once
+    /// anything went out, so the caller knows a retry would repeat it. Cancellation
+    /// stays a `CancellationError`, because callers end the action session on it.
+    public static func stopped(after sent: Int, of total: Int, by error: Error) -> Error {
+        guard sent > 0, !(error is CancellationError) else { return error }
+        return SynthesizerError.partialInput(sent: sent, total: total, reason: error.localizedDescription)
     }
 
     /// Parses and presses a key chord string, such as "Return", "Escape", "cmd+c", "ctrl+alt+delete".

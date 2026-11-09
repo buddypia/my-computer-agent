@@ -11,7 +11,11 @@ private final class FailingKeys: EventSynthesizing, @unchecked Sendable {
     private var presses = 0
     let failOn: Int
     let typeError: Error?
-    init(failOn: Int = .max, typeError: Error? = nil) { self.failOn = failOn; self.typeError = typeError }
+    let pressError: Error
+    init(failOn: Int = .max, typeError: Error? = nil,
+         pressError: Error = EventSynthesizer.SynthesizerError.targetChanged) {
+        self.failOn = failOn; self.typeError = typeError; self.pressError = pressError
+    }
     var pressCount: Int { lock.withLock { presses } }
     var isTrusted: Bool { true }
     func cursorPosition() throws -> CGPoint { .zero }
@@ -22,7 +26,7 @@ private final class FailingKeys: EventSynthesizing, @unchecked Sendable {
     func typeText(_ text: String) throws { if let typeError { throw typeError } }
     func pressKey(_ key: String) throws {
         let n = lock.withLock { presses += 1; return presses }
-        if n == failOn { throw EventSynthesizer.SynthesizerError.targetChanged }
+        if n == failOn { throw pressError }
     }
     func releaseAllHeldEvents() {}
 }
@@ -82,6 +86,23 @@ struct InputDeliveryNoteTests {
           arguments: [EventSynthesizer.SynthesizerError.accessibilityPermissionDenied, .coordinateOutOfBounds(x: -1, y: -1),
                       .unknownKey("nope"), .inputTooLong(6000), .unsupported("x")])
     func validationIsNotDelivered(_ error: EventSynthesizer.SynthesizerError) {
-        #expect(ComputerActionTool.deliveryNote(for: error, action: "left_click_drag").hasPrefix("delivery: not_delivered"))
+        #expect(ComputerActionTool.deliveryNote(for: error, action: "left_click").hasPrefix("delivery: not_delivered"))
+    }
+
+    /// A drag validates its end point and permission again after the button went down.
+    @Test("no error of a drag or held input is reported as safe",
+          arguments: ["left_click_drag", "left_mouse_down", "left_mouse_up", "hold_key"])
+    func multiEventNeverSafe(_ action: String) {
+        for error in [EventSynthesizer.SynthesizerError.coordinateOutOfBounds(x: 9999, y: 9999), .accessibilityPermissionDenied, .targetChanged] {
+            #expect(ComputerActionTool.deliveryNote(for: error, action: action).hasPrefix("delivery: uncertain"))
+        }
+    }
+
+    @Test("a cancelled key repeat stays a cancellation instead of a partial input")
+    func cancelledRepeatIsNotPartial() async throws {
+        let synthesizer = FailingKeys(failOn: 3, pressError: CancellationError())
+        let result = try await run(synthesizer, #"{"action":"key","text":"Down","repeat":5}"#)
+        #expect(synthesizer.pressCount == 3)
+        #expect(!result.contains("inputs were sent") && !result.contains("delivery: partial"))
     }
 }
