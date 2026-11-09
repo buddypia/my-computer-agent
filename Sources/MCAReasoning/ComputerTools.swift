@@ -580,9 +580,9 @@ public struct ClickElementTool: AgentTool {
         if let session = ActionAuthorization.current {
             guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
             candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+            try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
             // Before approval: the user is not asked to approve a click that cannot work.
             if let refusal = Self.disabledRefusal(candidate) { return refusal }
-            try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
             try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
         } else if trustsCallerApproval {
             let snapshot = try await inspectorProvider(100).captureSnapshot()

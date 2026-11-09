@@ -206,4 +206,14 @@ struct ObservedElementClickTests {
         let legacy = Data(#"{"id":"a","role":"AXButton","label":"OK","bounds":[[0,0],[10,10]]}"#.utf8)
         #expect(try JSONDecoder().decode(UIElementCandidate.self, from: legacy).isEnabled == nil)
     }
+
+    @Test("An enabled-state flip alone changes the candidates fingerprint")
+    func enabledFlipChangesHash() {
+        var button = candidate("send", label: "Send")
+        button.isEnabled = false
+        let before = UIStateSnapshot(visibleCandidates: [button], timestamp: .now)
+        button.isEnabled = true
+        let after = UIStateSnapshot(visibleCandidates: [button], timestamp: .now)
+        #expect(before.candidatesHash != after.candidatesHash)
+    }
 }
