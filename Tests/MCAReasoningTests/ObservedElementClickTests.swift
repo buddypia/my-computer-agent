@@ -128,9 +128,14 @@ struct ObservedElementClickTests {
         UIStateSnapshot(visibleCandidates: candidates, timestamp: .now, candidateLimit: limit, observationComplete: complete)
     }
 
+    /// `candidates` padded with other elements up to `limit`, as a list cut at its cap is.
+    private func full(_ candidates: [UIElementCandidate], to limit: Int = 25) -> [UIElementCandidate] {
+        candidates + (candidates.count..<limit).map { candidate("fill_\($0)", label: "Item \($0)") }
+    }
+
     @Test("A twin past the cut of a partial observation makes the target ambiguous")
     func partialObservationTwinIsRefused() async {
-        let observed = partial([candidate("elem_3", label: "Reply")])
+        let observed = partial(full([candidate("elem_3", label: "Reply")]))
         let wider = partial([candidate("elem_3", label: "Reply"), candidate("elem_41", label: "Reply")], limit: 100)
         let probe = RecountProbe()
         await #expect(throws: ActionAuthorizationError.staleTarget) {
@@ -142,7 +147,7 @@ struct ObservedElementClickTests {
 
     @Test("A partial observation passes when the wider one also finds exactly one")
     func partialObservationConfirmedUnique() async throws {
-        let observed = partial([candidate("elem_3", label: "Reply")])
+        let observed = partial(full([candidate("elem_3", label: "Reply")]))
         let wider = partial([candidate("elem_3", label: "Reply"), candidate("elem_41", label: "Forward")], limit: 100)
         let probe = RecountProbe()
         try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
@@ -152,7 +157,7 @@ struct ObservedElementClickTests {
 
     @Test("A target that vanished from the wider observation is refused")
     func partialObservationTargetGone() async {
-        let observed = partial([candidate("elem_3", label: "Reply")])
+        let observed = partial(full([candidate("elem_3", label: "Reply")]))
         await #expect(throws: ActionAuthorizationError.staleTarget) {
             try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
                                                      inspectorProvider: RecountProbe().provider(partial([], limit: 100)))
@@ -162,7 +167,16 @@ struct ObservedElementClickTests {
     @Test("Complete, unreported and already-wide observations are not observed again",
           arguments: [(Bool?.some(true), Int?.some(25)), (nil, 25), (false, 100)])
     func noRecountWhenNotNeeded(complete: Bool?, limit: Int?) async throws {
-        let observed = partial([candidate("elem_3", label: "Reply")], limit: limit, complete: complete)
+        let observed = partial(full([candidate("elem_3", label: "Reply")], to: limit ?? 25), limit: limit, complete: complete)
+        let probe = RecountProbe()
+        try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
+                                                 inspectorProvider: probe.provider(partial([])))
+        #expect(probe.requested.isEmpty)
+    }
+
+    @Test("A partial list shorter than its cap stopped at a limit a wider cap does not move, so it is not observed again")
+    func partialBelowCapIsNotObservedAgain() async throws {
+        let observed = partial([candidate("elem_3", label: "Reply")])
         let probe = RecountProbe()
         try await ClickElementTool.confirmUnique(in: observed, text: "Reply", role: nil,
                                                  inspectorProvider: probe.provider(partial([])))
