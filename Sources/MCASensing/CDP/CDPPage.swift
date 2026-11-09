@@ -19,6 +19,19 @@ public actor CDPPage {
     /// the page so an id like `1-42` means the same frame across snapshots.
     private var frameOrdinals: [String: Int] = [:]
     private var domainsEnabled = false
+    /// Role and name each ref's node showed in the latest snapshot, before redaction.
+    private var identities: [String: ElementIdentity] = [:]
+
+    struct ElementIdentity: Equatable {
+        let role: String
+        let name: String?
+
+        /// The role and name of one node of `Accessibility.get*AXTree`.
+        init(axNode: JSONValue) {
+            role = axNode["role"]["value"].stringValue ?? ""
+            name = axNode["name"]["value"].stringValue
+        }
+    }
 
     public init(client: CDPClient, targetID: String, sessionID: String) {
         self.client = client
@@ -241,6 +254,7 @@ public actor CDPPage {
         var outlines: [String: String] = [:]
         var subtrees: [String: String] = [:]
         var refs: [String: BrowserElementRef] = [:]
+        var recorded: [String: ElementIdentity] = [:]
         var absolutePrefix: [String: String] = [mainFrameID: ""]
 
         for frame in frames {
@@ -274,6 +288,7 @@ public actor CDPPage {
             let baseAbsolute = dom.absoluteXPath[docRoot] ?? "/"
             var outlineNodes: [OutlineNode] = []
             var urlByEncoded: [String: String] = [:]
+            var identityByNodeID: [String: ElementIdentity] = [:]
             outlineNodes.reserveCapacity(axNodes.count)
             for ax in axNodes {
                 guard let nodeID = ax["nodeId"].stringValue else { continue }
@@ -288,12 +303,14 @@ public actor CDPPage {
                 if let encoded, let url = property("url")?.stringValue?.trimmingCharacters(in: .whitespaces), !url.isEmpty {
                     urlByEncoded[encoded] = url
                 }
+                let identity = ElementIdentity(axNode: ax)
+                identityByNodeID[nodeID] = identity
                 outlineNodes.append(OutlineNode(
                     nodeID: nodeID,
                     parentID: ax["parentId"].stringValue,
                     childIDs: (ax["childIds"].arrayValue ?? []).compactMap(\.stringValue),
-                    role: ax["role"]["value"].stringValue ?? "",
-                    name: ax["name"]["value"].stringValue,
+                    role: identity.role,
+                    name: identity.name,
                     description: ax["description"]["value"].stringValue,
                     value: ax["value"]["value"].stringValue,
                     selected: property("selected")?.boolValue,
@@ -319,11 +336,13 @@ public actor CDPPage {
                 refs[encoded] = BrowserElementRef(
                     id: encoded, role: node.role, name: node.name, frameOrdinal: frameOrdinal,
                     backendNodeID: backend, xpath: xpath, url: urlByEncoded[encoded])
+                recorded[encoded] = identityByNodeID[node.nodeID]
             }
         }
 
         let root = outlines[mainFrameID] ?? ""
         let combined = AccessibilityOutline.injectSubtrees(root, subtrees: subtrees)
+        identities = recorded
         return Snapshot(outline: combined, refs: refs)
     }
 
@@ -440,6 +459,27 @@ public actor CDPPage {
         }
     }
 
+    /// A page that recycles DOM nodes (a virtual list, a re-rendered row) keeps a
+    /// backend node id alive under other content, so a ref is acted on only while its
+    /// node shows the role and name the latest snapshot recorded. Callers check after
+    /// scrolling the node into view, which can itself make the page recycle it, and
+    /// before sending anything. A ref the snapshot did not record, or a node whose
+    /// accessibility entry the browser will not give, is left to the checks that follow.
+    func requireSameIdentity(_ ref: BrowserElementRef) async throws {
+        guard let recorded = identities[ref.id], let backend = ref.backendNodeID else { return }
+        let nodes: [JSONValue]
+        do {
+            nodes = try await send("Accessibility.getPartialAXTree", .object([
+                "backendNodeId": .number(Double(backend)), "fetchRelatives": false,
+            ]))["nodes"].arrayValue ?? []
+        } catch is CDPError {
+            return
+        }
+        guard let node = nodes.first(where: { $0["backendDOMNodeId"].intValue == backend }) else { return }
+        guard ElementIdentity(axNode: node) != recorded else { return }
+        throw BrowserError.staleRef(ref.id, available: identities.count)
+    }
+
     func release(_ handle: Handle) async {
         _ = try? await send("Runtime.releaseObject", .object(["objectId": .string(handle.objectID)]))
     }
@@ -479,6 +519,7 @@ public actor CDPPage {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
         let point = try await centroid(of: handle)
+        try await requireSameIdentity(ref)
         try await dispatchClick(at: point, button: button, clickCount: clickCount)
     }
 
@@ -523,6 +564,7 @@ public actor CDPPage {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
         let point = try await centroid(of: handle)
+        try await requireSameIdentity(ref)
         try await send("Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(point.x), "y": .number(point.y), "button": "none"]))
     }
 
@@ -531,6 +573,7 @@ public actor CDPPage {
     public func fill(_ ref: BrowserElementRef, value: String) async throws {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
+        try await requireSameIdentity(ref)
         let result = try await callFunction(on: handle, PageScripts.fillElementValue, arguments: [.string(value)])
         switch result["status"].stringValue {
         case "done":
@@ -560,6 +603,7 @@ public actor CDPPage {
     public func type(_ ref: BrowserElementRef, text: String) async throws {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
+        try await requireSameIdentity(ref)
         try await callFunction(on: handle, PageScripts.focusElement)
         try await insertText(text)
     }
@@ -581,6 +625,7 @@ public actor CDPPage {
     public func scrollTo(_ ref: BrowserElementRef, percent: String) async throws {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
+        try await requireSameIdentity(ref)
         try await callFunction(on: handle, PageScripts.scrollElementToPercent, arguments: [.string(percent)])
     }
 
@@ -600,12 +645,14 @@ public actor CDPPage {
             handle = Handle(objectID: objectID)
         }
         defer { Task { await self.release(handle) } }
+        if let ref { try await requireSameIdentity(ref) }
         try await callFunction(on: handle, PageScripts.scrollByChunk, arguments: [.number(Double(direction))], awaitPromise: true)
     }
 
     public func selectOption(_ ref: BrowserElementRef, values: [String]) async throws -> [String] {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
+        try await requireSameIdentity(ref)
         let result = try await callFunction(on: handle, PageScripts.selectElementOptions, arguments: [.array(values.map(JSONValue.string))])
         let selected = (result.arrayValue ?? []).compactMap(\.stringValue)
         guard !selected.isEmpty else {
@@ -620,6 +667,8 @@ public actor CDPPage {
         defer { Task { await self.release(sourceHandle); await self.release(targetHandle) } }
         let start = try await centroid(of: sourceHandle)
         let end = try await centroid(of: targetHandle)
+        try await requireSameIdentity(source)
+        try await requireSameIdentity(target)
         var gesture = Gesture(name: "drag")
         try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(start.x), "y": .number(start.y), "button": "none"]))
         try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mousePressed", "x": .number(start.x), "y": .number(start.y), "button": "left", "buttons": 1, "clickCount": 1]))
