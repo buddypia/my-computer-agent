@@ -34,6 +34,13 @@ public actor AXBrowserDriver: BrowserDriving {
     private var elements: [String: AXUIElement] = [:]
     /// Bounds for elements, including OCR fallback elements.
     private var elementBounds: [String: CGRect] = [:]
+    /// Role and name each element showed in the latest snapshot, before redaction.
+    private var identities: [String: ElementIdentity] = [:]
+
+    struct ElementIdentity: Equatable {
+        let role: String
+        let name: String?
+    }
 
     /// Provider for fallback visual snapshot (e.g. via OCR) when AX tree has no nodes.
     public typealias OCRSnapshotProvider = @Sendable (_ pid: pid_t, _ options: BrowserSnapshotOptions) async throws -> BrowserSnapshot?
@@ -209,9 +216,11 @@ public actor AXBrowserDriver: BrowserDriving {
                 var refs: [String: BrowserElementRef] = [:]
                 elements.removeAll()
                 elementBounds.removeAll()
+                identities.removeAll()
                 for id in AccessibilityOutline.renderedIDs(tree) {
                     guard let element = byID[id], let node = nodes.first(where: { $0.encodedID == id }) else { continue }
                     elements[id] = element
+                    identities[id] = ElementIdentity(role: node.role, name: node.name)
                     if let b = bounds[id] { elementBounds[id] = b }
                     refs[id] = BrowserElementRef(
                         id: id, role: AccessibilityOutline.decorateRole(of: node), name: node.name,
@@ -226,6 +235,7 @@ public actor AXBrowserDriver: BrowserDriving {
            let fallbackSnapshot = try await ocrSnapshotProvider(app.processIdentifier, options) {
             elements.removeAll()
             elementBounds.removeAll()
+            identities.removeAll()
             for (id, ref) in fallbackSnapshot.refs {
                 if let b = ref.bounds { elementBounds[id] = b }
             }
@@ -258,18 +268,12 @@ public actor AXBrowserDriver: BrowserDriving {
 
         let role = Self.webRole(axRole: axRole, subrole: subrole)
         let isSecure = axRole == "AXSecureTextField"
-        var name = AX.string(element, kAXTitleAttribute)
-        if name?.isEmpty != false { name = AX.string(element, kAXDescriptionAttribute) }
-        if name?.isEmpty != false, role == "StaticText" || role == "heading" || role == "link" {
-            name = AX.string(element, kAXValueAttribute)
-        }
-        if name?.isEmpty != false, let label = AX.string(element, "AXPlaceholderValue") { name = label }
         let value = isSecure ? nil : AX.string(element, kAXValueAttribute)
         let children = AX.elements(element, kAXChildrenAttribute) ?? []
 
         nodes.append(OutlineNode(
             nodeID: id, parentID: parentID, childIDs: [], role: role,
-            name: name.map(AccessibilityOutline.cleanText),
+            name: Self.name(of: element, role: role),
             value: role == "textbox" || role == "combobox" || role == "searchbox" ? value : nil,
             selected: AX.bool(element, kAXSelectedAttribute),
             checked: role == "checkbox" || role == "radio" ? (AX.number(element, kAXValueAttribute).map { $0 != 0 }) : nil,
@@ -290,6 +294,35 @@ public actor AXBrowserDriver: BrowserDriving {
         if let index = nodes.firstIndex(where: { $0.nodeID == id }) {
             nodes[index].childIDs = assigned
         }
+    }
+
+    /// The outline's name for an element: its title, else its description, else (for text,
+    /// headings and links) its value, else its placeholder.
+    static func name(of element: AXUIElement, role: String) -> String? {
+        var name = AX.string(element, kAXTitleAttribute)
+        if name?.isEmpty != false { name = AX.string(element, kAXDescriptionAttribute) }
+        if name?.isEmpty != false, role == "StaticText" || role == "heading" || role == "link" {
+            name = AX.string(element, kAXValueAttribute)
+        }
+        if name?.isEmpty != false, let label = AX.string(element, "AXPlaceholderValue") { name = label }
+        return name.map(AccessibilityOutline.cleanText)
+    }
+
+    /// Role and name the element shows now; nil when its role cannot be read.
+    static func liveIdentity(of element: AXUIElement) -> ElementIdentity? {
+        guard let axRole = AX.string(element, kAXRoleAttribute) else { return nil }
+        let role = webRole(axRole: axRole, subrole: AX.string(element, kAXSubroleAttribute))
+        return ElementIdentity(role: role, name: name(of: element, role: role))
+    }
+
+    /// A page that recycles elements (a virtual list, a re-rendered row) can keep one
+    /// alive under other content, so a ref is acted on only while its element shows the
+    /// role and name the snapshot recorded. An element whose role cannot be read now is
+    /// left to the checks that follow, as before.
+    static func requireSameIdentity(_ ref: BrowserElementRef, recorded: ElementIdentity?, live: ElementIdentity?,
+                                    knownRefs: Int) throws {
+        guard let recorded, let live, live != recorded else { return }
+        throw BrowserError.staleRef(ref.id, available: knownRefs)
     }
 
     /// Maps AppKit accessibility roles onto the ARIA-ish names the DevTools
@@ -352,6 +385,11 @@ public actor AXBrowserDriver: BrowserDriving {
         let app = try requireApp()
         func centerForRef(_ r: BrowserElementRef) throws -> CGPoint {
             try Self.center(of: r, element: elements[r.id], savedBounds: elementBounds[r.id], knownRefs: elements.count)
+        }
+        for r in [ref, target].compactMap({ $0 }) {
+            guard let element = elements[r.id] else { continue }
+            try Self.requireSameIdentity(r, recorded: identities[r.id], live: Self.liveIdentity(of: element),
+                                         knownRefs: elements.count)
         }
         let label = ref.map { "[\($0.id)] \($0.role)\($0.name.map { ": \($0.prefix(60))" } ?? "")" } ?? "page"
         app.activate()
