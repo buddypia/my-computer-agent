@@ -503,12 +503,30 @@ public struct ClickElementTool: AgentTool {
     }
 
     static func observedCandidate(_ snapshot: UIStateSnapshot, text: String, role: String?) throws -> UIElementCandidate {
-        let matches = snapshot.visibleCandidates.filter {
+        let matches = Self.matches(in: snapshot, text: text, role: role)
+        guard matches.count == 1 else { throw ActionAuthorizationError.staleTarget }
+        return matches[0]
+    }
+
+    private static func matches(in snapshot: UIStateSnapshot, text: String, role: String?) -> [UIElementCandidate] {
+        snapshot.visibleCandidates.filter {
             $0.isActionable && !$0.bounds.isEmpty && $0.label.caseInsensitiveCompare(text) == .orderedSame
                 && (role == nil || $0.role.localizedCaseInsensitiveContains(role!))
         }
-        guard matches.count == 1 else { throw ActionAuthorizationError.staleTarget }
-        return matches[0]
+    }
+
+    /// Candidate cap of the wider observation that re-checks a partial one.
+    static let recountLimit = 100
+
+    /// A unique match in a partial observation may have a twin past the cut. Such an
+    /// observation is checked again with a wider one, which must also find exactly one.
+    /// A wider observation that is itself partial is accepted: it is still more than the
+    /// match was made on. Producers that do not report completeness (nil) are trusted as before.
+    static func confirmUnique(in snapshot: UIStateSnapshot, text: String, role: String?,
+                              inspectorProvider: @Sendable (Int) -> any UIStateProviding) async throws {
+        guard snapshot.observationComplete == false, (snapshot.candidateLimit ?? 0) < recountLimit else { return }
+        let wider = try await inspectorProvider(recountLimit).captureSnapshot()
+        guard matches(in: wider, text: text, role: role).count == 1 else { throw ActionAuthorizationError.staleTarget }
     }
 
     public var definition: ToolDefinition {
@@ -554,6 +572,7 @@ public struct ClickElementTool: AgentTool {
         if let session = ActionAuthorization.current {
             guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
             candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+            try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
             try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
         } else if trustsCallerApproval {
             let snapshot = try await inspectorProvider(100).captureSnapshot()

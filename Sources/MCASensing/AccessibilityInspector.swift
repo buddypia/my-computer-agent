@@ -200,28 +200,33 @@ public struct AccessibilityInspector: Sendable {
     /// Inspects the active/focused window of the frontmost application.
     /// If `targetPID` is provided, inspects that application instead of the frontmost.
     public func inspectFocusedWindow(targetPID: pid_t? = nil) -> [UIElementCandidate] {
+        observeFocusedWindow(targetPID: targetPID)?.candidates ?? []
+    }
+
+    /// nil when nothing could be observed (no permission, blocked or excluded app, no window).
+    private func observeFocusedWindow(targetPID: pid_t?) -> WindowObservation? {
         // Selected-window inspection requires asynchronous fresh identity validation.
-        guard targetWindow == nil, !requiresWindowScope else { return [] }
-        guard AXIsProcessTrusted() else { return [] }
+        guard targetWindow == nil, !requiresWindowScope else { return nil }
+        guard AXIsProcessTrusted() else { return nil }
         let ownPID = ProcessInfo.processInfo.processIdentifier
 
         let targetApp: NSRunningApplication?
         if let targetPID {
             guard targetPID != ownPID else {
                 log.info("Target PID is own application; skipping in-process inspection.")
-                return []
+                return nil
             }
             targetApp = NSRunningApplication(processIdentifier: targetPID)
         } else {
             targetApp = Self.frontmostExternalApplication()
         }
 
-        guard let frontApp = targetApp, frontApp.processIdentifier != ownPID else { return [] }
+        guard let frontApp = targetApp, frontApp.processIdentifier != ownPID else { return nil }
 
         // Enforce privacy blocklist
         if privacyFilter.isApplicationBlocked(bundleID: frontApp.bundleIdentifier) {
             log.warning("App \(frontApp.bundleIdentifier ?? "unknown") is in privacy blocklist; skipping inspection.")
-            return []
+            return nil
         }
 
         let pid = frontApp.processIdentifier
@@ -231,11 +236,11 @@ public struct AccessibilityInspector: Sendable {
 
         guard let window = copyElement(axApp, kAXFocusedWindowAttribute)
             ?? (copyElementArray(axApp, kAXWindowsAttribute)?.first) else {
-            return []
+            return nil
         }
         Self.boundQueries(on: window)
         guard !PrivacyFilter.isWindowExcluded(bundleID: frontApp.bundleIdentifier,
-                                               windowTitle: copyString(window, kAXTitleAttribute) ?? "") else { return [] }
+                                               windowTitle: copyString(window, kAXTitleAttribute) ?? "") else { return nil }
         AXAttributes.enableEnhancedAccessibility(app: axApp, window: window)
 
         // Resolve window frame for viewport clipping
@@ -244,9 +249,16 @@ public struct AccessibilityInspector: Sendable {
         return candidates(in: window, bounds: windowBounds)
     }
 
-    private func candidates(in window: AXUIElement, bounds windowBounds: CGRect?) -> [UIElementCandidate] {
+    struct WindowObservation {
+        var candidates: [UIElementCandidate]
+        /// See `UIStateSnapshot.observationComplete`.
+        var complete: Bool
+    }
+
+    private func candidates(in window: AXUIElement, bounds windowBounds: CGRect?) -> WindowObservation {
         var candidates: [UIElementCandidate] = []
         var visitedCount = 0
+        var cut = false
         let started = ContinuousClock.now
         let deadline = started + Self.traversalBudget
 
@@ -258,6 +270,7 @@ public struct AccessibilityInspector: Sendable {
                 depth: 0,
                 deadline: deadline,
                 visited: &visitedCount,
+                cut: &cut,
                 into: &candidates
             )
         }
@@ -268,20 +281,18 @@ public struct AccessibilityInspector: Sendable {
             deadline: deadline,
             skipping: webArea,
             visited: &visitedCount,
+            cut: &cut,
             into: &candidates
         )
         let elapsed = ContinuousClock.now - started
-        if elapsed > .seconds(1) {
-            let cut = !Self.walkMayContinue(until: deadline)
-            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates, budget \(cut ? "hit" : "not hit", privacy: .public))")
+        if elapsed > .seconds(1) || cut {
+            log.info("AX walk took \(elapsed.components.seconds, privacy: .public)s over \(visitedCount, privacy: .public) nodes (\(candidates.count, privacy: .public) candidates, limit \(cut ? "hit" : "not hit", privacy: .public))")
         }
 
         // Sanitize sensitive info and cap to maxCandidates
         let sanitized = privacyFilter.sanitizeCandidates(candidates)
-        if sanitized.count > maxCandidates {
-            return Array(sanitized.prefix(maxCandidates))
-        }
-        return sanitized
+        return WindowObservation(candidates: Array(sanitized.prefix(maxCandidates)),
+                                 complete: !cut && sanitized.count <= maxCandidates)
     }
 
     /// Asynchronously inspects the active/focused window, falling back to OCR candidates
@@ -292,23 +303,27 @@ public struct AccessibilityInspector: Sendable {
             guard targetPID == nil || targetPID == selected.processID else { return [] }
             return (try? await captureSnapshot(of: selected))?.visibleCandidates ?? []
         }
-        let axCandidates = inspectFocusedWindow(targetPID: targetPID)
-        if !axCandidates.isEmpty {
-            return axCandidates
+        return await observeFocusedWindowAsync(targetPID: targetPID)?.candidates ?? []
+    }
+
+    private func observeFocusedWindowAsync(targetPID: pid_t?) async -> WindowObservation? {
+        let axObservation = observeFocusedWindow(targetPID: targetPID)
+        if let axObservation, !axObservation.candidates.isEmpty {
+            return axObservation
         }
 
-        guard let fallbackProvider else { return [] }
+        guard let fallbackProvider else { return axObservation }
         let targetApp: NSRunningApplication?
         let ownPID = ProcessInfo.processInfo.processIdentifier
         if let targetPID {
-            guard targetPID != ownPID else { return [] }
+            guard targetPID != ownPID else { return nil }
             targetApp = NSRunningApplication(processIdentifier: targetPID)
         } else {
             targetApp = Self.frontmostExternalApplication()
         }
 
-        guard let frontApp = targetApp, frontApp.processIdentifier != ownPID else { return [] }
-        if privacyFilter.isApplicationBlocked(bundleID: frontApp.bundleIdentifier) { return [] }
+        guard let frontApp = targetApp, frontApp.processIdentifier != ownPID else { return nil }
+        if privacyFilter.isApplicationBlocked(bundleID: frontApp.bundleIdentifier) { return nil }
 
         let pid = frontApp.processIdentifier
         let axApp = AXUIElementCreateApplication(pid)
@@ -316,15 +331,13 @@ public struct AccessibilityInspector: Sendable {
             ?? (copyElementArray(axApp, kAXWindowsAttribute)?.first)
         guard let window,
               !PrivacyFilter.isWindowExcluded(bundleID: frontApp.bundleIdentifier,
-                                               windowTitle: copyString(window, kAXTitleAttribute) ?? "") else { return [] }
+                                               windowTitle: copyString(window, kAXTitleAttribute) ?? "") else { return nil }
         let windowBounds = getElementBounds(window) ?? Self.resolveWindowBoundsFromWindowList(pid: pid)
 
         let ocrCandidates = await fallbackProvider(pid, windowBounds)
         let sanitized = privacyFilter.sanitizeCandidates(ocrCandidates)
-        if sanitized.count > maxCandidates {
-            return Array(sanitized.prefix(maxCandidates))
-        }
-        return sanitized
+        return WindowObservation(candidates: Array(sanitized.prefix(maxCandidates)),
+                                 complete: sanitized.count <= maxCandidates)
     }
 
     // MARK: - Batched Attribute Extraction
@@ -439,11 +452,15 @@ public struct AccessibilityInspector: Sendable {
         deadline: ContinuousClock.Instant,
         skipping: AXUIElement? = nil,
         visited: inout Int,
+        cut: inout Bool,
         into output: inout [UIElementCandidate]
     ) {
         if let skipping, CFEqual(element, skipping) { return }
         guard depth < 16, visited < 800, output.count < (maxCandidates * 2),
-              Self.walkMayContinue(until: deadline) else { return }
+              Self.walkMayContinue(until: deadline) else {
+            cut = true
+            return
+        }
         visited += 1
         Self.boundQueries(on: element)
 
@@ -483,7 +500,19 @@ public struct AccessibilityInspector: Sendable {
         }
 
         // Recurse into children
-        guard Self.walkMayContinue(until: deadline), let children = copyElementArray(element, kAXChildrenAttribute) else { return }
+        guard Self.walkMayContinue(until: deadline) else {
+            cut = true
+            return
+        }
+        var childrenValue: CFTypeRef?
+        let childrenRead = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue)
+        guard childrenRead == .success, let childrenValue, CFGetTypeID(childrenValue) == CFArrayGetTypeID(),
+              let children = (childrenValue as! CFArray) as? [AXUIElement] else {
+            // A leaf answers noValue or attributeUnsupported; anything else (a timeout,
+            // a failure, an element that died mid-walk) hides a subtree that may exist.
+            if childrenRead != .success, childrenRead != .noValue, childrenRead != .attributeUnsupported { cut = true }
+            return
+        }
         for child in children {
             traverseTree(
                 element: child,
@@ -492,9 +521,13 @@ public struct AccessibilityInspector: Sendable {
                 deadline: deadline,
                 skipping: skipping,
                 visited: &visited,
+                cut: &cut,
                 into: &output
             )
-            if output.count >= (maxCandidates * 2) { return }
+            if output.count >= (maxCandidates * 2) {
+                cut = true
+                return
+            }
         }
     }
 
@@ -621,7 +654,7 @@ extension AccessibilityInspector: UIStateProviding {
             focusedId = copyString(focusedElem, kAXIdentifierAttribute)
         }
 
-        let candidates = await inspectFocusedWindowAsync(targetPID: pid)
+        let observation = await observeFocusedWindowAsync(targetPID: pid)
         try Task.checkCancellation()
         return UIStateSnapshot(
             windowTitle: windowTitle,
@@ -630,9 +663,10 @@ extension AccessibilityInspector: UIStateProviding {
             focusedElementId: focusedId,
             focusedElementRole: focusedRole,
             focusedElementBounds: focusedBounds,
-            visibleCandidates: candidates,
+            visibleCandidates: observation?.candidates ?? [],
             timestamp: Date(),
-            candidateLimit: maxCandidates
+            candidateLimit: maxCandidates,
+            observationComplete: observation?.complete
         )
     }
 
@@ -822,6 +856,7 @@ extension AccessibilityInspector: UIStateProviding {
             throw SnapshotError.selectedWindowExcluded
         }
         var observed: [UIElementCandidate] = []
+        var complete: Bool?
         var focusedId: String?, focusedRole: String?
         var focusedBounds: CGRect?
         if AXIsProcessTrusted() {
@@ -837,7 +872,9 @@ extension AccessibilityInspector: UIStateProviding {
             }
             let window = windows[index]
             AXAttributes.enableEnhancedAccessibility(app: axApp, window: window)
-            observed = candidates(in: window, bounds: before.bounds)
+            let walked = candidates(in: window, bounds: before.bounds)
+            observed = walked.candidates
+            complete = walked.complete
             if let focusedWindow = copyElement(axApp, kAXFocusedWindowAttribute), CFEqual(focusedWindow, window),
                let focused = copyElement(axApp, kAXFocusedUIElementAttribute) {
                 Self.boundQueries(on: focused)
@@ -848,6 +885,7 @@ extension AccessibilityInspector: UIStateProviding {
         }
         if observed.isEmpty, let fallbackProvider {
             observed = privacyFilter.sanitizeCandidates(await fallbackProvider(pid, before.bounds))
+            complete = observed.count <= maxCandidates
         }
         try Task.checkCancellation()
         let after = try selectedWindowInfo(target, pid: pid)
@@ -856,7 +894,8 @@ extension AccessibilityInspector: UIStateProviding {
         }
         return UIStateSnapshot(windowTitle: before.title, appBundleId: app.bundleIdentifier, appName: app.localizedName,
             focusedElementId: focusedId, focusedElementRole: focusedRole, focusedElementBounds: focusedBounds,
-            visibleCandidates: Array(observed.prefix(maxCandidates)), timestamp: Date(), candidateLimit: maxCandidates)
+            visibleCandidates: Array(observed.prefix(maxCandidates)), timestamp: Date(), candidateLimit: maxCandidates,
+            observationComplete: complete)
     }
 
     /// Called by the approval UI after that window's exact operation is approved.
