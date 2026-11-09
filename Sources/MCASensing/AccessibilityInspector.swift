@@ -347,6 +347,7 @@ public struct AccessibilityInspector: Sendable {
         let label: String
         let value: String?
         let rawBounds: CGRect?
+        var isEnabled: Bool? = nil
     }
 
     private func extractBatchedElementInfo(_ element: AXUIElement) -> BatchedElementInfo {
@@ -357,6 +358,7 @@ public struct AccessibilityInspector: Sendable {
             kAXValueAttribute as CFString,        // index 3
             kAXPositionAttribute as CFString,     // index 4
             kAXSizeAttribute as CFString,         // index 5
+            kAXEnabledAttribute as CFString,      // index 6
         ]
 
         var valuesRef: CFArray?
@@ -367,7 +369,7 @@ public struct AccessibilityInspector: Sendable {
             &valuesRef
         )
 
-        if err == .success, let values = valuesRef as? [AnyObject], values.count >= 6 {
+        if err == .success, let values = valuesRef as? [AnyObject], values.count >= 7 {
             let role = Self.extractString(from: values[0]) ?? ""
             let title = Self.extractString(from: values[1]) ?? ""
             let desc = Self.extractString(from: values[2]) ?? ""
@@ -400,7 +402,8 @@ public struct AccessibilityInspector: Sendable {
             }
 
             let rawBounds: CGRect? = (hasOrigin && hasSize) ? CGRect(origin: origin, size: size) : nil
-            return BatchedElementInfo(role: role, label: label, value: val, rawBounds: rawBounds)
+            return BatchedElementInfo(role: role, label: label, value: val, rawBounds: rawBounds,
+                                      isEnabled: Self.extractBool(from: values[6]))
         }
 
         // Fallback to legacy single-attribute queries if batch call is unsupported or fails
@@ -408,7 +411,16 @@ public struct AccessibilityInspector: Sendable {
         let label = getElementLabel(element)
         let val = copyString(element, kAXValueAttribute)
         let bounds = getElementBounds(element)
-        return BatchedElementInfo(role: role, label: label, value: val, rawBounds: bounds)
+        var enabled: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(element, kAXEnabledAttribute as CFString, &enabled)
+        return BatchedElementInfo(role: role, label: label, value: val, rawBounds: bounds,
+                                  isEnabled: Self.extractBool(from: enabled))
+    }
+
+    /// nil for anything but a boolean, including the error placeholder of a failed read.
+    static func extractBool(from value: AnyObject?) -> Bool? {
+        guard let value, CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
+        return CFBooleanGetValue((value as! CFBoolean))
     }
 
     public static func extractString(from value: AnyObject?) -> String? {
@@ -493,7 +505,8 @@ public struct AccessibilityInspector: Sendable {
                     label: info.label.isEmpty ? info.role : info.label,
                     value: info.value,
                     bounds: bounds,
-                    isActionable: isActionable
+                    isActionable: isActionable,
+                    isEnabled: info.isEnabled
                 )
                 output.append(candidate)
             }
