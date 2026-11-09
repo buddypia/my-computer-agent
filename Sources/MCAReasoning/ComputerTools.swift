@@ -443,9 +443,13 @@ public struct ComputerActionTool: AgentTool {
                     keystrokes: "Key: \(key)" + (repeatCount > 1 ? " × \(repeatCount)" : ""), app: frontmostApp())) {
                     return refusal
                 }
-                for _ in 0..<repeatCount {
-                    try Task.checkCancellation()
-                    try synthesizer.pressKey(key)
+                for pressed in 0..<repeatCount {
+                    do {
+                        try Task.checkCancellation()
+                        try synthesizer.pressKey(key)
+                    } catch where pressed > 0 {
+                        throw EventSynthesizer.SynthesizerError.partialInput(sent: pressed, total: repeatCount)
+                    }
                 }
                 return repeatCount > 1 ? "Pressed key '\(key)' \(repeatCount) times." : "Pressed key '\(key)'."
 
@@ -481,7 +485,28 @@ public struct ComputerActionTool: AgentTool {
                 return "Error: Unsupported action '\(action)'."
             }
         } catch {
-            return "Error: \(error.localizedDescription)"
+            return "Error: \(error.localizedDescription)\n" + Self.deliveryNote(for: error, action: action)
+        }
+    }
+
+    /// One line telling the model whether a failed input reached the app, so a safe
+    /// retry can be told from a duplicate. The synthesizer checks the target before it
+    /// posts, so its errors mean nothing was sent — except a partial input, and the
+    /// actions whose later events can fail after the first was posted (a drag, a held
+    /// button or key). Anything unrecognised is reported as unknown, never as safe.
+    static func deliveryNote(for error: Error, action: String) -> String {
+        let unsafe = "retry: unsafe — observe the screen first"
+        guard let error = error as? EventSynthesizer.SynthesizerError else {
+            return "delivery: unknown; \(unsafe)"
+        }
+        switch error {
+        case .partialInput:
+            return "delivery: partial; \(unsafe), then send only what is missing"
+        case .accessibilityPermissionDenied, .coordinateOutOfBounds, .unknownKey, .inputTooLong, .unsupported:
+            return "delivery: not_delivered; retry: safe once the cause is fixed"
+        case .targetChanged, .eventCreationFailed:
+            let multiEvent = ["left_click_drag", "left_mouse_down", "left_mouse_up", "hold_key"]
+            return multiEvent.contains(action) ? "delivery: uncertain; \(unsafe)" : "delivery: not_delivered; retry: safe"
         }
     }
 }
@@ -599,7 +624,7 @@ public struct ClickElementTool: AgentTool {
             try synthesizer.click(at: candidate.center)
             return "Clicked observed element '\(candidate.label)' (\(candidate.id))."
         } catch {
-            return "Error: \(error.localizedDescription)"
+            return "Error: \(error.localizedDescription)\n" + ComputerActionTool.deliveryNote(for: error, action: "left_click")
         }
     }
 }

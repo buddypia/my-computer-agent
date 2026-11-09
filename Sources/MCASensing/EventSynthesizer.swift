@@ -44,6 +44,8 @@ public struct EventSynthesizer: Sendable {
         case eventCreationFailed
         case inputTooLong(Int)
         case targetChanged
+        /// The target changed after part of a multi-event input was posted.
+        case partialInput(sent: Int, total: Int)
         case unsupported(String)
 
         public var errorDescription: String? {
@@ -64,6 +66,8 @@ public struct EventSynthesizer: Sendable {
             case .eventCreationFailed:
                 return "Failed to synthesize CGEvent."
             case .targetChanged: return "Input target changed; remaining input was stopped."
+            case .partialInput(let sent, let total):
+                return "Input target changed after \(sent) of \(total) inputs were sent; the rest was not sent."
             case .inputTooLong(let count):
                 return "Text input too long (\(count) characters). Maximum is 5,000 characters per action."
             }
@@ -337,32 +341,35 @@ public struct EventSynthesizer: Sendable {
         }
 
         try ensureInputTarget()
-        for char in text {
-            try ensureInputTarget()
-            if char == "\n" {
-                try pressKeyCode(UInt16(kVK_Return), modifiers: [])
-                Thread.sleep(forTimeInterval: 0.01)
-                continue
-            }
-            if char == "\t" {
-                try pressKeyCode(UInt16(kVK_Tab), modifiers: [])
-                Thread.sleep(forTimeInterval: 0.01)
-                continue
-            }
+        // Characters already posted cannot be taken back, so a later stop reports how many went out.
+        var sent = 0
+        do {
+            for char in text {
+                try ensureInputTarget()
+                if char == "\n" || char == "\t" {
+                    try pressKeyCode(UInt16(char == "\n" ? kVK_Return : kVK_Tab), modifiers: [])
+                    sent += 1
+                    Thread.sleep(forTimeInterval: 0.01)
+                    continue
+                }
 
-            let utf16 = Array(String(char).utf16)
-            guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
-                continue
+                let utf16 = Array(String(char).utf16)
+                guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+                      let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+                    continue
+                }
+
+                down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+                up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
+
+                try ensureInputTarget()
+                down.post(tap: .cghidEventTap)
+                up.post(tap: .cghidEventTap)
+                sent += 1
+                Thread.sleep(forTimeInterval: 0.005)
             }
-
-            down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-            up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
-
-            try ensureInputTarget()
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.005)
+        } catch SynthesizerError.targetChanged where sent > 0 {
+            throw SynthesizerError.partialInput(sent: sent, total: text.count)
         }
     }
 
