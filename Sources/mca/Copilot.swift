@@ -844,7 +844,7 @@ final class Copilot {
             return "The frontmost application is excluded by the privacy settings, so its screen content cannot be read."
         }
 
-        let snapshot = accessibilityReader.readWindow(pid: pid)
+        let snapshot = await accessibilityReader.readWindowAsync(pid: pid)
         let appName = snapshot?.appName ?? target.localizedName ?? "Application"
         let windowTitle = snapshot?.windowTitle ?? ""
         guard !configuration.isExcluded(bundleID: snapshot?.bundleID ?? target.bundleIdentifier, windowTitle: windowTitle) else {

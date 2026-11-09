@@ -1374,3 +1374,83 @@ struct AgentToolLoopTests {
         #expect(RequestRoute.decide(question: "Safariで検索ボタンを押して", triage: confident) == .autonomousLoop)
     }
 }
+
+@Suite("Proactive triage dedupe")
+struct ProactiveTriageDedupeTests {
+    private static let quiet = #"{"should_interrupt": false, "headline": "", "category": "none", "confidence": 0.1}"#
+
+    private func makeAgent(_ executor: MockScriptedExecutor) throws -> (Agent, URL) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("triage-\(UUID().uuidString).sqlite3")
+        let store = try SQLiteContextStore(url: url)
+        let router = ModelRouter(policy: RoutingPolicy(routes: [.triage: ModelRef(provider: "mock", model: "test")]),
+            credentials: .empty, customResolver: { _ in executor })
+        return (Agent(router: router, store: store, tools: ToolRegistry(tools: []), health: HealthRegistry()), url)
+    }
+
+    private func screen(_ text: String, at offset: TimeInterval) -> DesktopObservation {
+        .screen(ScreenObservation(timestamp: Date(timeIntervalSince1970: 1_000 + offset),
+            appName: "Editor", windowTitle: "notes", text: text, source: .accessibility))
+    }
+
+    @Test("An unchanged slice is judged once; a new observation is judged again")
+    func unchangedSliceIsNotRejudged() async throws {
+        let calls = StepCounter()
+        let executor = MockScriptedExecutor { _, channel in
+            _ = calls.increment()
+            channel.send(.text(Self.quiet))
+            channel.send(.finished(.stop))
+        }
+        let (agent, url) = try makeAgent(executor)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let first = [screen("draft one", at: 0)]
+        _ = await agent.triage(first)
+        _ = await agent.triage(first)
+        // The 90-second window sliding past an older row adds nothing new either.
+        let older = screen("older", at: -30)
+        _ = await agent.triage([first[0], older])
+        #expect(calls.value == 1)
+
+        _ = await agent.triage([screen("draft two", at: 5), first[0]])
+        #expect(calls.value == 2)
+    }
+
+    @Test("A failed triage call leaves the slice to be judged on the next scan")
+    func failedCallIsRetried() async throws {
+        let calls = StepCounter()
+        let executor = MockScriptedExecutor { _, channel in
+            if calls.increment() == 1 { throw LanguageModelError.transport("offline") }
+            channel.send(.text(Self.quiet))
+            channel.send(.finished(.stop))
+        }
+        let (agent, url) = try makeAgent(executor)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let slice = [screen("draft", at: 0)]
+        _ = await agent.triage(slice)
+        _ = await agent.triage(slice)
+        _ = await agent.triage(slice)
+        #expect(calls.value == 2)
+    }
+}
+
+@Suite("Subgoal plan parsing")
+struct SubgoalPlanParsingTests {
+    private static let body = #"[{"id": "subgoal_1", "description": "Open Safari", "expectedOutcome": "Safari is frontmost", "maxSteps": 5}]"#
+
+    @Test("A fenced or prefixed plan is still decoded", arguments: [
+        body,
+        "```json\n\(body)\n```",
+        "Here is the plan:\n\(body)\nDone.",
+    ])
+    func decodesWrappedPlan(raw: String) {
+        let plan = DefaultSubgoalPlanner.parsePlanResponse(raw)
+        #expect(plan?.map(\.id) == ["subgoal_1"])
+        #expect(plan?.first?.maxSteps == 5)
+    }
+
+    @Test("Text without a plan decodes to nothing", arguments: ["", "I cannot help with that.", "[]", "]["])
+    func rejectsNonPlan(raw: String) {
+        #expect(DefaultSubgoalPlanner.parsePlanResponse(raw) == nil)
+    }
+}

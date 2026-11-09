@@ -801,7 +801,9 @@ public struct InspectUIElementsTool: AgentTool {
             candidates = snapshot.visibleCandidates
         }
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        // Compact: this output is resent to the model on every later round, and
+        // pretty-printing puts each coordinate on its own line.
+        encoder.outputFormatting = [.sortedKeys]
         let reported = candidates.map { candidate -> UIElementCandidate in
             guard let screenSpace else { return candidate }
             var mapped = candidate

@@ -217,8 +217,9 @@ public actor AXBrowserDriver: BrowserDriving {
                 elements.removeAll()
                 elementBounds.removeAll()
                 identities.removeAll()
+                let nodesByID = Dictionary(nodes.map { ($0.encodedID, $0) }, uniquingKeysWith: { first, _ in first })
                 for id in AccessibilityOutline.renderedIDs(tree) {
-                    guard let element = byID[id], let node = nodes.first(where: { $0.encodedID == id }) else { continue }
+                    guard let element = byID[id], let node = nodesByID[id] else { continue }
                     elements[id] = element
                     identities[id] = ElementIdentity(role: node.role, name: node.name)
                     if let b = bounds[id] { elementBounds[id] = b }
@@ -271,6 +272,7 @@ public actor AXBrowserDriver: BrowserDriving {
         let value = isSecure ? nil : AX.string(element, kAXValueAttribute)
         let children = AX.elements(element, kAXChildrenAttribute) ?? []
 
+        let index = nodes.count
         nodes.append(OutlineNode(
             nodeID: id, parentID: parentID, childIDs: [], role: role,
             name: Self.name(of: element, role: role),
@@ -291,9 +293,7 @@ public actor AXBrowserDriver: BrowserDriving {
             assigned.append("0-\(counter)")
             walk(child, parentID: id, depth: depth + 1, counter: &counter, nodes: &nodes, elements: &elements, urls: &urls, bounds: &bounds)
         }
-        if let index = nodes.firstIndex(where: { $0.nodeID == id }) {
-            nodes[index].childIDs = assigned
-        }
+        nodes[index].childIDs = assigned
     }
 
     /// The outline's name for an element: its title, else its description, else (for text,

@@ -368,8 +368,13 @@ public actor SQLiteContextStore: ContextStoring {
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
         let before = try count()
         try db.run("DELETE FROM observations WHERE ts < ?", [.double(cutoff)])
-        try db.execute("INSERT INTO observations_fts(observations_fts) VALUES('optimize')")
-        return before - (try count())
+        let removed = before - (try count())
+        // 'optimize' rewrites the whole index and holds the actor while it does.
+        // The hourly purge usually deletes nothing, so there is nothing to merge.
+        if removed > 0 {
+            try db.execute("INSERT INTO observations_fts(observations_fts) VALUES('optimize')")
+        }
+        return removed
     }
 
     public func count() throws -> Int {

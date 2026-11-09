@@ -49,40 +49,29 @@ public struct PrivacyFilter: Sendable {
         return copy
     }
 
+    /// Compiled once: `sanitizeCandidates` redacts twice per candidate, so a
+    /// single observation used to compile these hundreds of times over.
+    private static let redactions: [(regex: NSRegularExpression, template: String)] = [
+        // Potential API keys and tokens (e.g. apikey_..., Bearer ..., ghp_...)
+        (#"(?i)(api[_-]?key|bearer|token|secret)[=:\s]+[A-Za-z0-9_\-]{16,}"#, "$1=[REDACTED]"),
+        // Standalone API tokens without explicit key prefix (e.g. sk-..., ghp_..., AKIA...)
+        (#"\b(?:sk-[A-Za-z0-9_\-]{20,}|ghp_[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16})\b"#, "[REDACTED_SECRET]"),
+        // Potential credit card numbers (13-19 digits)
+        (#"\b(?:\d{4}[ -]?){3}\d{4}\b"#, "[REDACTED_CC]"),
+    ].compactMap { pattern, template in
+        (try? NSRegularExpression(pattern: pattern)).map { ($0, template) }
+    }
+
     /// Redacts sensitive patterns (API keys, tokens, card numbers) from text. Email addresses are not redacted.
     public func redactSensitiveText(_ input: String) -> String {
         var text = input
-
-        // Redact potential API keys and tokens (e.g. apikey_..., Bearer ..., ghp_...)
-        let keyPattern = #"(?i)(api[_-]?key|bearer|token|secret)[=:\s]+[A-Za-z0-9_\-]{16,}"#
-        if let regex = try? NSRegularExpression(pattern: keyPattern) {
+        for (regex, template) in Self.redactions {
             text = regex.stringByReplacingMatches(
                 in: text,
                 range: NSRange(text.startIndex..., in: text),
-                withTemplate: "$1=[REDACTED]"
+                withTemplate: template
             )
         }
-
-        // Redact standalone API tokens without explicit key prefix (e.g. sk-..., ghp_..., AKIA...)
-        let standaloneTokenPattern = #"\b(?:sk-[A-Za-z0-9_\-]{20,}|ghp_[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16})\b"#
-        if let regex = try? NSRegularExpression(pattern: standaloneTokenPattern) {
-            text = regex.stringByReplacingMatches(
-                in: text,
-                range: NSRange(text.startIndex..., in: text),
-                withTemplate: "[REDACTED_SECRET]"
-            )
-        }
-
-        // Redact potential credit card numbers (13-19 digits)
-        let ccPattern = #"\b(?:\d{4}[ -]?){3}\d{4}\b"#
-        if let regex = try? NSRegularExpression(pattern: ccPattern) {
-            text = regex.stringByReplacingMatches(
-                in: text,
-                range: NSRange(text.startIndex..., in: text),
-                withTemplate: "[REDACTED_CC]"
-            )
-        }
-
         return text
     }
 

@@ -20,7 +20,7 @@ struct NumericToolArgumentsTests {
             return MockUIInspector(snapshots: [UIStateSnapshot(visibleCandidates: [])])
         })
         let result = try await tool.invoke(arguments: JSONSerialization.data(withJSONObject: ["max_candidates": input]))
-        #expect(result == "[\n\n]")
+        #expect(result == "[]")
         #expect(AccessibilityInspector(maxCandidates: input).maxCandidates == (input < 0 ? 0 : 100))
     }
 

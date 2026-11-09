@@ -427,8 +427,7 @@ public struct DefaultSubgoalPlanner: System2Planning {
                     options: GenerationOptions(temperature: 0.1)
                 )
                 let response = try await executor.complete(request)
-                if let data = response.text.data(using: .utf8),
-                   let subgoals = try? JSONDecoder().decode([Subgoal].self, from: data), !subgoals.isEmpty {
+                if let subgoals = Self.parsePlanResponse(response.text) {
                     return SubgoalPlan(goal: trimmed, subgoals: subgoals)
                 }
             } catch {
@@ -532,6 +531,16 @@ public struct DefaultSubgoalPlanner: System2Planning {
 
         // 2. Deterministic local heuristic recovery fallback
         return Self.heuristicReplan(failedSubgoal: failedSubgoal, reason: reason)
+    }
+
+    /// Models wrap JSON in a code fence or a sentence often enough that decoding
+    /// the raw text throws away a planning call that was already paid for.
+    public static func parsePlanResponse(_ rawText: String) -> [Subgoal]? {
+        guard let start = rawText.firstIndex(of: "["), let end = rawText.lastIndex(of: "]"), start < end,
+              let subgoals = try? JSONDecoder().decode([Subgoal].self, from: Data(rawText[start...end].utf8)),
+              !subgoals.isEmpty
+        else { return nil }
+        return subgoals
     }
 
     private struct ReplanPayload: Decodable {
