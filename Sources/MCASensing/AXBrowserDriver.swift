@@ -366,8 +366,19 @@ public actor AXBrowserDriver: BrowserDriving {
         case .click:
             guard let ref else { throw BrowserError.elementNotInteractable("click needs an element ref") }
             let button = action.arguments.first?.lowercased() ?? "left"
-            if let elem = elements[ref.id], button == "left", AXUIElementPerformAction(elem, kAXPressAction as CFString) == .success {
-                return "Clicked \(label) (accessibility press)"
+            // An element that does not list AXPress goes straight to the pointer,
+            // so a failure code below comes from a press the element claims to support.
+            if let elem = elements[ref.id], button == "left", AX.advertises(elem, action: kAXPressAction) != false {
+                switch AXPressOutcome(AXUIElementPerformAction(elem, kAXPressAction as CFString)) {
+                case .delivered:
+                    return "Clicked \(label) (accessibility press)"
+                case .unsupported:
+                    break
+                case .notDelivered(let reason):
+                    throw BrowserError.elementNotInteractable("\(label): \(reason); no click was sent — take a new browser_snapshot and retry")
+                case .uncertain(let reason):
+                    throw BrowserError.elementNotInteractable("\(label): \(reason). The press may have been delivered, so no pointer click was added — take a new browser_snapshot to check before clicking again")
+                }
             }
             let center = try centerForRef(ref)
             try synthesizer.click(at: center, button: button == "right" ? .right : (button == "middle" ? .middle : .left))
@@ -736,6 +747,13 @@ enum AX {
         if CFGetTypeID(value) == CFURLGetTypeID() { return ((value as! CFURL) as URL).absoluteString }
         if CFGetTypeID(value) == CFStringGetTypeID() { return (value as! CFString) as String }
         return nil
+    }
+
+    /// Whether the element lists `action`; nil when the list cannot be read.
+    static func advertises(_ element: AXUIElement, action: String) -> Bool? {
+        var names: CFArray?
+        guard AXUIElementCopyActionNames(element, &names) == .success, let names = names as? [String] else { return nil }
+        return names.contains(action)
     }
 
     /// Screen frame in Quartz (top-left origin) coordinates.
