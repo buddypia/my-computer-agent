@@ -484,6 +484,9 @@ public struct ComputerActionTool: AgentTool {
             default:
                 return "Error: Unsupported action '\(action)'."
             }
+        } catch let error as CancellationError {
+            // Thrown on so the registry ends the action session; as text the run would go on.
+            throw error
         } catch {
             return "Error: \(error.localizedDescription)\n" + Self.deliveryNote(for: error, action: action)
         }
@@ -634,6 +637,8 @@ public struct ClickElementTool: AgentTool {
         do {
             try synthesizer.click(at: candidate.center)
             return "Clicked observed element '\(candidate.label)' (\(candidate.id))."
+        } catch let error as CancellationError {
+            throw error
         } catch {
             return "Error: \(error.localizedDescription)\n" + ComputerActionTool.deliveryNote(for: error, action: "left_click")
         }

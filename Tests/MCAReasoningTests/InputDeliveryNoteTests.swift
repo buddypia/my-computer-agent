@@ -12,15 +12,16 @@ private final class FailingKeys: EventSynthesizing, @unchecked Sendable {
     let failOn: Int
     let typeError: Error?
     let pressError: Error
+    let clickError: Error?
     init(failOn: Int = .max, typeError: Error? = nil,
-         pressError: Error = EventSynthesizer.SynthesizerError.targetChanged) {
-        self.failOn = failOn; self.typeError = typeError; self.pressError = pressError
+         pressError: Error = EventSynthesizer.SynthesizerError.targetChanged, clickError: Error? = nil) {
+        self.failOn = failOn; self.typeError = typeError; self.pressError = pressError; self.clickError = clickError
     }
     var pressCount: Int { lock.withLock { presses } }
     var isTrusted: Bool { true }
     func cursorPosition() throws -> CGPoint { .zero }
     func mouseMove(to point: CGPoint) throws {}
-    func click(at point: CGPoint?, button: MouseButton, clickCount: Int) throws {}
+    func click(at point: CGPoint?, button: MouseButton, clickCount: Int) throws { if let clickError { throw clickError } }
     func drag(from start: CGPoint, to end: CGPoint) throws { throw EventSynthesizer.SynthesizerError.targetChanged }
     func scroll(deltaX: Int32, deltaY: Int32, at point: CGPoint?, targetPID: pid_t?) throws {}
     func typeText(_ text: String) throws { if let typeError { throw typeError } }
@@ -98,11 +99,20 @@ struct InputDeliveryNoteTests {
         }
     }
 
-    @Test("a cancelled key repeat stays a cancellation instead of a partial input")
+    @Test("a cancelled key repeat is thrown as a cancellation, not reported as a partial input")
     func cancelledRepeatIsNotPartial() async throws {
         let synthesizer = FailingKeys(failOn: 3, pressError: CancellationError())
-        let result = try await run(synthesizer, #"{"action":"key","text":"Down","repeat":5}"#)
+        await #expect(throws: CancellationError.self) {
+            _ = try await run(synthesizer, #"{"action":"key","text":"Down","repeat":5}"#)
+        }
         #expect(synthesizer.pressCount == 3)
-        #expect(!result.contains("inputs were sent") && !result.contains("delivery: partial"))
+    }
+
+    @Test("a cancelled click is thrown, not returned as text, so the registry ends the action session")
+    func cancelledClickIsThrown() async throws {
+        let synthesizer = FailingKeys(clickError: CancellationError())
+        await #expect(throws: CancellationError.self) {
+            _ = try await run(synthesizer, #"{"action":"left_click","coordinate":[10,10]}"#)
+        }
     }
 }
