@@ -307,6 +307,15 @@ public actor BrowserSession {
     /// inference on the diff when the first step opened something (custom
     /// dropdowns), and a self-heal re-inference when the chosen element
     /// cannot be acted on.
+    /// The self-heal is a second input, safe only when the failure proves the first never
+    /// reached the page. A press that may have landed, a partly typed text, or a drag
+    /// that failed part-way would be repeated, so those are reported instead.
+    static func mayHaveBeenDelivered(_ error: Error, method: BrowserActionMethod) -> Bool {
+        if case BrowserError.deliveryUncertain = error { return true }
+        if case EventSynthesizer.SynthesizerError.partialInput = error { return true }
+        return method == .dragAndDrop && error is EventSynthesizer.SynthesizerError
+    }
+
     public func act(instruction: String, variables: [String: String] = [:], selfHeal: Bool = true) async throws -> BrowserActionOutcome {
         let inference = try requireInference()
         let snapshot = try await snapshot()
@@ -322,7 +331,8 @@ public actor BrowserSession {
         do {
             message = try await perform(first, variables: variables)
         } catch {
-            if error is ActionAuthorizationError || error is CancellationError { throw error }
+            if error is ActionAuthorizationError || error is CancellationError
+                || Self.mayHaveBeenDelivered(error, method: first.method) { throw error }
             guard selfHeal else { throw error }
             log.info("Action failed (\(self.describe(error), privacy: .public)); re-observing the page")
             let fresh = try await self.snapshot()

@@ -447,10 +447,8 @@ public struct ComputerActionTool: AgentTool {
                     do {
                         try Task.checkCancellation()
                         try synthesizer.pressKey(key)
-                    } catch where pressed > 0 {
-                        throw EventSynthesizer.SynthesizerError.partialInput(
-                            sent: pressed, total: repeatCount,
-                            reason: error is CancellationError ? "Cancelled." : error.localizedDescription)
+                    } catch {
+                        throw EventSynthesizer.stopped(after: pressed, of: repeatCount, by: error)
                     }
                 }
                 return repeatCount > 1 ? "Pressed key '\(key)' \(repeatCount) times." : "Pressed key '\(key)'."
@@ -486,6 +484,9 @@ public struct ComputerActionTool: AgentTool {
             default:
                 return "Error: Unsupported action '\(action)'."
             }
+        } catch let error as CancellationError {
+            // Thrown on so the registry ends the action session; as text the run would go on.
+            throw error
         } catch {
             return "Error: \(error.localizedDescription)\n" + Self.deliveryNote(for: error, action: action)
         }
@@ -503,14 +504,19 @@ public struct ComputerActionTool: AgentTool {
         guard let error = error as? EventSynthesizer.SynthesizerError else {
             return "delivery: unknown; \(unsafe)"
         }
+        if case .partialInput = error {
+            return "delivery: partial; \(unsafe), then send only what is missing"
+        }
+        // A drag checks its end point and permission again after the button went down,
+        // so no error of these actions proves that nothing was sent.
+        let multiEvent = ["left_click_drag", "left_mouse_down", "left_mouse_up", "hold_key"]
+        if multiEvent.contains(action) { return "delivery: uncertain; \(unsafe)" }
         switch error {
         case .partialInput:
             return "delivery: partial; \(unsafe), then send only what is missing"
         case .accessibilityPermissionDenied, .coordinateOutOfBounds, .unknownKey, .inputTooLong, .unsupported:
             return "delivery: not_delivered; retry: safe once the cause is fixed"
         case .targetChanged, .eventCreationFailed:
-            let multiEvent = ["left_click_drag", "left_mouse_down", "left_mouse_up", "hold_key"]
-            if multiEvent.contains(action) { return "delivery: uncertain; \(unsafe)" }
             let pointer = ["left_click", "right_click", "double_click", "triple_click", "middle_click", "scroll"]
             return pointer.contains(action)
                 ? "delivery: not_delivered (the pointer may have moved); retry: safe"
@@ -631,6 +637,8 @@ public struct ClickElementTool: AgentTool {
         do {
             try synthesizer.click(at: candidate.center)
             return "Clicked observed element '\(candidate.label)' (\(candidate.id))."
+        } catch let error as CancellationError {
+            throw error
         } catch {
             return "Error: \(error.localizedDescription)\n" + ComputerActionTool.deliveryNote(for: error, action: "left_click")
         }
@@ -963,6 +971,8 @@ public struct TypeSafeActTool: AgentTool {
                 case .wait, .none:
                     break
                 }
+            } catch let error as CancellationError {
+                throw error
             } catch {
                 executedSummary += " (execution note: \(error.localizedDescription))"
             }

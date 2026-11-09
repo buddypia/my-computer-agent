@@ -214,6 +214,9 @@ public enum BrowserError: Error, Sendable, Equatable, CustomStringConvertible {
     case protocolError(String)
     /// The page or app is on the privacy blocklist.
     case blocked(String)
+    /// The action failed after it may already have reached the page; repeating it could
+    /// act twice. Observe before deciding to retry.
+    case deliveryUncertain(String)
 
     public var description: String {
         switch self {
@@ -233,6 +236,8 @@ public enum BrowserError: Error, Sendable, Equatable, CustomStringConvertible {
             return "Browser protocol error: \(detail)"
         case .blocked(let what):
             return "'\(what)' is excluded by the privacy settings and cannot be automated."
+        case .deliveryUncertain(let detail):
+            return "The action may already have taken effect: \(detail)"
         }
     }
 }

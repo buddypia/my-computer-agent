@@ -484,11 +484,38 @@ public actor CDPPage {
 
     public func dispatchClick(at point: CGPoint, button: String = "left", clickCount: Int = 1) async throws {
         let x = JSONValue.number(point.x), y = JSONValue.number(point.y)
-        try await send("Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": x, "y": y, "button": "none"]))
+        var gesture = Gesture(name: "click")
+        try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": x, "y": y, "button": "none"]))
         for count in 1...max(1, clickCount) {
             let n = JSONValue.number(Double(count))
-            try await send("Input.dispatchMouseEvent", .object(["type": "mousePressed", "x": x, "y": y, "button": .string(button), "clickCount": n]))
-            try await send("Input.dispatchMouseEvent", .object(["type": "mouseReleased", "x": x, "y": y, "button": .string(button), "clickCount": n]))
+            try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mousePressed", "x": x, "y": y, "button": .string(button), "clickCount": n]))
+            try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseReleased", "x": x, "y": y, "button": .string(button), "clickCount": n]))
+        }
+    }
+
+    /// One gesture's input events, counted as the browser acknowledges them.
+    struct Gesture {
+        let name: String
+        var sent = 0
+    }
+
+    /// Sends one input event of `gesture`. A failure is reported as
+    /// `deliveryUncertain` when the page may already have acted on part of the
+    /// gesture: an earlier event went out, or this one was sent and its answer
+    /// never came (a timeout, or the connection closing in flight). Callers must
+    /// not repeat such a gesture.
+    func input(_ gesture: inout Gesture, _ method: String, _ params: JSONValue) async throws {
+        let connected = await client.state == .open
+        do {
+            try await send(method, params)
+            gesture.sent += 1
+        } catch {
+            // The browser answering with an error, or a connection that was already
+            // closed so the event was never sent, means this event did not apply.
+            let refused = error is CDPError || !connected
+            if error is CancellationError || (gesture.sent == 0 && refused) { throw error }
+            throw BrowserError.deliveryUncertain(
+                "\(gesture.name) stopped after \(gesture.sent) input events (\(error.localizedDescription)), so it was not retried — take a new browser_snapshot to check before acting again")
         }
     }
 
@@ -514,12 +541,13 @@ public actor CDPPage {
             if !prepared {
                 try await callFunction(on: handle, PageScripts.focusElement)
             }
+            var gesture = Gesture(name: "fill")
             if text.isEmpty {
                 for event in [CDPKeyMap.keyDown("Backspace", held: []), CDPKeyMap.keyUp("Backspace", held: [])] {
-                    try await send("Input.dispatchKeyEvent", .object(event.params))
+                    try await input(&gesture, "Input.dispatchKeyEvent", .object(event.params))
                 }
             } else {
-                try await send("Input.insertText", .object(["text": .string(text)]))
+                try await input(&gesture, "Input.insertText", .object(["text": .string(text)]))
             }
         case "error":
             throw BrowserError.elementNotInteractable("fill failed: \(result["reason"].stringValue ?? "unknown")")
@@ -533,18 +561,20 @@ public actor CDPPage {
         let handle = try await resolve(ref)
         defer { Task { await self.release(handle) } }
         try await callFunction(on: handle, PageScripts.focusElement)
-        try await send("Input.insertText", .object(["text": .string(text)]))
+        try await insertText(text)
     }
 
     /// Inserts text into whatever is focused.
     public func insertText(_ text: String) async throws {
-        try await send("Input.insertText", .object(["text": .string(text)]))
+        var gesture = Gesture(name: "typing")
+        try await input(&gesture, "Input.insertText", .object(["text": .string(text)]))
     }
 
     /// Presses a key or chord such as `Enter`, `Cmd+A`, `Shift+Tab`.
     public func press(_ chord: String) async throws {
+        var gesture = Gesture(name: "key \(chord)")
         for event in CDPKeyMap.events(forChord: chord) {
-            try await send("Input.dispatchKeyEvent", .object(event.params))
+            try await input(&gesture, "Input.dispatchKeyEvent", .object(event.params))
         }
     }
 
@@ -590,16 +620,17 @@ public actor CDPPage {
         defer { Task { await self.release(sourceHandle); await self.release(targetHandle) } }
         let start = try await centroid(of: sourceHandle)
         let end = try await centroid(of: targetHandle)
-        try await send("Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(start.x), "y": .number(start.y), "button": "none"]))
-        try await send("Input.dispatchMouseEvent", .object(["type": "mousePressed", "x": .number(start.x), "y": .number(start.y), "button": "left", "buttons": 1, "clickCount": 1]))
+        var gesture = Gesture(name: "drag")
+        try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(start.x), "y": .number(start.y), "button": "none"]))
+        try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mousePressed", "x": .number(start.x), "y": .number(start.y), "button": "left", "buttons": 1, "clickCount": 1]))
         for step in 1...max(1, steps) {
             let t = Double(step) / Double(max(1, steps))
             let x = start.x + (end.x - start.x) * t
             let y = start.y + (end.y - start.y) * t
-            try await send("Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(x), "y": .number(y), "button": "left", "buttons": 1]))
+            try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseMoved", "x": .number(x), "y": .number(y), "button": "left", "buttons": 1]))
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
-        try await send("Input.dispatchMouseEvent", .object(["type": "mouseReleased", "x": .number(end.x), "y": .number(end.y), "button": "left", "buttons": 1, "clickCount": 1]))
+        try await input(&gesture, "Input.dispatchMouseEvent", .object(["type": "mouseReleased", "x": .number(end.x), "y": .number(end.y), "button": "left", "buttons": 1, "clickCount": 1]))
     }
 
     public func isVisible(_ ref: BrowserElementRef) async throws -> Bool {

@@ -370,8 +370,10 @@ public actor AXBrowserDriver: BrowserDriving {
                     break
                 case .notDelivered(let reason):
                     throw BrowserError.elementNotInteractable("\(label): \(reason); no click was sent — take a new browser_snapshot and retry")
+                case .permissionDenied:
+                    throw BrowserError.notConnected("Accessibility permission is not granted to this app (System Settings › Privacy & Security › Accessibility); no click was sent")
                 case .uncertain(let reason):
-                    throw BrowserError.elementNotInteractable("\(label): \(reason). The press may have been delivered, so no pointer click was added — take a new browser_snapshot to check before clicking again")
+                    throw BrowserError.deliveryUncertain("\(label): \(reason), so no pointer click was added — take a new browser_snapshot to check before clicking again")
                 }
             }
             let center = try centerForRef(ref)

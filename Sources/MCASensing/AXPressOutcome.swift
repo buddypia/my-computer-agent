@@ -14,6 +14,8 @@ enum AXPressOutcome: Equatable, Sendable {
     case unsupported
     /// The action was refused before reaching the app; retrying with fresh refs is safe.
     case notDelivered(String)
+    /// Accessibility access is off; nothing was sent, and no retry helps until it is granted.
+    case permissionDenied
     /// The app may have acted on it; observe before deciding to retry.
     case uncertain(String)
 
@@ -22,7 +24,7 @@ enum AXPressOutcome: Equatable, Sendable {
         case .success: self = .delivered
         case .actionUnsupported, .notImplemented: self = .unsupported
         case .invalidUIElement: self = .notDelivered("the element no longer exists")
-        case .apiDisabled: self = .notDelivered("Accessibility access is disabled")
+        case .apiDisabled: self = .permissionDenied
         case .illegalArgument: self = .notDelivered("the press was rejected as invalid")
         case .cannotComplete: self = .uncertain("the app did not respond in time")
         default: self = .uncertain("the press failed (AXError \(result.rawValue))")
