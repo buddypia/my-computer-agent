@@ -256,3 +256,15 @@ struct AccessibilityInspectorTests {
         #expect(AccessibilityInspector.uniqueWindowIndex([("A", mainFrame), ("B", mainFrame)], title: "", bounds: mainFrame) == nil)
     }
 }
+
+@Suite("AX enabled state read")
+struct AXEnabledReadTests {
+    @Test("only a boolean is read as an enabled state")
+    func extractBool() {
+        #expect(AccessibilityInspector.extractBool(from: kCFBooleanFalse) == false)
+        #expect(AccessibilityInspector.extractBool(from: kCFBooleanTrue) == true)
+        #expect(AccessibilityInspector.extractBool(from: nil) == nil)
+        #expect(AccessibilityInspector.extractBool(from: "false" as CFString) == nil)
+        #expect(AccessibilityInspector.extractBool(from: NSNull()) == nil)
+    }
+}

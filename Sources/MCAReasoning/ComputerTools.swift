@@ -515,6 +515,14 @@ public struct ClickElementTool: AgentTool {
         }
     }
 
+    /// A click on a disabled control does nothing yet would be reported as done. Only a
+    /// read false counts: an unreadable state (nil) is not evidence of a disabled one.
+    static func disabledRefusal(_ candidate: UIElementCandidate) -> String? {
+        guard candidate.isEnabled == false else { return nil }
+        return "Error: '\(candidate.label)' (\(candidate.id)) is disabled; nothing was clicked. "
+            + "Wait until it becomes enabled, observe again, then retry."
+    }
+
     /// Candidate cap of the wider observation that re-checks a partial one.
     static let recountLimit = 100
 
@@ -573,6 +581,8 @@ public struct ClickElementTool: AgentTool {
             guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
             candidate = try Self.observedCandidate(snapshot, text: text, role: role)
             try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
+            // Before approval: the user is not asked to approve a click that cannot work.
+            if let refusal = Self.disabledRefusal(candidate) { return refusal }
             try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)
         } else if trustsCallerApproval {
             let snapshot = try await inspectorProvider(100).captureSnapshot()
@@ -580,6 +590,7 @@ public struct ClickElementTool: AgentTool {
                 throw ActionAuthorizationError.staleTarget
             }
             candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+            if let refusal = Self.disabledRefusal(candidate) { return refusal }
         } else {
             throw ActionAuthorizationError.approvalRequired
         }

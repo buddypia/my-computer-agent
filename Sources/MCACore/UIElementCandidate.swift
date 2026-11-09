@@ -16,6 +16,9 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
     public var bounds: CGRect
     public var isActionable: Bool
     public var source: ElementSource
+    /// `AXEnabled` as read at observation; nil when it could not be read.
+    /// Only false means disabled — an unreadable state is not evidence of one.
+    public var isEnabled: Bool?
 
     public init(
         id: String,
@@ -24,7 +27,8 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         value: String? = nil,
         bounds: CGRect,
         isActionable: Bool = true,
-        source: ElementSource = .accessibility
+        source: ElementSource = .accessibility,
+        isEnabled: Bool? = nil
     ) {
         self.id = id
         self.role = role
@@ -33,6 +37,7 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         self.bounds = bounds
         self.isActionable = isActionable
         self.source = source
+        self.isEnabled = isEnabled
     }
 
     public init(
@@ -42,7 +47,8 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         value: String? = nil,
         bounds: CGRect,
         isActionable: Bool = true,
-        source: ElementSource = .accessibility
+        source: ElementSource = .accessibility,
+        isEnabled: Bool? = nil
     ) {
         self.id = id
         self.role = role
@@ -51,6 +57,7 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         self.bounds = bounds
         self.isActionable = isActionable
         self.source = source
+        self.isEnabled = isEnabled
     }
 
     /// Center point of the element in global screen coordinates.
@@ -65,7 +72,7 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
 
     // MARK: - Codable Custom Decoding for Robust Backwards Compatibility
     private enum CodingKeys: String, CodingKey {
-        case id, role, label, title, value, bounds, isActionable, source
+        case id, role, label, title, value, bounds, isActionable, source, isEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -80,6 +87,7 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         self.bounds = try container.decode(CGRect.self, forKey: .bounds)
         self.isActionable = try container.decodeIfPresent(Bool.self, forKey: .isActionable) ?? true
         self.source = try container.decodeIfPresent(ElementSource.self, forKey: .source) ?? .accessibility
+        self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -92,6 +100,7 @@ public struct UIElementCandidate: Codable, Sendable, Equatable, Identifiable {
         try container.encode(bounds, forKey: .bounds)
         try container.encode(isActionable, forKey: .isActionable)
         try container.encode(source, forKey: .source)
+        try container.encodeIfPresent(isEnabled, forKey: .isEnabled)
     }
 }
 

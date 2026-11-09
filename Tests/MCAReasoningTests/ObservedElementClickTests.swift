@@ -176,4 +176,44 @@ struct ObservedElementClickTests {
         let legacy = Data(#"{"visibleCandidates":[],"timestamp":0}"#.utf8)
         #expect(try JSONDecoder().decode(UIStateSnapshot.self, from: legacy).observationComplete == nil)
     }
+
+    @Test("A disabled element is refused without input; an unreadable state is not treated as disabled",
+          arguments: [(Bool?.some(false), false), (nil, true), (true, true)])
+    func disabledElementIsRefused(enabled: Bool?, clicks: Bool) async throws {
+        var button = candidate("send", label: "Send")
+        button.isEnabled = enabled
+        let snapshot = UIStateSnapshot(appName: "Mail", visibleCandidates: [button], timestamp: .now)
+        let synthesizer = DryRunEventSynthesizer()
+        let tool = ClickElementTool(synthesizer: synthesizer,
+                                    inspectorProvider: { _ in FixedSnapshotProvider(snapshot: snapshot) },
+                                    trustsCallerApproval: true)
+        let result = try await tool.invoke(arguments: Data(#"{"element_text":"Send"}"#.utf8))
+        if clicks {
+            #expect(result.hasPrefix("Clicked observed element"))
+            #expect(synthesizer.recordedActions.count == 1)
+        } else {
+            #expect(result.hasPrefix("Error:") && result.contains("disabled"))
+            #expect(synthesizer.recordedActions.isEmpty)
+        }
+    }
+
+    @Test("The enabled state survives encoding, and older candidates decode as unknown")
+    func enabledCodable() throws {
+        var button = candidate("send", label: "Send")
+        button.isEnabled = false
+        let decoded = try JSONDecoder().decode(UIElementCandidate.self, from: JSONEncoder().encode(button))
+        #expect(decoded.isEnabled == false)
+        let legacy = Data(#"{"id":"a","role":"AXButton","label":"OK","bounds":[[0,0],[10,10]]}"#.utf8)
+        #expect(try JSONDecoder().decode(UIElementCandidate.self, from: legacy).isEnabled == nil)
+    }
+
+    @Test("An enabled-state flip alone changes the candidates fingerprint")
+    func enabledFlipChangesHash() {
+        var button = candidate("send", label: "Send")
+        button.isEnabled = false
+        let before = UIStateSnapshot(visibleCandidates: [button], timestamp: .now)
+        button.isEnabled = true
+        let after = UIStateSnapshot(visibleCandidates: [button], timestamp: .now)
+        #expect(before.candidatesHash != after.candidatesHash)
+    }
 }
