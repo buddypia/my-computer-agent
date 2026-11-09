@@ -569,9 +569,18 @@ public struct ClickElementTool: AgentTool {
     /// observation is checked again with a wider one, which must also find exactly one.
     /// A wider observation that is itself partial is accepted: it is still more than the
     /// match was made on. Producers that do not report completeness (nil) are trusted as before.
+    ///
+    /// Only the candidate cap widens; the walk's depth, node and time limits stay. So only
+    /// a list filled to its cap is checked again: a walk stops for candidates at twice the
+    /// cap, and the privacy filter drops no role the walk keeps, so a list cut at the cap is
+    /// always full. A shorter list stopped at a limit the wider cap does not move: a second
+    /// walk stops at the same depth or node count, and gets past a time budget or an
+    /// unreadable subtree only by chance. Without a reported cap (nil) it is checked again.
     static func confirmUnique(in snapshot: UIStateSnapshot, text: String, role: String?,
                               inspectorProvider: @Sendable (Int) -> any UIStateProviding) async throws {
-        guard snapshot.observationComplete == false, (snapshot.candidateLimit ?? 0) < recountLimit else { return }
+        let limit = snapshot.candidateLimit ?? 0
+        guard snapshot.observationComplete == false, limit < recountLimit,
+              snapshot.visibleCandidates.count >= limit else { return }
         let wider = try await inspectorProvider(recountLimit).captureSnapshot()
         guard matches(in: wider, text: text, role: role).count == 1 else { throw ActionAuthorizationError.staleTarget }
     }
