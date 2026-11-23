@@ -49,6 +49,29 @@ struct AgentCursorOverlayTests {
         #expect(!presence.isVisible(now: start, agentBusy: true))
     }
 
+    /// A stop must stick: input already in flight when the user pressed it
+    /// cannot bring the frame back.
+    @Test("after Stop, in-flight input is ignored for the quiet period")
+    func quietAfterStop() {
+        var presence = AgentCursorPresence()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        presence.recordInput(at: start)
+        presence.stopped(at: start)
+        #expect(!presence.isVisible(now: start, agentBusy: true))
+        #expect(!presence.accepts(.click(.zero, count: 1, secondary: false), isShowing: false, now: start.addingTimeInterval(0.5)))
+        #expect(presence.accepts(.click(.zero, count: 1, secondary: false), isShowing: false, now: start.addingTimeInterval(1.1)))
+    }
+
+    /// The loop releases held buttons as cleanup after a stop or a failed step.
+    @Test("releasing held input alone does not show the overlay")
+    func releaseIsNotActivity() {
+        let presence = AgentCursorPresence()
+        let now = Date()
+        #expect(!presence.accepts(.released, isShowing: false, now: now))
+        #expect(presence.accepts(.released, isShowing: true, now: now))
+        #expect(presence.accepts(.keyboard, isShowing: false, now: now))
+    }
+
     @Test("clicks leave one ripple per click and move the pointer")
     func clicks() {
         let model = AgentCursorModel()

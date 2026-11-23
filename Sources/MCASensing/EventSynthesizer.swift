@@ -158,7 +158,6 @@ public struct EventSynthesizer: Sendable {
     public func keyEvent(_ chord: String, down: Bool) throws {
         if down {
             try ensureTrusted()
-            AgentInputFeedback.report(.keyboard)
         } else {
             // Key-up is cleanup (including inside `hold_key`'s `defer` after task cancellation
             // or a focus change); never skip releasing a held key on `ensureInputTarget()`.
@@ -173,7 +172,7 @@ public struct EventSynthesizer: Sendable {
                     throw SynthesizerError.eventCreationFailed
                 }
                 event.flags = down ? accumulated : []
-                if down { try ensureInputTarget() }
+                if down { try ensureInputTarget(); AgentInputFeedback.report(.keyboard) }
                 event.postAsAgent()
             }
             return
@@ -183,7 +182,7 @@ public struct EventSynthesizer: Sendable {
             throw SynthesizerError.eventCreationFailed
         }
         event.flags = (down && !flags.isEmpty) ? flags : []
-        if down { try ensureInputTarget() }
+        if down { try ensureInputTarget(); AgentInputFeedback.report(.keyboard) }
         event.postAsAgent()
     }
 
@@ -394,7 +393,6 @@ public struct EventSynthesizer: Sendable {
     public func pressKey(_ chordString: String) throws {
         try ensureTrusted()
         let (keyCode, flags) = try parseKeyChord(chordString)
-        AgentInputFeedback.report(.keyboard)
         try pressKeyCode(keyCode, modifiers: flags)
     }
 
@@ -526,6 +524,7 @@ public struct EventSynthesizer: Sendable {
         }
 
         try ensureInputTarget()
+        AgentInputFeedback.report(.keyboard)
         down.postAsAgent()
         Thread.sleep(forTimeInterval: 0.015)
         up.postAsAgent()
@@ -975,12 +974,16 @@ extension CGEvent {
     /// Posts at the HID level, stamped as the agent's own input so the UI can
     /// tell it apart from the user's (see `AgentInputFeedback.eventSourceTag`).
     func postAsAgent() {
-        setIntegerValueField(.eventSourceUserData, value: AgentInputFeedback.eventSourceTag)
+        tagAsAgent()
         post(tap: .cghidEventTap)
     }
 
     func postAsAgent(toPid pid: pid_t) {
-        setIntegerValueField(.eventSourceUserData, value: AgentInputFeedback.eventSourceTag)
+        tagAsAgent()
         postToPid(pid)
+    }
+
+    func tagAsAgent() {
+        setIntegerValueField(.eventSourceUserData, value: AgentInputFeedback.eventSourceTag)
     }
 }

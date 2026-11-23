@@ -45,12 +45,32 @@ public struct AgentCursorPresence: Sendable, Equatable {
     /// glowing frame over the screen indefinitely.
     public var busyTimeout: TimeInterval = 120
 
+    /// After the user presses Stop, input still in flight (a click already
+    /// past its checks, a report queued on the main thread) must not bring
+    /// the frame straight back.
+    public var stopQuietPeriod: TimeInterval = 1.0
+
     public private(set) var lastInput: Date?
+    public private(set) var suppressedUntil: Date?
 
     public init() {}
 
     public mutating func recordInput(at date: Date) { lastInput = date }
     public mutating func reset() { lastInput = nil }
+
+    public mutating func stopped(at date: Date) {
+        lastInput = nil
+        suppressedUntil = date.addingTimeInterval(stopQuietPeriod)
+    }
+
+    /// Whether a reported input should be drawn at all. Releasing held buttons
+    /// is cleanup the loop does after a stop or a failed step; on its own it is
+    /// not the agent taking the controls.
+    public func accepts(_ activity: AgentInputActivity, isShowing: Bool, now: Date) -> Bool {
+        if let suppressedUntil, now < suppressedUntil { return false }
+        if activity == .released { return isShowing }
+        return true
+    }
 
     public func isVisible(now: Date, agentBusy: Bool) -> Bool {
         guard let lastInput else { return false }
@@ -127,8 +147,9 @@ public final class AgentCursorModel {
 /// Every window here is `sharingType = .none`, so the agent's screenshots
 /// never see its own pointer or the frame (they would otherwise be mistaken
 /// for page content and clicked). The frame and pointer windows ignore the
-/// mouse entirely; only the stop pill takes clicks, and it refuses any click
-/// the agent itself synthesized (`AgentInputFeedback.eventSourceTag`).
+/// mouse entirely. The stop pill takes clicks only while the user's own
+/// pointer is over it, and refuses any click or Esc the agent itself
+/// synthesized (`AgentInputFeedback.eventSourceTag`).
 @MainActor
 public final class AgentCursorOverlay {
     private let log = Logger(subsystem: "com.buddypia.mca", category: "AgentCursor")
@@ -142,7 +163,7 @@ public final class AgentCursorOverlay {
     private var ticker: Timer?
     private var hideWork: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
-    private var keyMonitors: [Any] = []
+    private var monitors: [Any] = []
 
     public init(isAgentBusy: @escaping @MainActor () -> Bool, onStop: @escaping @MainActor () -> Void) {
         self.isAgentBusy = isAgentBusy
@@ -152,8 +173,11 @@ public final class AgentCursorOverlay {
     /// Starts listening for the agent's input. Nothing is drawn until it acts.
     public func start() {
         AgentInputFeedback.install { [weak self] activity in
-            // Reported on the synthesizing thread; never block it.
-            Task { @MainActor in self?.receive(activity) }
+            // Reported on the synthesizing thread; never block it. The main
+            // queue is FIFO, so reports are drawn in the order they were sent.
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.receive(activity) }
+            }
         }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -172,8 +196,16 @@ public final class AgentCursorOverlay {
     // MARK: Input
 
     func receive(_ activity: AgentInputActivity) {
-        presence.recordInput(at: Date())
-        if !model.isVisible { show() }
+        let now = Date()
+        guard presence.accepts(activity, isShowing: model.isVisible, now: now) else { return }
+        presence.recordInput(at: now)
+        if !model.isVisible {
+            // Still fading out from the last turn: start from here, not from there.
+            model.cursor = nil
+            show()
+        }
+        // The agent's pointer moved the real one away from wherever the user had it.
+        if activity != .keyboard { stopPanel?.ignoresMouseEvents = true }
         // The pointer appears at the first point rather than flying in from nowhere.
         let wasHidden = model.cursor == nil
         if wasHidden {
@@ -194,7 +226,7 @@ public final class AgentCursorOverlay {
         if screenPanels.isEmpty { buildPanels() }
         for panel in screenPanels { panel.orderFrontRegardless() }
         stopPanel?.orderFrontRegardless()
-        installKeyMonitors()
+        installMonitors()
         model.isVisible = true
         ticker?.invalidate()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -211,7 +243,7 @@ public final class AgentCursorOverlay {
     private func hide() {
         ticker?.invalidate()
         ticker = nil
-        removeKeyMonitors()
+        removeMonitors()
         presence.reset()
         model.isVisible = false // fades out in the views
         let work = DispatchWorkItem { [weak self] in
@@ -229,12 +261,13 @@ public final class AgentCursorOverlay {
         log.info("Stop requested from the agent cursor overlay")
         onStop()
         hide()
+        presence.stopped(at: Date())
     }
 
     private func tearDown() {
         ticker?.invalidate()
         ticker = nil
-        removeKeyMonitors()
+        removeMonitors()
         for panel in screenPanels { panel.orderOut(nil); panel.close() }
         screenPanels.removeAll()
         stopPanel?.orderOut(nil)
@@ -284,6 +317,10 @@ public final class AgentCursorOverlay {
             backing: .buffered, defer: false)
         pill.configureAsOverlay()
         pill.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        // Click-through unless the user's own pointer is on it (see
+        // `installMonitors`): the agent cannot see the pill, and a click it
+        // aims at a tab or title bar underneath must reach that tab.
+        pill.ignoresMouseEvents = true
         let hosting = FirstMouseHostingView(rootView: AgentStopPill(model: model) { [weak self] in
             // The agent cannot see this button, but a click it aims at whatever
             // is underneath could still land on it. Only a person's click stops.
@@ -313,10 +350,10 @@ public final class AgentCursorOverlay {
         if pill.frame != frame { pill.setFrame(frame, display: true) }
     }
 
-    // MARK: Esc to stop
+    // MARK: Esc to stop, and a Stop pill only the user can reach
 
-    private func installKeyMonitors() {
-        guard keyMonitors.isEmpty else { return }
+    private func installMonitors() {
+        guard monitors.isEmpty else { return }
         // Values, not the NSEvent itself, cross into the main-actor handler.
         let handler: @MainActor (UInt16, Int64) -> Bool = { [weak self] keyCode, userData in
             guard keyCode == 53, // Escape
@@ -333,7 +370,7 @@ public final class AgentCursorOverlay {
             let (keyCode, userData) = fields(event)
             MainActor.assumeIsolated { _ = handler(keyCode, userData) }
         }) {
-            keyMonitors.append(global)
+            monitors.append(global)
         }
         // Local: Esc pressed while one of this app's own windows has focus.
         if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
@@ -341,13 +378,29 @@ public final class AgentCursorOverlay {
             let consumed = MainActor.assumeIsolated { handler(keyCode, userData) }
             return consumed ? nil : event
         }) {
-            keyMonitors.append(local)
+            monitors.append(local)
+        }
+
+        // The pill takes clicks only while the user's own pointer is over it.
+        let pointer: @MainActor (Int64) -> Void = { [weak self] userData in
+            guard let pill = self?.stopPanel,
+                  !AgentInputFeedback.isAgentGenerated(userData: userData) else { return }
+            let over = pill.frame.insetBy(dx: -4, dy: -4).contains(NSEvent.mouseLocation)
+            if pill.ignoresMouseEvents == over { pill.ignoresMouseEvents = !over }
+        }
+        let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: { event in
+            let userData = event.cgEvent?.getIntegerValueField(.eventSourceUserData) ?? 0
+            MainActor.assumeIsolated { pointer(userData) }
+        }) {
+            monitors.append(global)
         }
     }
 
-    private func removeKeyMonitors() {
-        for monitor in keyMonitors { NSEvent.removeMonitor(monitor) }
-        keyMonitors.removeAll()
+    private func removeMonitors() {
+        for monitor in monitors { NSEvent.removeMonitor(monitor) }
+        monitors.removeAll()
+        stopPanel?.ignoresMouseEvents = true
     }
 }
 

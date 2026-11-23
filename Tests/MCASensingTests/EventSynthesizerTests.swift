@@ -1,11 +1,23 @@
 import CoreGraphics
 import Foundation
 import Testing
+@testable import MCACore
 @testable import MCASensing
 
 @Suite("EventSynthesizer tests")
 struct EventSynthesizerTests {
     let synthesizer = EventSynthesizer()
+
+    /// The Stop pill and Esc tell the agent's own input from the user's by this
+    /// tag; an event posted without it would be able to stop the agent. Checked
+    /// on a built (never posted) event, so the test sends nothing to the desktop.
+    @Test("events the agent posts carry the agent tag")
+    func agentTag() throws {
+        let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true))
+        #expect(!AgentInputFeedback.isAgentGenerated(userData: event.getIntegerValueField(.eventSourceUserData)))
+        event.tagAsAgent()
+        #expect(AgentInputFeedback.isAgentGenerated(userData: event.getIntegerValueField(.eventSourceUserData)))
+    }
 
     @Test("Background scroll validation binds the addressed PID without requiring foreground focus")
     func backgroundScrollScope() throws {
