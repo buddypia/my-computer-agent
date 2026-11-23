@@ -4,7 +4,7 @@ import Foundation
 public enum TranscriptionEngine: String, Codable, Sendable, CaseIterable {
     /// On-device transcription using Apple's SpeechAnalyzer (macOS 26+). Completely local and private.
     case apple
-    /// High-accuracy cloud transcription and intent recognition using Google Gemini Flash.
+    /// High-accuracy cloud transcription and intent recognition using Google Gemini.
     case gemini
 
     public var title: String {
@@ -12,7 +12,7 @@ public enum TranscriptionEngine: String, Codable, Sendable, CaseIterable {
         case .apple:
             return "macOS (On-Device)"
         case .gemini:
-            return "Gemini Flash (Cloud)"
+            return "Gemini Hydrogen (Cloud)"
         }
     }
 }
@@ -20,9 +20,9 @@ public enum TranscriptionEngine: String, Codable, Sendable, CaseIterable {
 /// Where a model lives and which adapter can talk to it.
 public struct ModelRef: Codable, Sendable, Hashable {
     public var provider: String   // "gemini" | "anthropic" | "openai-compatible" | "apple"
-    public var model: String      // e.g. "gemini-3.8-flash"
-    /// Optional per-route override of thinking depth. Gemini 3.x maps
-    /// `minimal` to `low` (Gemini 3 rejects minimal), Anthropic maps to 0 / no thinking,
+    public var model: String      // e.g. "gemini-4-hydrogen"
+    /// Optional per-route override of thinking depth. Gemini 3.x / 4 map
+    /// `minimal` to `low` (they reject minimal), Anthropic maps to 0 / no thinking,
     /// and other providers map as close as they can or drop if unsupported.
     public var reasoningLevel: ReasoningLevel?
 
@@ -63,8 +63,8 @@ public enum AgentTask: String, Codable, Sendable, CaseIterable {
     case hardReasoning
 }
 
-/// Model IDs and prices are deliberately *not* compiled in. Gemini 3.8 Flash
-/// doubles in price on 2027-01-01 and preview model IDs get retired; both
+/// Model IDs and prices are deliberately *not* compiled in. Gemini model
+/// prices change and preview model IDs get retired; both
 /// should be a config edit, not a code change.
 public struct RoutingPolicy: Codable, Sendable {
     public var routes: [AgentTask: ModelRef]
@@ -82,14 +82,14 @@ public struct RoutingPolicy: Codable, Sendable {
         self.maxOutputTokens = maxOutputTokens
     }
 
-    /// Current defaults as of 2026-09. See docs/architecture_v2_design_proposals.md §3.
+    /// Current defaults as of 2026-11 (Gemini 4 Hydrogen, GA 2026-11-12). See docs/architecture_v2_design_proposals.md §3.
     public static let `default` = RoutingPolicy(
         routes: [
             .triage: ModelRef(provider: "apple", model: "system"),
-            .classify: ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .minimal),
-            .answer: ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .low),
-            .vision: ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .low),
-            .hardReasoning: ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .high),
+            .classify: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .minimal),
+            .answer: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .low),
+            .vision: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .low),
+            .hardReasoning: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .high),
         ],
         // One Gemini model across every cloud tier. The cheaper Flash Lite is
         // deliberately not used: two model IDs meant two sets of quota,
@@ -99,7 +99,7 @@ public struct RoutingPolicy: Codable, Sendable {
         // held down by `reasoningLevel` and `maxOutputTokens` instead.
         fallbacks: [
             .triage: [
-                ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .minimal),
+                ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .minimal),
             ],
             .answer: [
                 ModelRef(provider: "anthropic", model: "claude-sonnet-4-5"),

@@ -59,7 +59,7 @@ struct WireFormatTests {
 
     @Test("Gemini splits system instruction out of contents")
     func geminiSystemInstruction() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request())
 
         let system = try #require(body["systemInstruction"] as? [String: Any])
@@ -74,7 +74,7 @@ struct WireFormatTests {
 
     @Test("Gemini encodes tool calls and results as function parts")
     func geminiFunctionCalls() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request(tools: true))
 
         let contents = try #require(body["contents"] as? [[String: Any]])
@@ -115,7 +115,7 @@ struct WireFormatTests {
             transcript: [.prompt(Prompt(text: "test"))],
             tools: [tool]
         )
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k").buildBody(request)
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k").buildBody(request)
         let tools = try #require(body["tools"] as? [[String: Any]])
         let declarations = try #require(tools.first?["functionDeclarations"] as? [[String: Any]])
         let decl = try #require(declarations.first)
@@ -141,7 +141,7 @@ struct WireFormatTests {
                 arguments: Data("{}".utf8),
                 providerState: ["thoughtSignature": "SIG"])]),
         ])
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k").buildBody(request)
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k").buildBody(request)
 
         let contents = try #require(body["contents"] as? [[String: Any]])
         let allParts = contents.flatMap { ($0["parts"] as? [[String: Any]]) ?? [] }
@@ -165,7 +165,7 @@ struct WireFormatTests {
             .toolOutput(ToolOutput(callID: "a", name: "scroll_pinned_window", content: "ok")),
             .toolOutput(ToolOutput(callID: "b", name: "read_screen", content: "ok")),
         ])
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k").buildBody(request)
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k").buildBody(request)
 
         let contents = try #require(body["contents"] as? [[String: Any]])
         let callParts = try #require(contents[1]["parts"] as? [[String: Any]])
@@ -187,7 +187,7 @@ struct WireFormatTests {
                 id: "a", name: "scroll_pinned_window", arguments: Data("{}".utf8),
                 providerState: ["thoughtSignature": ""])]),
         ])
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k").buildBody(request)
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k").buildBody(request)
 
         let contents = try #require(body["contents"] as? [[String: Any]])
         let parts = try #require(contents[1]["parts"] as? [[String: Any]])
@@ -205,7 +205,7 @@ struct WireFormatTests {
                                  providerState: ["thoughtSignature": "S2"])]),
             .toolOutput(ToolOutput(callID: "b", name: "y", content: "2")),
         ])
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k").buildBody(request)
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k").buildBody(request)
 
         let contents = try #require(body["contents"] as? [[String: Any]])
         // A result must never be merged across a model turn (FC1, FR1, FC2, FR2).
@@ -216,7 +216,7 @@ struct WireFormatTests {
 
     @Test("Gemini uses thinkingLevel, not thinkingBudget")
     func geminiThinkingLevel() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request(reasoning: .high))
 
         let config = try #require(body["generationConfig"] as? [String: Any])
@@ -229,7 +229,7 @@ struct WireFormatTests {
 
     @Test("Gemini maps minimal reasoning to low thinkingLevel")
     func geminiMinimalThinkingLevel() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request(reasoning: .minimal))
 
         let config = try #require(body["generationConfig"] as? [String: Any])
@@ -260,7 +260,7 @@ struct WireFormatTests {
 
     @Test("Gemini sends inline image data")
     func geminiVision() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request(images: true))
 
         let contents = try #require(body["contents"] as? [[String: Any]])
@@ -272,7 +272,7 @@ struct WireFormatTests {
 
     @Test("Gemini structured output sets both mime type and schema")
     func geminiSchema() throws {
-        let body = GeminiExecutor(model: "gemini-3.8-flash", apiKey: "k")
+        let body = GeminiExecutor(model: "gemini-4-hydrogen", apiKey: "k")
             .buildBody(Self.request(schema: true))
         let config = try #require(body["generationConfig"] as? [String: Any])
         // Without the mime type the schema is ignored and prose comes back.

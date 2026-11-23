@@ -20,7 +20,8 @@ public struct GeminiExecutor: LanguageModelExecuting {
 
     public static func supportsReasoning(model: String) -> Bool {
         let lower = model.lowercased()
-        return lower.contains("gemini-3") || lower.contains("gemini-2.5") || lower.contains("thinking")
+        return lower.contains("gemini-4") || lower.contains("gemini-3")
+            || lower.contains("gemini-2.5") || lower.contains("thinking")
     }
 
     public init(
@@ -247,9 +248,10 @@ public struct GeminiExecutor: LanguageModelExecuting {
                 }
                 generationConfig["thinkingConfig"] = ["thinkingBudget": budget]
             } else {
-                // Gemini 3.x uses discrete `thinkingLevel` (low/medium/high).
-                // "minimal" is rejected with HTTP 400 (INVALID_ARGUMENT), so
-                // map .minimal to "low" to provide the lowest latency & cost tier.
+                // Gemini 3.x and 4 use discrete `thinkingLevel` (low/medium/high;
+                // Gemini 4 also takes xhigh). "minimal" is rejected with HTTP 400
+                // (INVALID_ARGUMENT), so map .minimal to "low" to provide the
+                // lowest latency & cost tier.
                 let wireLevel: String
                 switch level {
                 case .minimal, .low: wireLevel = "low"

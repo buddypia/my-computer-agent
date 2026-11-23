@@ -125,12 +125,12 @@ Keys are optional. Which features need which key:
 
 | Provider | Setting name (id) | Environment variable | Role |
 |---|---|---|---|
-| Google Gemini | `gemini` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | Primary route for classify, answers, vision and hard reasoning; Live conversation; Gemini Flash transcription. |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | Primary route for classify, answers, vision and hard reasoning; Live conversation; Gemini Hydrogen transcription. |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | Fallback for answers and vision. |
 | OpenAI-compatible | `openai-compatible` | `OPENAI_API_KEY` | Fallback for answers and vision (talks to `https://api.openai.com/v1`). |
 | TypeSafe AI (Jev) | `typesafe` | `TYPESAFE_API_KEY` | Low-latency GUI grounding for actions. Without it, a deterministic local semantic fallback is used. |
 
-Default routing uses Apple's on-device model for the "is this worth interrupting you?" gate, and `gemini-3.8-flash` for classify, answer, vision and hard reasoning, with Anthropic and OpenAI-compatible models as fallbacks for answers and vision. `mca doctor` prints the routing table and marks routes that cannot run.
+Default routing uses Apple's on-device model for the "is this worth interrupting you?" gate, and `gemini-4-hydrogen` for classify, answer, vision and hard reasoning, with Anthropic and OpenAI-compatible models as fallbacks for answers and vision. `mca doctor` prints the routing table and marks routes that cannot run.
 
 ### Adding a key (recommended way)
 
@@ -378,7 +378,7 @@ The microphone is not open at launch. It opens when a voice session starts and c
 ### Language (Settings ▸ General ▸ Language)
 
 - **Interface**: English, 日本語, 한국어, or **Match macOS** (default). This sets the language of the menus, Settings and permission screens, and the language the agent writes its answers and advice in. It applies immediately.
-- **Engine**: **Gemini Flash (Cloud / High Accuracy)** or **macOS (On-Device / Private)**. The default is Gemini Flash, which sends audio to Gemini for transcription; if no Gemini key is stored, the app uses the on-device engine instead. Choose **macOS (On-Device / Private)** if audio must never leave your Mac.
+- **Engine**: **Gemini Hydrogen (Cloud / High Accuracy)** or **macOS (On-Device / Private)**. The default is Gemini Hydrogen, which sends audio to Gemini for transcription; if no Gemini key is stored, the app uses the on-device engine instead. Choose **macOS (On-Device / Private)** if audio must never leave your Mac.
 - **Speech Language**: Automatic (default), English, 日本語 or 한국어. **Automatic follows the interface language**; it does not detect which language you are speaking. Settings shows the resolved language (for example "Automatic → 한국어 (ko-KR)") and whether that language's on-device model is installed, still downloadable or unsupported. A first dictation that stalls for a while is usually a model download. If the language is unsupported on your Mac, Dictation will not start but Live conversation still works.
 
 Changing the speech locale restarts transcription, so a few seconds of audio are lost at the switch. Error text from macOS and from model providers is shown as received, in its original language, and the `mca` command line is English only.
@@ -427,7 +427,7 @@ Other keys: `Esc` closes the chat window and cancels Snip and the screen picker;
 | On-device "worth interrupting?" gate | Apple's on-device model. Only items that pass it reach a cloud model. Without Apple Intelligence the gate falls back to a cloud model. |
 | Questions you ask, with context and tool results | Sent to the model provider that answers (Gemini by default, then Anthropic or OpenAI-compatible fallbacks). |
 | Pictures from Explain, Snip and Continuous Watch | Sent to a cloud vision model. |
-| Dictation audio | On-device engine: stays on the Mac and only text is sent. Gemini Flash engine: audio is sent to Gemini for transcription. |
+| Dictation audio | On-device engine: stays on the Mac and only text is sent. Gemini Hydrogen engine: audio is sent to Gemini for transcription. |
 | Live conversation audio | Streamed to Google while the conversation is open. |
 | API keys | Sealed to the Secure Enclave; ciphertext only in your login keychain. |
 
@@ -488,7 +488,7 @@ Start with `mca doctor`. It reports permissions, signing, Apple Intelligence, ke
 
 **"No API key — the agent cannot answer anything".** Add a key in Settings ▸ Models & Keys. An environment variable only reaches the app if the app was started from that environment. If a key was added with `mca auth set`, macOS may be waiting on an "allow access?" dialog; add it in Settings instead. If your Mac was erased or the Secure Enclave was reset, stored keys are unreadable and must be entered again.
 
-**Dictation does not start.** Check Settings ▸ General ▸ Language: the speech model for the language may be downloading (wait) or unsupported on this Mac (use Live conversation, or change **Speech Language**). Check the Microphone permission. With the Gemini Flash engine and no Gemini key, the app uses the on-device engine.
+**Dictation does not start.** Check Settings ▸ General ▸ Language: the speech model for the language may be downloading (wait) or unsupported on this Mac (use Live conversation, or change **Speech Language**). Check the Microphone permission. With the Gemini Hydrogen engine and no Gemini key, the app uses the on-device engine.
 
 **A shortcut does nothing.** Another app probably owns that chord. Open Settings ▸ Shortcuts; a taken chord is marked. Record a different one.
 

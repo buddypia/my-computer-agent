@@ -41,8 +41,8 @@ struct ModelRouterTests {
 
         #expect(try router.executor(for: ModelRef(provider: "apple", model: "system"))
             .identifier == "apple/system")
-        #expect(try router.executor(for: ModelRef(provider: "gemini", model: "gemini-3.8-flash"))
-            .identifier == "gemini/gemini-3.8-flash")
+        #expect(try router.executor(for: ModelRef(provider: "gemini", model: "gemini-4-hydrogen"))
+            .identifier == "gemini/gemini-4-hydrogen")
         #expect(try router.executor(for: ModelRef(provider: "anthropic", model: "claude-sonnet-4-5"))
             .identifier == "anthropic/claude-sonnet-4-5")
         #expect(try router.executor(for: ModelRef(provider: "ollama", model: "qwen3:8b"))

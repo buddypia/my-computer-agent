@@ -622,7 +622,7 @@ private struct SpeechLanguagePicker: View {
                     get: { model.transcriptionEngine },
                     set: { model.setTranscriptionEngine($0) })
             ) {
-                Text(localized("Gemini Flash (Cloud / High Accuracy)", "Gemini Flash (クラウド・高精度)", "Gemini Flash (클라우드·고정밀)")).tag(TranscriptionEngine.gemini)
+                Text(localized("Gemini Hydrogen (Cloud / High Accuracy)", "Gemini Hydrogen (クラウド・高精度)", "Gemini Hydrogen (클라우드·고정밀)")).tag(TranscriptionEngine.gemini)
                 Text(localized("macOS (On-Device / Private)", "macOS (オンデバイス・完全ローカル)", "macOS (온디바이스·완전 로컬)")).tag(TranscriptionEngine.apple)
             }
             .pickerStyle(.segmented)
@@ -630,9 +630,9 @@ private struct SpeechLanguagePicker: View {
             if model.transcriptionEngine == .gemini {
                 note(
                     localized(
-                        "Uses Gemini Flash multimodal AI for accurate transcription, eliminating homophone errors and verbal fillers.",
-                        "Gemini Flash による高精度認識を使用します。文脈に応じて同音異義語の誤変換や不要なフィラーを自動補正します。",
-                        "Gemini Flash 고정밀 인식을 사용합니다. 문맥에 맞게 동음이의어 오타와 불필요한 추임새를 자동으로 보정합니다."),
+                        "Uses Gemini Hydrogen multimodal AI for accurate transcription, eliminating homophone errors and verbal fillers.",
+                        "Gemini Hydrogen による高精度認識を使用します。文脈に応じて同音異義語の誤変換や不要なフィラーを自動補正します。",
+                        "Gemini Hydrogen 고정밀 인식을 사용합니다. 문맥에 맞게 동음이의어 오타와 불필요한 추임새를 자동으로 보정합니다."),
                     symbol: "sparkles",
                     tint: .blue)
             } else {

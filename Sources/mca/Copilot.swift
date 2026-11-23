@@ -1521,7 +1521,7 @@ final class Copilot {
         if engine == .gemini, let key = SecretStore.shared.read(account: "gemini"), !key.isEmpty {
             return GeminiTranscriber(
                 apiKey: key,
-                model: "gemini-3.8-flash",
+                model: "gemini-4-hydrogen",
                 locale: locale
             )
         }
