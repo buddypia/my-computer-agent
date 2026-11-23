@@ -221,6 +221,11 @@ struct CaptureDefaultTests {
         #expect(!AgentConfiguration().alwaysListening)
     }
 
+    @Test("operations ask for approval until the user turns that off")
+    func autoApproveIsOptIn() {
+        #expect(!AgentConfiguration().autoApproveActions)
+    }
+
     @Test("a config file missing newer keys keeps the rest of the file")
     func partialConfigDecodes() throws {
         // The failure this guards: the synthesised initialiser needs every key,
@@ -236,6 +241,7 @@ struct CaptureDefaultTests {
         #expect(decoded.retentionDays == 7)
         #expect(decoded.typingPauseSeconds == 4.0)
         #expect(decoded.alwaysListening == false)
+        #expect(decoded.autoApproveActions == false)
         #expect(decoded.transcriptionEngine == .gemini)
         #expect(decoded.embeddingGemmaModel == AgentConfiguration.defaultEmbeddingGemmaModel)
         #expect(decoded.excludedBundleIDs == AgentConfiguration.defaultExcludedBundleIDs)
@@ -244,10 +250,11 @@ struct CaptureDefaultTests {
 
     @Test("an explicit value still wins over the default")
     func explicitValueDecodes() throws {
-        let json = #"{"alwaysListening": true, "transcriptionEngine": "apple", "embeddingGemmaModel": "google/embeddinggemma-2-440m"}"#
+        let json = #"{"alwaysListening": true, "autoApproveActions": true, "transcriptionEngine": "apple", "embeddingGemmaModel": "google/embeddinggemma-2-440m"}"#
         let decoded = try JSONDecoder().decode(
             AgentConfiguration.self, from: Data(json.utf8))
         #expect(decoded.alwaysListening)
+        #expect(decoded.autoApproveActions)
         #expect(decoded.transcriptionEngine == .apple)
         #expect(decoded.embeddingGemmaModel == "google/embeddinggemma-2-440m")
     }

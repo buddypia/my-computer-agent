@@ -248,6 +248,18 @@ public struct AgentConfiguration: Codable, Sendable {
     /// Off by default: the MCP caller is itself a model reading untrusted
     /// content, so "the client asked" is not the same as "the user agreed".
     public var mcpAllowDangerousTools: Bool
+    /// Runs every operation that would ask "Approve this operation" in the app
+    /// without asking, and records each one in the chat instead.
+    ///
+    /// Off by default. The model choosing the operation reads untrusted screen
+    /// and web content, so with this on an injected instruction can run
+    /// AppleScript or type into a terminal unchecked. What stays in force: the
+    /// hard refusals (`FileWritePolicy`), the per-task action budget, target
+    /// revalidation and the stop button. Kept here rather than in
+    /// `UserDefaults` because `write_file` refuses this directory, so while it
+    /// is off the agent cannot turn it on without an approved operation. Once
+    /// on, an auto-approved script could rewrite this file like any other.
+    public var autoApproveActions: Bool
 
     /// Apps never captured, by bundle ID prefix. Enforced *before* anything is
     /// written to disk (REQ-10 zero-trust pre-capture exclusion).
@@ -273,6 +285,7 @@ public struct AgentConfiguration: Codable, Sendable {
         transcriptionEngine: TranscriptionEngine = .gemini,
         mcpServerEnabled: Bool = true,
         mcpAllowDangerousTools: Bool = false,
+        autoApproveActions: Bool = false,
         excludedBundleIDs: [String] = AgentConfiguration.defaultExcludedBundleIDs,
         excludedWindowPatterns: [String] = AgentConfiguration.defaultExcludedWindowPatterns,
         databaseURL: URL? = nil,
@@ -288,6 +301,7 @@ public struct AgentConfiguration: Codable, Sendable {
         self.transcriptionEngine = transcriptionEngine
         self.mcpServerEnabled = mcpServerEnabled
         self.mcpAllowDangerousTools = mcpAllowDangerousTools
+        self.autoApproveActions = autoApproveActions
         self.excludedBundleIDs = excludedBundleIDs
         self.excludedWindowPatterns = excludedWindowPatterns
         self.databaseURL = databaseURL ?? AgentConfiguration.defaultDatabaseURL
@@ -322,6 +336,7 @@ public struct AgentConfiguration: Codable, Sendable {
         transcriptionEngine = try value(.transcriptionEngine, fallback.transcriptionEngine)
         mcpServerEnabled = try value(.mcpServerEnabled, fallback.mcpServerEnabled)
         mcpAllowDangerousTools = try value(.mcpAllowDangerousTools, fallback.mcpAllowDangerousTools)
+        autoApproveActions = try value(.autoApproveActions, fallback.autoApproveActions)
         excludedBundleIDs = try value(.excludedBundleIDs, fallback.excludedBundleIDs)
         excludedWindowPatterns = try value(
             .excludedWindowPatterns, fallback.excludedWindowPatterns)

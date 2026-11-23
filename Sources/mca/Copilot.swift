@@ -185,6 +185,7 @@ final class Copilot {
             Task { await self?.setAlwaysListening(enabled) }
         },
         onVoiceCaptionChanged: { [weak self] enabled in self?.setVoiceCaption(enabled) },
+        onAutoApproveActionsChanged: { [weak self] enabled in self?.setAutoApproveActions(enabled) },
         onTranscriptionEngineChanged: { [weak self] engine in self?.setTranscriptionEngine(engine) },
         onEmbeddingGemmaModelChanged: { [weak self] model in self?.setEmbeddingGemmaModel(model) })
 
@@ -435,6 +436,7 @@ final class Copilot {
         // caption decides whether to exist at all from `showsVoiceCaption`.
         hudState.voiceMode = voicePreferences.mode
         hudState.showsVoiceCaption = voicePreferences.showsCaption
+        hudState.autoApprovesActions = configuration.autoApproveActions
         caption.start()
         agentCursor.start()
 
@@ -1917,7 +1919,10 @@ final class Copilot {
     private func toolApprover() -> ChatToolApprover {
         ChatToolApprover { [weak self] request in
             guard let self else { return .cancelled }
-            self.chatWindow.presentForApproval()
+            // Nothing to answer in auto mode, so the chat is not brought forward.
+            // It is still closed below, as after a manual approval, so that
+            // approved keystrokes do not land in it.
+            if !self.hudState.autoApprovesActions { self.chatWindow.presentForApproval() }
             let status = await self.hudState.requestApproval(request)
             _ = await self.chatWindow.closeAndWaitForSurfaceRemoval()
             return status
@@ -1925,7 +1930,7 @@ final class Copilot {
     }
 
     private func presentActionApproval(_ request: ActionApprovalRequest) async -> ActionApprovalStatus {
-        chatWindow.presentForApproval()
+        if !hudState.autoApprovesActions { chatWindow.presentForApproval() }
         let result = await hudState.requestApproval(request)
         if result == .approved && request.operation.hasPrefix("Desktop:") {
             guard await chatWindow.closeAndWaitForSurfaceRemoval() else { return .cancelled }
@@ -2073,6 +2078,19 @@ final class Copilot {
     /// rather than a setting.
     private func toggleVoiceSession() {
         pressVoice(hudState.voiceMode)
+    }
+
+    /// Turns automatic approval on or off and writes it to config.json.
+    func setAutoApproveActions(_ enabled: Bool) {
+        hudState.autoApprovesActions = enabled
+        guard configuration.autoApproveActions != enabled else { return }
+        configuration.autoApproveActions = enabled
+        do {
+            try configuration.save()
+        } catch {
+            log.error(
+                "Could not save the auto-approve setting: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// Turns the large on-screen caption on or off, and remembers it.

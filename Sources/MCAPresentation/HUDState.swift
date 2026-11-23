@@ -185,12 +185,25 @@ public final class HUDState {
 
     public var isAwaitingApproval: Bool { !approvalWaiters.isEmpty }
 
+    /// Mirrors `AgentConfiguration.autoApproveActions`. When on, a request is
+    /// approved without waiting and left in the chat as a resolved card, so
+    /// every operation that ran is still visible afterwards.
+    public var autoApprovesActions = false
+
     /// Approval controls resolve only the matching waiter, once. They cannot
     /// execute payload text or grant permission to a later operation.
     public func requestApproval(_ request: ActionApprovalRequest,
                                 timeout: Duration = .seconds(300)) async -> ActionApprovalStatus {
         guard !Task.isCancelled, approvalWaiters.isEmpty, approvalWaiters[request.id] == nil,
               !messages.contains(where: { $0.approval?.id == request.id }) else { return .cancelled }
+        if autoApprovesActions {
+            var message = ChatMessage(id: request.id, role: .notice, text: request.details,
+                title: localized("Approved automatically", "自動で承認しました", "자동으로 승인했습니다"), severity: .info)
+            message.approval = request
+            message.approvalStatus = .approved
+            append(message)
+            return .approved
+        }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 guard !Task.isCancelled else { continuation.resume(returning: .cancelled); return }
