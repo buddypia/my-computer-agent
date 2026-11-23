@@ -54,7 +54,7 @@ public actor GeminiTranscriber: Transcribing {
 
     public init(
         apiKey: String,
-        model: String = "gemini-4-hydrogen",
+        model: String = RoutingPolicy.currentGeminiModel,
         locale: Locale = Locale.current,
         customInstruction: String? = nil,
         baseURL: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta")!,
@@ -235,6 +235,33 @@ public actor GeminiTranscriber: Transcribing {
         }
     }
 
+    /// The `generateContent` body, built apart from the request so its
+    /// generation config can be checked without a network round trip.
+    static func requestPayload(wavData: Data, prompt: String, model: String) -> [String: Any] {
+        var generationConfig: [String: Any] = [
+            "temperature": 0.0,
+            "maxOutputTokens": 1024,
+        ]
+        // Gemini 3 and later think at "medium" or "high" unless told
+        // otherwise, which only adds latency to a transcript. Gemini 2.x
+        // rejects `thinkingLevel`, so it is left on its own default.
+        if !model.lowercased().contains("gemini-2") {
+            generationConfig["thinkingConfig"] = ["thinkingLevel": "low"]
+        }
+        return [
+            "contents": [
+                [
+                    "role": "user",
+                    "parts": [
+                        ["inlineData": ["mimeType": "audio/wav", "data": wavData.base64EncodedString()]],
+                        ["text": prompt],
+                    ],
+                ]
+            ],
+            "generationConfig": generationConfig,
+        ]
+    }
+
     private func requestTranscription(wavData: Data) async throws -> String {
         let endpoint = baseURL.appending(path: "models/\(model):generateContent")
         var request = URLRequest(url: endpoint)
@@ -242,32 +269,7 @@ public actor GeminiTranscriber: Transcribing {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
 
-        let prompt = buildPrompt()
-        let payload: [String: Any] = [
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [
-                        [
-                            "inlineData": [
-                                "mimeType": "audio/wav",
-                                "data": wavData.base64EncodedString()
-                            ]
-                        ],
-                        [
-                            "text": prompt
-                        ]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "temperature": 0.0,
-                "maxOutputTokens": 1024,
-                // Gemini 4 Hydrogen thinks at "high" unless told otherwise,
-                // which only adds latency to a transcript.
-                "thinkingConfig": ["thinkingLevel": "low"]
-            ]
-        ]
+        let payload = Self.requestPayload(wavData: wavData, prompt: buildPrompt(), model: model)
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 

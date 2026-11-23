@@ -68,6 +68,8 @@ public actor GeminiLiveSession {
     private let systemInstruction: String
     /// Whether the model may search the web mid-conversation.
     private let webSearchEnabled: Bool
+    /// `gemini-3.1-flash-live-preview` is legacy; Google points it here.
+    public static let defaultModel = "gemini-3.8-live"
     /// The Live API expects 16 kHz mono PCM on input; output arrives at 24 kHz.
     public static let inputSampleRate: Double = 16_000
     public static let outputSampleRate: Double = 24_000
@@ -91,7 +93,7 @@ public actor GeminiLiveSession {
     private var isConnected = false
 
     public init(
-        model: String = "gemini-3.1-flash-live-preview",
+        model: String = GeminiLiveSession.defaultModel,
         apiKey: String,
         systemInstruction: String = Prompts.live,
         webSearchEnabled: Bool = true
@@ -180,11 +182,11 @@ public actor GeminiLiveSession {
     ) -> [String: Any] {
         var setup: [String: Any] = [
             "model": "models/\(model)",
+            // No `thinkingConfig`: gemini-3.8-live reasons interleaved with
+            // speech and does not accept a thinking level. Hard questions
+            // belong on the text route.
             "generationConfig": [
                 "responseModalities": ["AUDIO"],
-                // Minimal thinking: this path is optimised for turn latency,
-                // not for depth. Hard questions belong on the text route.
-                "thinkingConfig": ["thinkingLevel": "low"],
             ],
             "systemInstruction": [
                 "parts": [["text": systemInstruction]]

@@ -189,3 +189,22 @@ struct GeminiTranscriberTests {
         }
     }
 }
+
+struct GeminiTranscriberPayloadTests {
+    private func generationConfig(model: String) -> [String: Any]? {
+        GeminiTranscriber.requestPayload(wavData: Data([0, 0]), prompt: "p", model: model)["generationConfig"]
+            as? [String: Any]
+    }
+
+    /// Gemini 4 Hydrogen thinks at "high" by default; a transcript does not
+    /// need it and pays for it in latency.
+    @Test func asksCurrentModelsForLowThinking() {
+        let thinking = generationConfig(model: "gemini-4-hydrogen")?["thinkingConfig"] as? [String: Any]
+        #expect(thinking?["thinkingLevel"] as? String == "low")
+    }
+
+    /// Gemini 2.x rejects `thinkingLevel` with a 400.
+    @Test func omitsThinkingLevelForGemini2() {
+        #expect(generationConfig(model: "gemini-2.5-flash-lite")?["thinkingConfig"] == nil)
+    }
+}

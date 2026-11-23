@@ -33,7 +33,7 @@ python3 -B Scripts/eval/computer-use/run.py --live --mode smoke \
 
 # 画像と目標だけを実モデルに渡す。モデルIDは明示し、fallbackで置き換えない。
 secret run GEMINI_API_KEY -- python3 -B Scripts/eval/computer-use/run.py \
-  --live --mode agent --model gemini-3.8-flash \
+  --live --mode agent --model gemini-4-hydrogen \
   --output artifacts/computer-use/agent-001
 
 # 入力を全く送らない対照試験。期待結果は failed、終了コード1。

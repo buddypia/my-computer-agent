@@ -247,6 +247,16 @@ struct WireFormatTests {
         #expect(config?["thinkingConfig"] == nil)
     }
 
+    /// A model the check does not recognise silently loses its reasoning level
+    /// and runs at the API's default — "high" on Gemini 4.
+    @Test("Gemini 3 and 4 models are recognised as reasoning models")
+    func geminiReasoningModels() {
+        #expect(GeminiExecutor.supportsReasoning(model: "gemini-4-hydrogen"))
+        #expect(GeminiExecutor.supportsReasoning(model: "gemini-4-argon"))
+        #expect(GeminiExecutor.supportsReasoning(model: "gemini-3.8-flash"))
+        #expect(!GeminiExecutor.supportsReasoning(model: "gemini-1.5-flash"))
+    }
+
     @Test("Gemini 2.5 uses thinkingBudget")
     func gemini25ThinkingBudget() throws {
         let body = GeminiExecutor(model: "gemini-2.5-flash", apiKey: "k")

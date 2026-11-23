@@ -2,6 +2,7 @@
 
 > **作成日**: 2026-09-08
 > **対象**: `my-computer-agent` の再設計（v1 は Python + Web HUD 構成で中核機能が非動作）
+> **モデル ID の更新（2026-11-24）**: 本文のモデル ID・価格は作成時点の記録。現在の既定は回答系 `gemini-4-hydrogen`、音声対話 `gemini-3.8-live`（`Sources/MCACore/Configuration.swift`・`Sources/MCARealtime/GeminiLiveSession.swift`）。
 > **評価軸**: レイテンシ / モジュール性 / 拡張性 / マルチプロバイダー / 効率（コスト・CPU）/ 未来性 / 実装コスト
 
 ---

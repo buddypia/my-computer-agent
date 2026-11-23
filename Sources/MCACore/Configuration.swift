@@ -86,10 +86,10 @@ public struct RoutingPolicy: Codable, Sendable {
     public static let `default` = RoutingPolicy(
         routes: [
             .triage: ModelRef(provider: "apple", model: "system"),
-            .classify: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .minimal),
-            .answer: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .low),
-            .vision: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .low),
-            .hardReasoning: ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .high),
+            .classify: ModelRef(provider: "gemini", model: RoutingPolicy.currentGeminiModel, reasoningLevel: .minimal),
+            .answer: ModelRef(provider: "gemini", model: RoutingPolicy.currentGeminiModel, reasoningLevel: .low),
+            .vision: ModelRef(provider: "gemini", model: RoutingPolicy.currentGeminiModel, reasoningLevel: .low),
+            .hardReasoning: ModelRef(provider: "gemini", model: RoutingPolicy.currentGeminiModel, reasoningLevel: .high),
         ],
         // One Gemini model across every cloud tier. The cheaper Flash Lite is
         // deliberately not used: two model IDs meant two sets of quota,
@@ -99,7 +99,7 @@ public struct RoutingPolicy: Codable, Sendable {
         // held down by `reasoningLevel` and `maxOutputTokens` instead.
         fallbacks: [
             .triage: [
-                ModelRef(provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .minimal),
+                ModelRef(provider: "gemini", model: RoutingPolicy.currentGeminiModel, reasoningLevel: .minimal),
             ],
             .answer: [
                 ModelRef(provider: "anthropic", model: "claude-sonnet-4-5"),
@@ -118,6 +118,44 @@ public struct RoutingPolicy: Codable, Sendable {
             .hardReasoning: 16384,
         ]
     )
+
+    /// The Gemini model a saved route is moved to when its model is legacy.
+    public static let currentGeminiModel = "gemini-4-hydrogen"
+
+    /// Gemini IDs a saved config.json may still name: the previous app default
+    /// (`gemini-3.8-flash`) and models Google has shut down or deprecated.
+    /// `save()` writes the whole routing table, so a file saved under an older
+    /// build pins every route to the old default; without this, changing the
+    /// default in code never reaches an existing install.
+    public static let legacyGeminiModels: Set<String> = [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    ]
+
+    /// This policy with every Gemini route on a legacy model moved to
+    /// `currentGeminiModel`. Reasoning levels and every other provider's
+    /// routes are kept as they are.
+    public func migratingLegacyGeminiModels() -> RoutingPolicy {
+        func migrate(_ ref: ModelRef) -> ModelRef {
+            guard ref.provider == "gemini",
+                  Self.legacyGeminiModels.contains(ref.model.lowercased()) else { return ref }
+            var migrated = ref
+            migrated.model = Self.currentGeminiModel
+            return migrated
+        }
+        var policy = self
+        policy.routes = routes.mapValues(migrate)
+        policy.fallbacks = fallbacks.mapValues { $0.map(migrate) }
+        return policy
+    }
 }
 
 /// How the agent reaches a browser: attach to the user's running Chrome first (their logins
@@ -274,7 +312,7 @@ public struct AgentConfiguration: Codable, Sendable {
             try container.decodeIfPresent(T.self, forKey: key) ?? `default`
         }
 
-        routing = try value(.routing, fallback.routing)
+        routing = try value(.routing, fallback.routing).migratingLegacyGeminiModels()
         minSecondsBetweenProactiveAlerts = try value(
             .minSecondsBetweenProactiveAlerts, fallback.minSecondsBetweenProactiveAlerts)
         typingPauseSeconds = try value(.typingPauseSeconds, fallback.typingPauseSeconds)
