@@ -54,7 +54,7 @@ public actor GeminiTranscriber: Transcribing {
 
     public init(
         apiKey: String,
-        model: String = "gemini-4-hydrogen",
+        model: String = RoutingPolicy.currentGeminiModel,
         locale: Locale = Locale.current,
         customInstruction: String? = nil,
         baseURL: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta")!,

@@ -1519,11 +1519,7 @@ final class Copilot {
         let engine = voicePreferences.engine
         let locale = Localization.shared.speechLocale
         if engine == .gemini, let key = SecretStore.shared.read(account: "gemini"), !key.isEmpty {
-            return GeminiTranscriber(
-                apiKey: key,
-                model: "gemini-4-hydrogen",
-                locale: locale
-            )
+            return GeminiTranscriber(apiKey: key, locale: locale)
         }
         return SpeechAnalyzerTranscriber(locale: locale)
     }
