@@ -256,8 +256,9 @@ public struct AgentConfiguration: Codable, Sendable {
     /// AppleScript or type into a terminal unchecked. What stays in force: the
     /// hard refusals (`FileWritePolicy`), the per-task action budget, target
     /// revalidation and the stop button. Kept here rather than in
-    /// `UserDefaults` because `write_file` refuses this directory, so the agent
-    /// cannot turn it on for itself.
+    /// `UserDefaults` because `write_file` refuses this directory, so while it
+    /// is off the agent cannot turn it on without an approved operation. Once
+    /// on, an auto-approved script could rewrite this file like any other.
     public var autoApproveActions: Bool
 
     /// Apps never captured, by bundle ID prefix. Enforced *before* anything is

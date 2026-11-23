@@ -1919,10 +1919,10 @@ final class Copilot {
     private func toolApprover() -> ChatToolApprover {
         ChatToolApprover { [weak self] request in
             guard let self else { return .cancelled }
-            // Nothing to answer, so the chat is not brought forward over the
-            // app the keystrokes are meant for.
-            if self.hudState.autoApprovesActions { return await self.hudState.requestApproval(request) }
-            self.chatWindow.presentForApproval()
+            // Nothing to answer in auto mode, so the chat is not brought forward.
+            // It is still closed below, as after a manual approval, so that
+            // approved keystrokes do not land in it.
+            if !self.hudState.autoApprovesActions { self.chatWindow.presentForApproval() }
             let status = await self.hudState.requestApproval(request)
             _ = await self.chatWindow.closeAndWaitForSurfaceRemoval()
             return status
