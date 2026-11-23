@@ -91,7 +91,7 @@ public struct CredentialStore: Sendable {
 /// errors.
 ///
 /// Routing lives here rather than at call sites for two reasons: the price of a
-/// model changes (Gemini 3.8 Flash doubles on 2027-01-01) and preview model IDs
+/// model changes and preview model IDs
 /// get retired, so both belong in configuration; and the triage-gate pattern
 /// only works if *every* call declares its tier.
 public struct ModelRouter: Sendable {

@@ -29,7 +29,7 @@ macOS를 위한 로컬 우선(Local-first) 멀티모달 데스크톱 코파일�
 | **보기 (Sees)** | OS 이벤트(포커스 변경, 창 제목 변경, 타이핑 중단)를 트리거로 활성 창의 접근성 트리를 읽습니다. Canvas 기반 렌더링 앱에서는 온디바이스 Vision OCR로 자동 폴백합니다. 불필요한 프레임 레이트 감시(주기적 폴링)는 전혀 수행하지 않습니다. |
 | **실행하기 (Acts)** | CoreGraphics 이벤트 합성과 접근성 API(AXUIElement)를 연동한 네이티브 GUI 제어(클릭, 타이핑, 키 조합, AppleScript 실행). TypeSafe AI(Jev System One 모델, <200ms) 기반 초저지연 UI 판정 및 API 키 미설정 시의 로컬 시맨틱 폴백 지원. 내장 코파일럿, CLI(`mca act`), 외부 MCP 클라이언트에서 안전하게 호출할 수 있습니다. |
 | **듣기 (Hears)** | 하드웨어 AEC가 적용된 마이크 입력과, 가상 드라이버 없는 CoreAudio 프로세스 탭을 통한 시스템 오디오 출력을 분리 캡처합니다. 2개 독립 채널로 '나'와 '상대방'의 음성을 명확히 구분합니다. **앱 실행 시에는 아무것도 캡처하지 않습니다.** 음성 대화(⌃⌥V)를 시작할 때 마이크가 열리고 종료 시 닫힙니다. 상시 캡처는 ✨ ▸ 설정 ▸ 일반 ▸ 오디오에서 활성화할 수 있습니다. |
-| **텍스트 변환 (Transcribes)** | 듀얼 인식 엔진 지원: 완전한 로컬 프라이버시를 보장하는 Apple 온디바이스 `SpeechAnalyzer`, 또는 뛰어난 다국어 정확도와 동음이의어 문맥 보정 및 불필요한 추임새 제거를 제공하는 **Gemini Flash 음성 배치 인식**. Apple 엔진 사용 시 음성 데이터는 절대 기기 밖으로 나가지 않습니다. |
+| **텍스트 변환 (Transcribes)** | 듀얼 인식 엔진 지원: 완전한 로컬 프라이버시를 보장하는 Apple 온디바이스 `SpeechAnalyzer`, 또는 뛰어난 다국어 정확도와 동음이의어 문맥 보정 및 불필요한 추임새 제거를 제공하는 **Gemini Hydrogen 음성 배치 인식**. Apple 엔진 사용 시 음성 데이터는 절대 기기 밖으로 나가지 않습니다. |
 | **말하기 (Talks)** | 복잡한 모드 선택 대신 2개의 직관적인 버튼을 제공합니다. 마이크 버튼은 **받아쓰기(Dictation)**: Mac에서 온디바이스/클라우드로 텍스트 변환 후 타이핑 질문과 동일한 채팅 모델로 전달됩니다. 옆의 파형 버튼은 **Live 대화**: 단일 소켓을 통해 Gemini가 음성을 직접 듣고 음성으로 답변하며, 실시간 정보가 필요할 때 웹 검색을 수행합니다. 어떤 모드든 사용자가 말한 내용은 작업 중인 화면 하단에 큼직한 자막으로 실시간 표시됩니다. |
 | **기억하기 (Remembers)** | FTS5 전체 텍스트 검색을 지원하는 SQLite와 온디바이스 쿼리 확장을 탑재하여 정확한 단어가 아니더라도 문맥 의미로 검색할 수 있습니다. |
 | **조언하기 (Advises)** | 온디바이스 모델이 모든 스캔을 1차 선별(트리아지)하여 기본적으로 침묵을 유지합니다. 게이트를 통과한 중요한 이벤트만 클라우드 모델로 전달됩니다. 채팅에서 '**화면 지켜보기(Watch my screen)**'를 켜면 타이머 주기로 화면 이미지 자체를 분석하여 실수, 오류, 위험, 더 빠른 방법을 발견했을 때만 조언합니다 (기본값 꺼짐, 앱 재실행 시 항상 꺼진 상태로 시작). |
@@ -167,7 +167,7 @@ Dock 아이콘 없이 상단 메뉴바의 ✨ 아이콘이 앱의 기본 인터�
 
 **Engine (음성 전사 엔진)** — 음성 입력 및 텍스트 변환 백엔드를 선택합니다:
 
-- **Gemini Flash (Cloud / High Accuracy)**: Google Gemini Flash 멀티모달 AI를 활용한 고속 배치 전사. 매우 높은 인식률을 자랑하며 한국어/일본어의 동음이의어 오인식을 문맥에 맞게 정확히 교정하고 불필요한 추임새("어...", "음...")를 자동으로 정제합니다.
+- **Gemini Hydrogen (Cloud / High Accuracy)**: Google Gemini Hydrogen 멀티모달 AI를 활용한 고속 배치 전사. 매우 높은 인식률을 자랑하며 한국어/일본어의 동음이의어 오인식을 문맥에 맞게 정확히 교정하고 불필요한 추임새("어...", "음...")를 자동으로 정제합니다.
 - **macOS (On-Device / Private)**: Apple 기본 온디바이스 `SpeechAnalyzer`. 음성 데이터가 기기 밖으로 일절 전송되지 않아 완전한 오프라인 프라이버시가 보장됩니다.
 
 **Speech (말하는 언어)** — 마이크 입력을 전사할 언어를 지정합니다: *Automatic*(기본값), English, 日本語, 한국어. 앱 UI는 영어로 보면서 음성 질문은 한국어로 하는 일반적인 사용 패턴을 지원하기 위해 UI 언어와 독립적으로 분리되어 있습니다.
@@ -230,9 +230,9 @@ Gemini, Anthropic, OpenAI 호환(Ollama, LM Studio, vLLM, Groq, OpenRouter 등),
 | 작업 | 모델 | 비고 |
 |---|---|---|
 | `triage` (1차 선별) | Apple 온디바이스 | 완전 무료, 상시 로컬 실행 |
-| `classify` (분류) | `gemini-3.8-flash` | `thinkingLevel: minimal` |
-| `answer` / `vision` (답변 및 이미지 분석) | `gemini-3.8-flash` | 기본 추론 |
-| `hardReasoning` (고난도 추론) | `gemini-3.8-flash` | 명시적 요청 시, `thinkingLevel: high` |
+| `classify` (분류) | `gemini-4-hydrogen` | `thinkingLevel: low` |
+| `answer` / `vision` (답변 및 이미지 분석) | `gemini-4-hydrogen` | 기본 추론 |
+| `hardReasoning` (고난도 추론) | `gemini-4-hydrogen` | 명시적 요청 시, `thinkingLevel: high` |
 
 모델 ID와 토큰 예산은 `~/Library/Application Support/MyComputerAgent/config.json`에 저장되어 재컴파일 없이 변경할 수 있습니다.
 
