@@ -107,7 +107,8 @@ public struct EventSynthesizer: Sendable {
         if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
         try ensureInputTarget()
         try validateCoordinate(point)
-        event.post(tap: .cghidEventTap)
+        AgentInputFeedback.report(.move(point))
+        event.postAsAgent()
     }
 
     /// Presses or releases the left button at the current cursor position, for drags
@@ -129,7 +130,7 @@ public struct EventSynthesizer: Sendable {
             }
             event.setIntegerValueField(.mouseEventClickState, value: 1)
             if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
-            event.post(tap: .cghidEventTap)
+            event.postAsAgent()
             return
         }
         try ensureTrusted()
@@ -147,7 +148,8 @@ public struct EventSynthesizer: Sendable {
         if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
         try ensureInputTarget()
         try validateCoordinate(point)
-        event.post(tap: .cghidEventTap)
+        AgentInputFeedback.report(.click(point, count: 1, secondary: false))
+        event.postAsAgent()
         Self.heldButton.value = true
     }
 
@@ -170,8 +172,8 @@ public struct EventSynthesizer: Sendable {
                     throw SynthesizerError.eventCreationFailed
                 }
                 event.flags = down ? accumulated : []
-                if down { try ensureInputTarget() }
-                event.post(tap: .cghidEventTap)
+                if down { try ensureInputTarget(); AgentInputFeedback.report(.keyboard) }
+                event.postAsAgent()
             }
             return
         }
@@ -180,8 +182,8 @@ public struct EventSynthesizer: Sendable {
             throw SynthesizerError.eventCreationFailed
         }
         event.flags = (down && !flags.isEmpty) ? flags : []
-        if down { try ensureInputTarget() }
-        event.post(tap: .cghidEventTap)
+        if down { try ensureInputTarget(); AgentInputFeedback.report(.keyboard) }
+        event.postAsAgent()
     }
 
     private static let modifierKeys: [(UInt16, CGEventFlags)] = [
@@ -265,10 +267,11 @@ public struct EventSynthesizer: Sendable {
             upEvent.flags = Self.modifierFlags
         }
 
-        downEvent.post(tap: .cghidEventTap)
+        AgentInputFeedback.report(.click(targetPoint, count: Int(count), secondary: button != .left))
+        downEvent.postAsAgent()
         // Brief pause to allow the OS and target app to register mouse-down
         Thread.sleep(forTimeInterval: 0.015)
-        upEvent.post(tap: .cghidEventTap)
+        upEvent.postAsAgent()
         if button == .left { Self.heldButton.value = false }
     }
 
@@ -299,12 +302,15 @@ public struct EventSynthesizer: Sendable {
 
         try Self.dispatchDrag(from: start, to: end,
             validate: { point in try ensureTrusted(); try validateCoordinate(point) },
-            move: { try mouseMove(to: start) },
+            move: {
+                try mouseMove(to: start)
+                AgentInputFeedback.report(.drag(from: start, to: end))
+            },
             post: { type, point in
                 let event = type == .leftMouseDown ? downEvent : (type == .leftMouseDragged ? dragEvent : upEvent)
                 event.location = point
                 if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
-                event.post(tap: .cghidEventTap)
+                event.postAsAgent()
             },
             pause: { Thread.sleep(forTimeInterval: $0) })
     }
@@ -341,6 +347,7 @@ public struct EventSynthesizer: Sendable {
         }
 
         try ensureInputTarget()
+        AgentInputFeedback.report(.keyboard)
         // Characters already posted cannot be taken back, so a later stop reports how many went out.
         var sent = 0
         do {
@@ -364,8 +371,8 @@ public struct EventSynthesizer: Sendable {
                 up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: utf16)
 
                 try ensureInputTarget()
-                down.post(tap: .cghidEventTap)
-                up.post(tap: .cghidEventTap)
+                down.postAsAgent()
+                up.postAsAgent()
                 sent += 1
                 Thread.sleep(forTimeInterval: 0.005)
             }
@@ -426,7 +433,8 @@ public struct EventSynthesizer: Sendable {
         try ensureInputTarget()
         try validateCoordinate(targetPoint)
         if !Self.modifierFlags.isEmpty { event.flags = Self.modifierFlags }
-        event.post(tap: .cghidEventTap)
+        AgentInputFeedback.report(.scroll(targetPoint))
+        event.postAsAgent()
     }
 
     /// Scrolls a target application process in the background without moving the physical cursor or bringing the app frontmost.
@@ -453,7 +461,8 @@ public struct EventSynthesizer: Sendable {
 
         event.location = targetPoint
         try validateProcessScrollTarget(pid: pid, at: targetPoint)
-        event.postToPid(pid)
+        AgentInputFeedback.report(.scroll(targetPoint))
+        event.postAsAgent(toPid: pid)
     }
 
     /// Background delivery checks the explicitly addressed process/window, independent of chat focus.
@@ -472,6 +481,7 @@ public struct EventSynthesizer: Sendable {
     public func releaseAllHeldEvents() {
         Self.heldButton.value = false
         guard isTrusted else { return }
+        AgentInputFeedback.report(.released)
         let currentPoint = (try? cursorPosition()) ?? CGPoint(x: 100, y: 100)
 
         // 1. Post mouse-up events for all standard buttons (left, right, middle/other)
@@ -488,14 +498,14 @@ public struct EventSynthesizer: Sendable {
                 mouseCursorPosition: currentPoint,
                 mouseButton: button
             ) {
-                upEvent.post(tap: .cghidEventTap)
+                upEvent.postAsAgent()
             }
         }
 
         // 2. Clear all modifier keys (Cmd, Shift, Alt, Ctrl, Fn)
         if let dummyEvent = CGEvent(source: nil) {
             dummyEvent.flags = []
-            dummyEvent.post(tap: .cghidEventTap)
+            dummyEvent.postAsAgent()
         }
     }
 
@@ -514,9 +524,10 @@ public struct EventSynthesizer: Sendable {
         }
 
         try ensureInputTarget()
-        down.post(tap: .cghidEventTap)
+        AgentInputFeedback.report(.keyboard)
+        down.postAsAgent()
         Thread.sleep(forTimeInterval: 0.015)
-        up.post(tap: .cghidEventTap)
+        up.postAsAgent()
     }
 
     private func focusedAXElement(pid: pid_t, attribute: String) -> AXUIElement? {
@@ -956,5 +967,23 @@ public final class DryRunEventSynthesizer: EventSynthesizing, @unchecked Sendabl
         lock.lock()
         _recordedActions.removeAll()
         lock.unlock()
+    }
+}
+
+extension CGEvent {
+    /// Posts at the HID level, stamped as the agent's own input so the UI can
+    /// tell it apart from the user's (see `AgentInputFeedback.eventSourceTag`).
+    func postAsAgent() {
+        tagAsAgent()
+        post(tap: .cghidEventTap)
+    }
+
+    func postAsAgent(toPid pid: pid_t) {
+        tagAsAgent()
+        postToPid(pid)
+    }
+
+    func tagAsAgent() {
+        setIntegerValueField(.eventSourceUserData, value: AgentInputFeedback.eventSourceTag)
     }
 }

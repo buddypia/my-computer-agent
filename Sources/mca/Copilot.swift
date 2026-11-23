@@ -161,6 +161,14 @@ final class Copilot {
     /// hides itself from `hudState.voicePhase`, so nothing here has to
     /// remember to.
     private lazy var caption = VoiceCaptionPanel(state: hudState)
+    /// The agent's own pointer, a glow around the screen and a Stop pill,
+    /// shown while the agent is driving the mouse and keyboard.
+    private lazy var agentCursor = AgentCursorOverlay(
+        isAgentBusy: { [weak self] in
+            guard let self else { return false }
+            return self.hudState.isStreaming || self.activeAutonomousTask != nil
+        },
+        onStop: { [weak self] in self?.cancelActiveTask() })
     private let voicePreferences = VoicePreferences()
     private let hotKeys = HotKeyCenter()
     private lazy var menuBar = MenuBarController(
@@ -428,6 +436,7 @@ final class Copilot {
         hudState.voiceMode = voicePreferences.mode
         hudState.showsVoiceCaption = voicePreferences.showsCaption
         caption.start()
+        agentCursor.start()
 
         hudPanel.onSubmit = { [weak self] question in
             self?.ask(question)
@@ -2549,6 +2558,7 @@ final class Copilot {
         hotKeys.unregisterAll()
         menuBar.remove()
         caption.stop()
+        agentCursor.stop()
         hudPanel.close()
         chatWindow.destroy()
         screenPicker.destroy()
