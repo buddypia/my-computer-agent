@@ -171,6 +171,43 @@ struct RoutingPolicyTests {
         #expect(decoded.retentionDays == original.retentionDays)
         #expect(decoded.embeddingGemmaModel == original.embeddingGemmaModel)
     }
+
+    /// `save()` writes the whole routing table, so a config.json from an older
+    /// build pins every route to the default of that build.
+    @Test("a saved config on a legacy Gemini model moves to the current one")
+    func legacyGeminiModelsAreMigrated() throws {
+        var old = AgentConfiguration()
+        old.routing.routes[.answer] = ModelRef(
+            provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .low)
+        old.routing.routes[.vision] = ModelRef(provider: "gemini", model: "gemini-2.5-pro")
+        old.routing.fallbacks[.triage] = [
+            ModelRef(provider: "gemini", model: "gemini-3.8-flash", reasoningLevel: .minimal)
+        ]
+        let data = try JSONEncoder().encode(old)
+
+        let decoded = try JSONDecoder().decode(AgentConfiguration.self, from: data)
+
+        #expect(decoded.routing.routes[.answer] == ModelRef(
+            provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .low))
+        #expect(decoded.routing.routes[.vision]?.model == "gemini-4-hydrogen")
+        #expect(decoded.routing.fallbacks[.triage]?.first == ModelRef(
+            provider: "gemini", model: "gemini-4-hydrogen", reasoningLevel: .minimal))
+    }
+
+    @Test("a model the user picked that is not legacy is left alone")
+    func nonLegacyModelsAreKept() throws {
+        var custom = AgentConfiguration()
+        custom.routing.routes[.answer] = ModelRef(provider: "gemini", model: "gemini-4-argon")
+        custom.routing.routes[.vision] = ModelRef(
+            provider: "openai-compatible", model: "gemini-3.8-flash")
+        let data = try JSONEncoder().encode(custom)
+
+        let decoded = try JSONDecoder().decode(AgentConfiguration.self, from: data)
+
+        #expect(decoded.routing.routes[.answer]?.model == "gemini-4-argon")
+        // Only the Gemini provider is migrated; a proxy may use the name freely.
+        #expect(decoded.routing.routes[.vision]?.model == "gemini-3.8-flash")
+    }
 }
 
 @Suite("Capture defaults")

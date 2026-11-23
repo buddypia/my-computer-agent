@@ -11,7 +11,7 @@ import Testing
 struct LiveSetupTests {
     private func setup(webSearchEnabled: Bool = true) -> [String: Any] {
         let payload = GeminiLiveSession.setupPayload(
-            model: "gemini-3.1-flash-live-preview",
+            model: GeminiLiveSession.defaultModel,
             systemInstruction: "be brief",
             webSearchEnabled: webSearchEnabled)
         return payload["setup"] as? [String: Any] ?? [:]
@@ -19,7 +19,7 @@ struct LiveSetupTests {
 
     @Test("the model is sent fully qualified")
     func modelIsQualified() {
-        #expect(setup()["model"] as? String == "models/gemini-3.1-flash-live-preview")
+        #expect(setup()["model"] as? String == "models/gemini-3.8-live")
     }
 
     /// Both transcriptions are what the caption and the stored conversation are
@@ -36,6 +36,14 @@ struct LiveSetupTests {
     func audioIsRequested() {
         let config = setup()["generationConfig"] as? [String: Any]
         #expect(config?["responseModalities"] as? [String] == ["AUDIO"])
+    }
+
+    /// gemini-3.8-live refuses a thinking level during setup — and the refusal
+    /// arrives as a close code, so it would look like a dead voice button.
+    @Test("no thinking level is sent")
+    func noThinkingConfig() {
+        let config = setup()["generationConfig"] as? [String: Any]
+        #expect(config?["thinkingConfig"] == nil)
     }
 
     /// The search tool has to arrive as `googleSearch` with an object value.
