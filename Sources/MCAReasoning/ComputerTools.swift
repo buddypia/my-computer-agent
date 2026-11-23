@@ -562,6 +562,18 @@ public struct ClickElementTool: AgentTool {
             + "Wait until it becomes enabled, observe again, then retry."
     }
 
+    /// Names the labels close to the requested one, so the model's next call can use an exact one.
+    static func lookupRefusal(_ snapshot: UIStateSnapshot, text: String, role: String?) -> String {
+        let count = matches(in: snapshot, text: text, role: role).count
+        let problem = count > 1 ? "\(count) elements are labelled '\(text)'" : "no actionable element is labelled exactly '\(text)'"
+        let similar = snapshot.visibleCandidates.filter {
+            $0.isActionable && ($0.label.localizedCaseInsensitiveContains(text) || (!$0.label.isEmpty && text.localizedCaseInsensitiveContains($0.label)))
+        }.prefix(8).map { "'\($0.label)' (\($0.role))" }
+        return "Error: \(problem) in the selected window; nothing was clicked. "
+            + (similar.isEmpty ? "" : "Similar elements: \(similar.joined(separator: ", ")). ")
+            + "Use an exact label (and role when several share it), or call inspect_ui_elements to list them."
+    }
+
     /// Candidate cap of the wider observation that re-checks a partial one.
     static let recountLimit = 100
 
@@ -626,9 +638,20 @@ public struct ClickElementTool: AgentTool {
 
         let candidate: UIElementCandidate
         if let session = ActionAuthorization.current {
-            guard let snapshot = await session.nativeObservation else { throw ActionAuthorizationError.staleTarget }
-            candidate = try Self.observedCandidate(snapshot, text: text, role: role)
-            try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
+            guard session.targetWindow != nil else { throw ActionAuthorizationError.staleTarget }
+            // Observed now, not taken from the session: the recorded observation can predate the
+            // actions since (or be missing), so a label the model sees on screen was not found in
+            // it, and that refusal ended the whole session — every retry ended the same way.
+            let snapshot = try await inspectorProvider(Self.recountLimit).captureSnapshot()
+            await session.recordNativeObservation(snapshot)
+            // Nothing is approved or executed yet, so a label that is missing or ambiguous is
+            // returned to the model to correct, not raised as a refusal that ends the session.
+            do {
+                candidate = try Self.observedCandidate(snapshot, text: text, role: role)
+                try await Self.confirmUnique(in: snapshot, text: text, role: role, inspectorProvider: inspectorProvider)
+            } catch ActionAuthorizationError.staleTarget {
+                return Self.lookupRefusal(snapshot, text: text, role: role)
+            }
             // Before approval: the user is not asked to approve a click that cannot work.
             if let refusal = Self.disabledRefusal(candidate) { return refusal }
             try await DesktopActionAuthorization.requireApproval(operation: "Click element", details: String(decoding: arguments, as: UTF8.self) + "\nObserved element: \(candidate.id); coordinate: [\(candidate.center.x), \(candidate.center.y)]", requestedApp: appName, expected: snapshot)

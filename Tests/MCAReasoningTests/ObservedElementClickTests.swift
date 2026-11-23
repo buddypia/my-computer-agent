@@ -124,6 +124,55 @@ struct ObservedElementClickTests {
         }
     }
 
+    private func scopedSession(observed: UIStateSnapshot?) async -> ActionAuthorization {
+        let session = ActionAuthorization(goal: "fixture", requestApproval: { _ in .approved },
+            targetWindow: PinnedWindow(id: 1, appName: "Mail", windowTitle: "Inbox", bundleID: "com.apple.mail", processID: getpid()),
+            requiresWindowScope: true)
+        if let observed { await session.recordNativeObservation(observed) }
+        return session
+    }
+
+    /// A label the model read on screen but the turn's first observation lacked (or no
+    /// observation at all) used to raise `staleTarget`, which ended the session; every retry
+    /// of the request then ended with the same error.
+    @Test("A missing or ambiguous label is returned to the model without ending the session",
+          arguments: [["Reply"], ["Send", "Send"]])
+    func lookupFailureKeepsSession(labels: [String]) async throws {
+        let now = UIStateSnapshot(appBundleId: "com.apple.mail", appName: "Mail",
+            visibleCandidates: labels.enumerated().map { candidate("e\($0.offset)", label: $0.element) }, timestamp: .now)
+        let synthesizer = DryRunEventSynthesizer()
+        let tool = ClickElementTool(synthesizer: synthesizer, inspectorProvider: { _ in FixedSnapshotProvider(snapshot: now) })
+        let session = await scopedSession(observed: nil)
+        let result = try await ActionAuthorization.withSession(session) {
+            try await tool.invoke(arguments: Data(#"{"element_text":"Send"}"#.utf8))
+        }
+        #expect(result.hasPrefix("Error:") && result.contains("nothing was clicked"))
+        #expect(synthesizer.recordedActions.isEmpty)
+        #expect(await session.terminalFailure == nil)
+        #expect(await session.nativeObservation?.visibleCandidates == now.visibleCandidates)
+    }
+
+    @Test("The refusal names close labels so the next call can use an exact one")
+    func lookupRefusalNamesSimilarLabels() {
+        let snapshot = UIStateSnapshot(visibleCandidates: [candidate("a", label: "Send now"), candidate("b", label: "Archive")], timestamp: .now)
+        let refusal = ClickElementTool.lookupRefusal(snapshot, text: "send", role: nil)
+        #expect(refusal.contains("'Send now'") && !refusal.contains("Archive"))
+        #expect(ClickElementTool.lookupRefusal(UIStateSnapshot(visibleCandidates: [candidate("a", label: "Send"), candidate("b", label: "Send")], timestamp: .now),
+                                               text: "Send", role: nil).contains("2 elements"))
+    }
+
+    @Test("Without a selected window the click is still refused as a stale target")
+    func noSelectedWindowStillRefused() async {
+        let tool = ClickElementTool(synthesizer: DryRunEventSynthesizer(),
+            inspectorProvider: { _ in FixedSnapshotProvider(snapshot: UIStateSnapshot(visibleCandidates: [], timestamp: .now)) })
+        let session = ActionAuthorization(goal: "fixture", requestApproval: { _ in .approved }, requiresWindowScope: true)
+        await #expect(throws: ActionAuthorizationError.staleTarget) {
+            try await ActionAuthorization.withSession(session) {
+                _ = try await tool.invoke(arguments: Data(#"{"element_text":"Send"}"#.utf8))
+            }
+        }
+    }
+
     private func partial(_ candidates: [UIElementCandidate], limit: Int? = 25, complete: Bool? = false) -> UIStateSnapshot {
         UIStateSnapshot(visibleCandidates: candidates, timestamp: .now, candidateLimit: limit, observationComplete: complete)
     }
