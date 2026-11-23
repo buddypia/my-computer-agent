@@ -107,7 +107,7 @@ struct GeminiTranscriberTests {
 
         MockURLProtocol.requestHandler = { request in
             #expect(request.value(forHTTPHeaderField: "x-goog-api-key") == "test-api-key")
-            #expect(request.url?.absoluteString.contains("gemini-3.8-flash:generateContent") == true)
+            #expect(request.url?.absoluteString.contains("gemini-4-hydrogen:generateContent") == true)
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -123,7 +123,7 @@ struct GeminiTranscriberTests {
 
         let transcriber = GeminiTranscriber(
             apiKey: "test-api-key",
-            model: "gemini-3.8-flash",
+            model: "gemini-4-hydrogen",
             locale: Locale(identifier: "ja_JP"),
             session: mockSession
         )

@@ -54,7 +54,7 @@ public actor GeminiTranscriber: Transcribing {
 
     public init(
         apiKey: String,
-        model: String = "gemini-3.8-flash",
+        model: String = "gemini-4-hydrogen",
         locale: Locale = Locale.current,
         customInstruction: String? = nil,
         baseURL: URL = URL(string: "https://generativelanguage.googleapis.com/v1beta")!,
@@ -262,7 +262,10 @@ public actor GeminiTranscriber: Transcribing {
             ],
             "generationConfig": [
                 "temperature": 0.0,
-                "maxOutputTokens": 1024
+                "maxOutputTokens": 1024,
+                // Gemini 4 Hydrogen thinks at "high" unless told otherwise,
+                // which only adds latency to a transcript.
+                "thinkingConfig": ["thinkingLevel": "low"]
             ]
         ]
 

@@ -35,7 +35,7 @@ a browser or an Electron shell.
 | **Sees** | Reads the focused window's accessibility tree on OS events (focus change, window title change, typing pause). Falls back to on-device Vision OCR for canvas-drawn apps. Never polls at a frame rate. |
 | **Acts** | Autonomous native GUI control (clicks, typing, key combinations, AppleScript execution) using CoreGraphics event synthesis coupled with accessibility inspection (`AXUIElement`). Ultra-low latency UI grounding powered by TypeSafe AI (Jev System One model, <200ms) with seamless offline/unkeyed semantic local fallback. Safe execution available from the built-in Copilot, CLI (`mca act`), and external MCP clients. |
 | **Hears** | Captures your microphone with hardware AEC and the system audio output through a CoreAudio process tap — no virtual audio driver. Two separate channels, so "you" and "everyone else" stay distinct. **Nothing is captured at launch:** the microphone opens for a voice conversation (⌃⌥V) and closes when it ends. Continuous capture is a switch in ✨ ▸ Settings ▸ General ▸ Audio. |
-| **Transcribes** | Dual-engine transcription: Apple's on-device `SpeechAnalyzer` for 100% private local recognition, or **Gemini Flash batch audio transcription** for state-of-the-art multilingual accuracy, homophone disambiguation, and verbal filler cleanup. Audio never leaves the machine when on the Apple engine. |
+| **Transcribes** | Dual-engine transcription: Apple's on-device `SpeechAnalyzer` for 100% private local recognition, or **Gemini Hydrogen batch audio transcription** for state-of-the-art multilingual accuracy, homophone disambiguation, and verbal filler cleanup. Audio never leaves the machine when on the Apple engine. |
 | **Talks** | Two buttons, not a mode picker. The microphone is **Dictation**: transcribed on this Mac, then handed to the same chat model a typed question goes to. The waveform beside it is **Live conversation**: Gemini hears you and answers out loud over one socket, and searches the web when it needs something current. Either way, what the microphone heard is drawn across the bottom of the screen you are working on, in type sized for that display. |
 | **Remembers** | SQLite with FTS5, plus on-device query expansion so you can search by meaning rather than exact wording. |
 | **Advises** | An on-device model screens every scan and stays silent by default; only what clears that gate reaches a cloud model. Switch **Watch my screen** on in the chat and it also looks at the screen itself on a timer — a picture, not just text — and speaks only when it sees a mistake, an error or a faster way. Off by default, and off again on every launch. |
@@ -310,7 +310,7 @@ to set separately:
 
 **Engine** — choose between two transcription engines:
 
-- **Gemini Flash (Cloud / High Accuracy)**: Uses Google's Gemini Flash multimodal AI to transcribe audio in fast batches. It provides state-of-the-art accuracy, contextually resolves difficult homophones (especially in Japanese and Korean technical vocabulary), and cleans up verbal fillers and hesitations.
+- **Gemini Hydrogen (Cloud / High Accuracy)**: Uses Google's Gemini Hydrogen multimodal AI to transcribe audio in fast batches. It provides state-of-the-art accuracy, contextually resolves difficult homophones (especially in Japanese and Korean technical vocabulary), and cleans up verbal fillers and hesitations.
 - **macOS (On-Device / Private)**: Apple's on-device `SpeechAnalyzer`. Audio never leaves your Mac, ensuring 100% offline privacy.
 
 **Speech** — which language the microphone is transcribed as: *Automatic* (the
@@ -434,7 +434,7 @@ makes a process boundary irrelevant, so that layer is chosen for extensibility
 rather than speed.
 
 **Always-on has to be nearly free.** Sending every five-second scan to a cloud
-model costs roughly $390/month at current Gemini Flash pricing. An on-device
+model costs roughly $390/month at Gemini 3.8 Flash pricing. An on-device
 gate that escalates ~2% of scans brings that to about $8.
 
 ### Multi-provider
@@ -462,18 +462,18 @@ Routing is per-task, not per-call-site, and lives in configuration:
 | Task | Model | Notes |
 |---|---|---|
 | `triage` | Apple on-device | free, local, runs constantly |
-| `classify` | `gemini-3.8-flash` | `thinkingLevel: minimal` |
-| `answer` / `vision` | `gemini-3.8-flash` | |
-| `hardReasoning` | `gemini-3.8-flash` | explicit request only, `thinkingLevel: high` |
+| `classify` | `gemini-4-hydrogen` | `thinkingLevel: low` |
+| `answer` / `vision` | `gemini-4-hydrogen` | |
+| `hardReasoning` | `gemini-4-hydrogen` | explicit request only, `thinkingLevel: high` |
 
-Every cloud tier uses the same Gemini model (`gemini-3.8-flash`). Flash Lite is
+Every cloud tier uses the same Gemini model (`gemini-4-hydrogen`). Flash Lite is
 not used: a second model ID costs a second set of quota, capability and
 deprecation dates to track, and the on-device triage gate — not the price of the
 fallback — is what keeps the constant path free. Cost is bounded by
 `reasoningLevel` and `maxOutputTokens` per task instead.
 
 Model IDs and budgets are in `~/Library/Application Support/MyComputerAgent/config.json`,
-not compiled in — Gemini 3.8 Flash doubles in price on 2027-01-01 and preview
+not compiled in — Gemini prices change and preview
 model IDs get retired.
 
 ### Security & Privacy

@@ -253,7 +253,7 @@ struct LiveExecutorContractTests {
     func gemini() async throws {
         let key = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]!
         try await ExecutorContract.verify(
-            GeminiExecutor(model: "gemini-3.8-flash", apiKey: key))
+            GeminiExecutor(model: "gemini-4-hydrogen", apiKey: key))
     }
 
     @Test(
