@@ -109,4 +109,28 @@ struct ActionApprovalTests {
         #expect(state.messages.last?.approvalStatus == .expired)
         #expect(!state.isAwaitingApproval)
     }
+
+    @Test("Auto mode approves without waiting and still records the operation")
+    func autoApproval() async {
+        let state = HUDState(), proposal = request()
+        state.autoApprovesActions = true
+        #expect(await state.requestApproval(proposal) == .approved)
+        #expect(!state.isAwaitingApproval)
+        #expect(state.messages.last?.approval == proposal)
+        #expect(state.messages.last?.approvalStatus == .approved)
+        // The same request cannot be approved twice.
+        #expect(await state.requestApproval(proposal) == .cancelled)
+    }
+
+    @Test("Auto mode does not approve a cancelled task")
+    func autoApprovalRespectsCancellation() async {
+        let state = HUDState()
+        state.autoApprovesActions = true
+        let task = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await state.requestApproval(request())
+        }
+        #expect(await task.value == .cancelled)
+        #expect(state.messages.isEmpty)
+    }
 }

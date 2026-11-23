@@ -112,6 +112,7 @@ final class SettingsModel {
     /// model holds a copy of the configuration, not the file.
     @ObservationIgnored private let onAlwaysListeningChanged: (Bool) -> Void
     @ObservationIgnored private let onVoiceCaptionChanged: (Bool) -> Void
+    @ObservationIgnored private let onAutoApproveActionsChanged: (Bool) -> Void
     @ObservationIgnored private let onTranscriptionEngineChanged: (TranscriptionEngine) -> Void
     @ObservationIgnored private let onEmbeddingGemmaModelChanged: (String) -> Void
 
@@ -232,6 +233,7 @@ final class SettingsModel {
         onCredentialsChanged: @escaping () -> Void,
         onAlwaysListeningChanged: @escaping (Bool) -> Void,
         onVoiceCaptionChanged: @escaping (Bool) -> Void,
+        onAutoApproveActionsChanged: @escaping (Bool) -> Void = { _ in },
         onTranscriptionEngineChanged: @escaping (TranscriptionEngine) -> Void = { _ in },
         onEmbeddingGemmaModelChanged: @escaping (String) -> Void = { _ in }
     ) {
@@ -243,6 +245,7 @@ final class SettingsModel {
         self.onCredentialsChanged = onCredentialsChanged
         self.onAlwaysListeningChanged = onAlwaysListeningChanged
         self.onVoiceCaptionChanged = onVoiceCaptionChanged
+        self.onAutoApproveActionsChanged = onAutoApproveActionsChanged
         self.onTranscriptionEngineChanged = onTranscriptionEngineChanged
         self.onEmbeddingGemmaModelChanged = onEmbeddingGemmaModelChanged
         self.isCapturable = hud.isCapturable
@@ -276,6 +279,14 @@ final class SettingsModel {
     var showsVoiceCaption: Bool { hudState.showsVoiceCaption }
 
     func setVoiceCaption(_ enabled: Bool) { onVoiceCaptionChanged(enabled) }
+
+    // MARK: - Approval
+
+    /// Read from the shared state, which the composition root keeps in step
+    /// with config.json.
+    var autoApprovesActions: Bool { hudState.autoApprovesActions }
+
+    func setAutoApproveActions(_ enabled: Bool) { onAutoApproveActionsChanged(enabled) }
 
     // MARK: - Speech language
 
@@ -489,6 +500,43 @@ private struct GeneralSettings: View {
                         binding: Binding(
                             get: { model.showsVoiceCaption },
                             set: { model.setVoiceCaption($0) }))
+                }
+
+                SettingsSection(localized("Approval", "操作の承認", "작업 승인")) {
+                    SettingsToggle(
+                        localized(
+                            "Run operations without asking",
+                            "確認せずに操作を実行する（自動モード）",
+                            "확인 없이 작업 실행 (자동 모드)"),
+                        detail: localized(
+                            """
+                            Off by default. On, clicks, typing, AppleScript, JavaScript, file \
+                            writes and tab changes run without “Approve this operation”; each one \
+                            is still listed in the chat. The assistant reads web pages and the \
+                            screen, so text written there can steer it into running a script or a \
+                            terminal command unchecked. Writes to startup files, ~/.ssh and system \
+                            folders stay refused, and the stop button still ends a task.
+                            """,
+                            """
+                            既定はオフです。オンにすると、クリック・文字入力・AppleScript・\
+                            JavaScript・ファイル書き込み・タブ操作を「この操作を承認」なしで実行\
+                            します。実行した操作はチャットに記録されます。アシスタントは Web \
+                            ページや画面の文章を読むため、そこに書かれた指示に誘導されて、\
+                            スクリプトやターミナルのコマンドを確認なしで実行するおそれがあります。\
+                            起動ファイル・~/.ssh・システムフォルダへの書き込みは引き続き拒否され、\
+                            停止ボタンでいつでもタスクを止められます。
+                            """,
+                            """
+                            기본값은 꺼짐입니다. 켜면 클릭·문자 입력·AppleScript·JavaScript·파일 \
+                            쓰기·탭 조작을 「이 작업 승인」 없이 실행하고, 실행한 작업은 채팅에 \
+                            기록됩니다. 어시스턴트는 웹 페이지와 화면의 글을 읽으므로, 거기에 적힌 \
+                            지시에 이끌려 스크립트나 터미널 명령을 확인 없이 실행할 수 있습니다. \
+                            시작 파일·~/.ssh·시스템 폴더에 쓰는 것은 계속 거부되며, 중지 버튼으로 \
+                            언제든 작업을 멈출 수 있습니다.
+                            """),
+                        binding: Binding(
+                            get: { model.autoApprovesActions },
+                            set: { model.setAutoApproveActions($0) }))
                 }
 
                 SettingsSection(localized("Audio", "音声の取り込み", "오디오 입력")) {
